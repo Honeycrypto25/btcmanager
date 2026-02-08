@@ -39,7 +39,7 @@ export default async function RoiPage() {
     let totalInvested = 0;
     let totalBtc = 0;
 
-    transactions.forEach(tx => {
+    transactions.forEach((tx: any) => {
         const amount = tx.amount;
         // Cost basis per transaction = quantity * price_at_time
         const invested = amount * tx.priceAtTime;
