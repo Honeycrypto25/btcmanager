@@ -20,6 +20,7 @@ export default async function RoiPage() {
 
     // 1. Fetch Transactions
     const transactions = await db.bitcoinTransaction.findMany({
+        include: { wallet: true },
         orderBy: { timestamp: 'desc' },
     });
 
@@ -89,12 +90,20 @@ export default async function RoiPage() {
     const overallValue = totalBtc * currentPrice;
     const overallRoi = totalInvested > 0 ? ((overallValue - totalInvested) / totalInvested) * 100 : 0;
 
+    // Serialize transactions for client component
+    const serializedTransactions = transactions.map((tx: any) => ({
+        ...tx,
+        timestamp: tx.timestamp.toISOString(),
+        createdAt: tx.createdAt.toISOString(),
+    }));
+
     return (
         <DashboardLayout>
             <RoiClient
                 monthlyData={monthlyData}
                 yearlyData={yearlyData}
                 currentPrice={currentPrice}
+                transactions={serializedTransactions}
                 overall={{
                     totalInvested,
                     totalBtc,

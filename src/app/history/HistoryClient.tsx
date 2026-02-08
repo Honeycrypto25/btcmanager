@@ -17,13 +17,16 @@ import { format } from "date-fns";
 
 interface HistoryClientProps {
     initialTransactions: any[];
+    currentBtcPrice: number;
 }
 
-export default function HistoryClient({ initialTransactions }: HistoryClientProps) {
+export default function HistoryClient({ initialTransactions, currentBtcPrice }: HistoryClientProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
 
     const [showDateModal, setShowDateModal] = useState(false);
     const [showFilterModal, setShowFilterModal] = useState(false);
@@ -74,11 +77,23 @@ export default function HistoryClient({ initialTransactions }: HistoryClientProp
         setEndDate('');
         setSelectedWallet(null);
         setSearchQuery('');
+        setCurrentPage(1);
         setShowDateModal(false);
         setShowFilterModal(false);
     };
 
     const hasActiveFilters = startDate || endDate || selectedWallet;
+
+    // Pagination logic
+    const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+    // Reset to page 1 if current page exceeds total pages
+    if (currentPage > totalPages && totalPages > 0) {
+        setCurrentPage(1);
+    }
 
     return (
         <div className="space-y-6 relative">
@@ -271,58 +286,139 @@ export default function HistoryClient({ initialTransactions }: HistoryClientProp
                                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Amount</th>
                                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Price At Time</th>
                                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">USD Value</th>
+                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Current Value</th>
+                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Profit</th>
                                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {filteredTransactions.length === 0 ? (
+                            {paginatedTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-20 text-center text-gray-600 font-medium italic">
+                                    <td colSpan={8} className="px-6 py-20 text-center text-gray-600 font-medium italic">
                                         No transactions found matching your filters.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredTransactions.map((tx: any) => (
-                                    <tr key={tx.id} className="hover:bg-white/[0.01] transition-colors group">
-                                        <td className="px-6 py-5">
-                                            <p className="text-sm font-bold text-white leading-tight">
-                                                {format(new Date(tx.timestamp), 'MMM dd, yyyy')}
-                                            </p>
-                                            <p className="text-[10px] text-gray-500 font-mono mt-0.5">
-                                                {format(new Date(tx.timestamp), 'HH:mm:ss')}
-                                            </p>
-                                        </td>
-                                        <td className="px-6 py-5">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-primary/40" />
-                                                <span className="text-sm font-bold text-gray-300">{tx.wallet?.name || 'Unknown'}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-5 font-mono text-sm">
-                                            <span className="text-white font-bold">{tx.amount.toFixed(8)}</span>
-                                            <span className="text-primary ml-1 text-[10px]">BTC</span>
-                                        </td>
-                                        <td className="px-6 py-5 text-sm text-gray-400 font-mono">
-                                            ${tx.priceAtTime.toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-5 text-sm text-accent font-black">
-                                            ${(tx.amount * tx.priceAtTime).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-6 py-5 text-right">
-                                            <a
-                                                href={`https://mempool.space/tx/${tx.txid}`}
-                                                target="_blank"
-                                                className="inline-flex items-center justify-center p-2 rounded-lg bg-glass border border-white/5 text-gray-500 hover:text-primary hover:border-primary/20 transition-all"
-                                            >
-                                                <ExternalLink className="w-4 h-4" />
-                                            </a>
-                                        </td>
-                                    </tr>
-                                ))
+                                paginatedTransactions.map((tx: any) => {
+                                    const currentValue = tx.amount * currentBtcPrice;
+                                    const investedValue = tx.amount * tx.priceAtTime;
+                                    const profit = currentValue - investedValue;
+                                    const profitPercent = investedValue > 0 ? (profit / investedValue) * 100 : 0;
+                                    const isPositive = profit >= 0;
+
+                                    return (
+                                        <tr key={tx.id} className="hover:bg-white/[0.01] transition-colors group">
+                                            <td className="px-6 py-5">
+                                                <p className="text-sm font-bold text-white leading-tight">
+                                                    {format(new Date(tx.timestamp), 'MMM dd, yyyy')}
+                                                </p>
+                                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                                    {format(new Date(tx.timestamp), 'HH:mm:ss')}
+                                                </p>
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-primary/40" />
+                                                    <span className="text-sm font-bold text-gray-300">{tx.wallet?.name || 'Unknown'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5 font-mono text-sm">
+                                                <span className="text-white font-bold">{tx.amount.toFixed(8)}</span>
+                                                <span className="text-primary ml-1 text-[10px]">BTC</span>
+                                            </td>
+                                            <td className="px-6 py-5 text-sm text-gray-400 font-mono">
+                                                ${tx.priceAtTime.toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-5 text-sm text-accent font-black">
+                                                ${investedValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <p className={cn(
+                                                    "text-sm font-black",
+                                                    isPositive ? "text-green-500" : "text-red-500"
+                                                )}>
+                                                    ${currentValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </p>
+                                            </td>
+                                            <td className="px-6 py-5">
+                                                <div className="space-y-0.5">
+                                                    <p className={cn(
+                                                        "text-sm font-black",
+                                                        isPositive ? "text-green-500" : "text-red-500"
+                                                    )}>
+                                                        {isPositive ? "+" : ""}${profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                    </p>
+                                                    <p className={cn(
+                                                        "text-[10px] font-bold",
+                                                        isPositive ? "text-green-400" : "text-red-400"
+                                                    )}>
+                                                        {isPositive ? "+" : ""}{profitPercent.toFixed(2)}%
+                                                    </p>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-5 text-right">
+                                                <a
+                                                    href={`https://mempool.space/tx/${tx.txid}`}
+                                                    target="_blank"
+                                                    className="inline-flex items-center justify-center p-2 rounded-lg bg-glass border border-white/5 text-gray-500 hover:text-primary hover:border-primary/20 transition-all"
+                                                >
+                                                    <ExternalLink className="w-4 h-4" />
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
+                        <p className="text-sm text-gray-500">
+                            Showing <span className="font-bold text-white">{startIndex + 1}</span> to{' '}
+                            <span className="font-bold text-white">{Math.min(endIndex, filteredTransactions.length)}</span> of{' '}
+                            <span className="font-bold text-white">{filteredTransactions.length}</span> transactions
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                                className="rounded-xl"
+                            >
+                                Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        className={cn(
+                                            "w-8 h-8 rounded-lg text-sm font-bold transition-all",
+                                            currentPage === page
+                                                ? "bg-primary text-black"
+                                                : "bg-glass text-gray-400 hover:bg-white/5 hover:text-white"
+                                        )}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages}
+                                className="rounded-xl"
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </Card>
         </div>
     );

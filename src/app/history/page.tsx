@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
+import { getCurrentBtcPrice } from "@/lib/btc";
 import HistoryClient from "./HistoryClient";
 
 export default async function HistoryPage() {
@@ -12,6 +13,9 @@ export default async function HistoryPage() {
     if (!session) {
         redirect("/auth/signin");
     }
+
+    // Fetch current BTC price
+    const currentPrice = await getCurrentBtcPrice();
 
     // Fetch all transactions with wallet info
     const transactions = await db.bitcoinTransaction.findMany({
@@ -28,7 +32,10 @@ export default async function HistoryPage() {
 
     return (
         <DashboardLayout>
-            <HistoryClient initialTransactions={serializedTransactions} />
+            <HistoryClient
+                initialTransactions={serializedTransactions}
+                currentBtcPrice={currentPrice}
+            />
         </DashboardLayout>
     );
 }

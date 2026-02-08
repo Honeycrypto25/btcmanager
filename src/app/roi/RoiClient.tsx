@@ -12,6 +12,7 @@ import {
     ArrowDownRight,
     Percent
 } from "lucide-react";
+import PriceChart from "@/components/dashboard/PriceChart";
 
 interface RoiData {
     period: string; // "2024" or "2024-01"
@@ -27,6 +28,7 @@ interface RoiClientProps {
     yearlyData: RoiData[];
     monthlyData: RoiData[];
     currentPrice: number;
+    transactions: any[];
     overall: {
         totalInvested: number;
         totalBtc: number;
@@ -35,8 +37,11 @@ interface RoiClientProps {
     };
 }
 
-export default function RoiClient({ yearlyData, monthlyData, currentPrice, overall }: RoiClientProps) {
+export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, overall }: RoiClientProps) {
     const [view, setView] = useState<'yearly' | 'monthly'>('yearly');
+    const [yearlyPage, setYearlyPage] = useState(1);
+    const [monthlyPage, setMonthlyPage] = useState(1);
+    const itemsPerPage = 10;
 
     const formatCurrency = (val: number) =>
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -46,6 +51,16 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, overa
 
     const formatPercent = (val: number) =>
         `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
+
+    // Pagination logic
+    const currentPage = view === 'yearly' ? yearlyPage : monthlyPage;
+    const setCurrentPage = view === 'yearly' ? setYearlyPage : setMonthlyPage;
+    const currentData = view === 'yearly' ? yearlyData : monthlyData;
+
+    const totalPages = Math.ceil(currentData.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedData = currentData.slice(startIndex, endIndex);
 
     return (
         <div className="space-y-8">
@@ -61,7 +76,12 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, overa
                 </div>
                 <div className="flex items-center gap-2 bg-glass border border-white/5 rounded-2xl p-1">
                     <button
-                        onClick={() => setView('yearly')}
+                        onClick={() => {
+                            setView('yearly');
+                            if (yearlyPage > Math.ceil(yearlyData.length / itemsPerPage)) {
+                                setYearlyPage(1);
+                            }
+                        }}
                         className={cn(
                             "px-4 py-2 rounded-xl text-sm font-bold transition-all",
                             view === 'yearly' ? "bg-primary text-black shadow-lg" : "text-gray-500 hover:text-white"
@@ -70,7 +90,12 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, overa
                         Yearly
                     </button>
                     <button
-                        onClick={() => setView('monthly')}
+                        onClick={() => {
+                            setView('monthly');
+                            if (monthlyPage > Math.ceil(monthlyData.length / itemsPerPage)) {
+                                setMonthlyPage(1);
+                            }
+                        }}
                         className={cn(
                             "px-4 py-2 rounded-xl text-sm font-bold transition-all",
                             view === 'monthly' ? "bg-primary text-black shadow-lg" : "text-gray-500 hover:text-white"
@@ -126,6 +151,9 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, overa
                 </Card>
             </div>
 
+            {/* Price Chart */}
+            <PriceChart transactions={transactions} />
+
             {/* Data Table */}
             <Card className="overflow-hidden p-0 border-white/5">
                 <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex justify-between items-center">
@@ -147,36 +175,97 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, overa
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {(view === 'yearly' ? yearlyData : monthlyData).map((row) => (
-                                <tr key={row.period} className="hover:bg-white/[0.01] transition-colors group">
-                                    <td className="px-6 py-5 font-bold text-white">
-                                        {row.period}
-                                    </td>
-                                    <td className="px-6 py-5 text-right font-mono text-gray-400">
-                                        {formatCurrency(row.totalInvested)}
-                                    </td>
-                                    <td className="px-6 py-5 text-right font-mono text-white">
-                                        {formatCurrency(row.currentValue)}
-                                    </td>
-                                    <td className="px-6 py-5 text-right font-mono text-white font-bold">
-                                        {row.totalBtc.toFixed(8)} <span className="text-primary text-[10px]">BTC</span>
-                                    </td>
-                                    <td className="px-6 py-5 text-right font-mono text-gray-400">
-                                        {formatCurrency(row.totalInvested / row.totalBtc)}
-                                    </td>
-                                    <td className="px-6 py-5 text-right">
-                                        <span className={cn(
-                                            "inline-flex items-center gap-1 font-bold px-2 py-1 rounded-lg text-xs",
-                                            row.roiPercentage >= 0 ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
-                                        )}>
-                                            {formatPercent(row.roiPercentage)}
-                                        </span>
+                            {paginatedData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-20 text-center text-gray-600 font-medium italic">
+                                        No data available for this period.
                                     </td>
                                 </tr>
-                            ))}
+                            ) : (
+                                paginatedData.map((row) => (
+                                    <tr key={row.period} className="hover:bg-white/[0.01] transition-colors group">
+                                        <td className="px-6 py-5 font-bold text-white">
+                                            {row.period}
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-mono text-gray-400">
+                                            {formatCurrency(row.totalInvested)}
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-mono text-white">
+                                            {formatCurrency(row.currentValue)}
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-mono text-white font-bold">
+                                            {row.totalBtc.toFixed(8)} <span className="text-primary text-[10px]">BTC</span>
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-mono text-gray-400">
+                                            {formatCurrency(row.totalInvested / row.totalBtc)}
+                                        </td>
+                                        <td className="px-6 py-5 text-right">
+                                            <span className={cn(
+                                                "inline-flex items-center gap-1 font-bold px-2 py-1 rounded-lg text-xs",
+                                                row.roiPercentage >= 0 ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                                            )}>
+                                                {formatPercent(row.roiPercentage)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
+                        <p className="text-sm text-gray-500">
+                            Showing <span className="font-bold text-white">{startIndex + 1}</span> to{' '}
+                            <span className="font-bold text-white">{Math.min(endIndex, currentData.length)}</span> of{' '}
+                            <span className="font-bold text-white">{currentData.length}</span> {view === 'yearly' ? 'years' : 'months'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                                    currentPage === 1
+                                        ? "bg-glass text-gray-600 cursor-not-allowed"
+                                        : "bg-glass text-white hover:bg-white/10"
+                                )}
+                            >
+                                Previous
+                            </button>
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        className={cn(
+                                            "w-8 h-8 rounded-lg text-sm font-bold transition-all",
+                                            currentPage === page
+                                                ? "bg-primary text-black"
+                                                : "bg-glass text-gray-400 hover:bg-white/5 hover:text-white"
+                                        )}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                                    currentPage === totalPages
+                                        ? "bg-glass text-gray-600 cursor-not-allowed"
+                                        : "bg-glass text-white hover:bg-white/10"
+                                )}
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Card>
         </div>
     );
