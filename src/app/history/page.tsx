@@ -20,7 +20,7 @@ export default async function HistoryPage() {
     });
 
     // Serialize dates for client component
-    const serializedTransactions = transactions.map(tx => ({
+    const serializedTransactions = transactions.map((tx: any) => ({
         ...tx,
         timestamp: tx.timestamp.toISOString(),
         createdAt: tx.createdAt.toISOString(),

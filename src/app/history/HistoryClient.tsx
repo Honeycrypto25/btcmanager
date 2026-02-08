@@ -195,7 +195,7 @@ export default function HistoryClient({ initialTransactions }: HistoryClientProp
                                         All Wallets
                                         {!selectedWallet && <Check className="w-4 h-4" />}
                                     </button>
-                                    {uniqueWallets.map(wallet => (
+                                    {uniqueWallets.map((wallet: any) => (
                                         <button
                                             key={wallet}
                                             onClick={() => setSelectedWallet(wallet === selectedWallet ? null : wallet)}

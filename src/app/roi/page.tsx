@@ -66,7 +66,7 @@ export default async function RoiPage() {
     const buildRoiData = (map: Map<string, { invested: number, btc: number }>) => {
         return Array.from(map.entries())
             .sort((a, b) => b[0].localeCompare(a[0])) // Descending order
-            .map(([period, data]) => {
+            .map(([period, data]: [string, any]) => {
                 const currentValue = data.btc * currentPrice;
                 const roiAmount = currentValue - data.invested;
                 const roiPercentage = data.invested > 0 ? (roiAmount / data.invested) * 100 : 0;
