@@ -19,8 +19,8 @@ export default async function AnalyticsPage() {
     });
 
     // Flatten transactions
-    const allTransactions = wallets.flatMap((w) =>
-        w.transactions.map((t) => ({
+    const allTransactions = wallets.flatMap((w: any) =>
+        w.transactions.map((t: any) => ({
             ...t,
             walletId: w.id,
             wallet: { name: w.name }
