@@ -27,7 +27,7 @@ export default async function AnalyticsPage() {
         }))
     );
 
-    const walletData = wallets.map(w => ({
+    const walletData = wallets.map((w: any) => ({
         id: w.id,
         name: w.name,
         address: w.address
