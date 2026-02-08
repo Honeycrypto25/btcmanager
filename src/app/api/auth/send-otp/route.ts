@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateToken } from "@/lib/token";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
     try {
@@ -14,12 +16,7 @@ export async function POST(req: Request) {
         const normalizedEmail = email.toLowerCase();
 
         // 1. Check if user exists (or is authorized admin)
-        // Access control: Only allow if email is in ADMIN_EMAILS or already exists in DB?
-        // Logic: If user doesn't exist in DB, should we create them?
-        // For this app ("private administrative dashboard"), we usually only want Pre-registered users or Admins.
-        // Let's stick to: Must be in ADMIN_EMAILS whitelist OR existing user.
-
-        const adminEmails = process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()) || [];
+        const adminEmails = process.env.ADMIN_EMAILS?.split(",").map((e: any) => e.trim().toLowerCase()) || [];
         const isWhitelisted = adminEmails.includes(normalizedEmail);
 
         let user = await db.user.findUnique({
@@ -30,15 +27,11 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Access Denied" }, { status: 403 });
         }
 
-        // If user doesn't exist but is whitelisted, create them? using upsert later or just let them be created.
-        // PrismaAdapter creates users on sign in usually. CredentialsProvider doesn't automatically create users unless we do it.
-        // So we should upsert the user here to ensure we can save the OTP.
-
         if (!user) {
             user = await db.user.create({
                 data: {
                     email: normalizedEmail,
-                    role: "USER", // Default, maybe promote to ADMIN if in whitelist?
+                    role: "USER",
                 }
             });
         }
@@ -56,35 +49,11 @@ export async function POST(req: Request) {
             },
         });
 
-        // 4. Send Email
-        const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_SERVER_HOST,
-            port: Number(process.env.EMAIL_SERVER_PORT),
-            auth: {
-                user: process.env.EMAIL_SERVER_USER,
-                pass: process.env.EMAIL_SERVER_PASSWORD,
-            },
-            secure: false, // TLS? depends on config. usually port 587 is secure: false (STARTTLS)
-        });
-
-        // Parse connection string for params if EMAIL_SERVER var is used instead of individual vars
-        // BUT user provided .env usually has EMAIL_SERVER=smtp://...
-        // Let's try to parse process.env.EMAIL_SERVER if specific vars aren't there.
-        // Actually, let's look at .env file to see what we have!
-        // I'll assume standard nodemailer config for now, but better to check .env.
-
-        // Wait, I shouldn't read .env directly if I can avoid it (privacy). 
-        // `EmailProvider` used `process.env.EMAIL_SERVER`. I should parse that.
-
-        let transportConfig: any = process.env.EMAIL_SERVER; // String connection string works with nodemailer!
-
-        const mailer = nodemailer.createTransport(transportConfig);
-
-        await mailer.sendMail({
-            from: process.env.EMAIL_FROM,
+        // 4. Send Email via Resend
+        await resend.emails.send({
+            from: process.env.EMAIL_FROM || "onboarding@resend.dev",
             to: normalizedEmail,
             subject: "Your Login Code - BTC Manager",
-            text: `Your login code is: ${otp}\n\nThis code expires in 15 minutes.`,
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2>Login Verification</h2>
