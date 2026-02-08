@@ -11,7 +11,10 @@ import {
     Calendar,
     Filter,
     X,
-    Check
+    Check,
+    ArrowUp,
+    ArrowDown,
+    ArrowUpDown
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -26,6 +29,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
     const [endDate, setEndDate] = useState('');
     const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const itemsPerPage = 10;
 
     const [showDateModal, setShowDateModal] = useState(false);
@@ -84,11 +88,72 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
 
     const hasActiveFilters = startDate || endDate || selectedWallet;
 
+    // Sorting Logic
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedTransactions = useMemo(() => {
+        let sortableItems = [...filteredTransactions];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue: any;
+                let bValue: any;
+
+                switch (sortConfig.key) {
+                    case 'date':
+                        aValue = new Date(a.timestamp).getTime();
+                        bValue = new Date(b.timestamp).getTime();
+                        break;
+                    case 'wallet':
+                        aValue = a.wallet?.name || '';
+                        bValue = b.wallet?.name || '';
+                        break;
+                    case 'amount':
+                        aValue = a.amount;
+                        bValue = b.amount;
+                        break;
+                    case 'price':
+                        aValue = a.priceAtTime;
+                        bValue = b.priceAtTime;
+                        break;
+                    case 'invested':
+                        aValue = a.amount * a.priceAtTime;
+                        bValue = b.amount * b.priceAtTime;
+                        break;
+                    case 'current':
+                        aValue = a.amount * currentBtcPrice;
+                        bValue = b.amount * currentBtcPrice;
+                        break;
+                    case 'profit':
+                        aValue = (a.amount * currentBtcPrice) - (a.amount * a.priceAtTime);
+                        bValue = (b.amount * currentBtcPrice) - (b.amount * b.priceAtTime);
+                        break;
+                    default:
+                        return 0;
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredTransactions, sortConfig, currentBtcPrice]);
+
     // Pagination logic
-    const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+    const totalPages = Math.ceil(sortedTransactions.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+    const paginatedTransactions = sortedTransactions.slice(startIndex, endIndex);
 
     // Reset to page 1 if current page exceeds total pages
     if (currentPage > totalPages && totalPages > 0) {
@@ -281,13 +346,62 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-white/5 bg-white/[0.02]">
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Date & Time</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Wallet</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Amount</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Price At Time</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">USD Value</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Current Value</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Profit</th>
+                                <th onClick={() => handleSort('date')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Date & Time
+                                        {sortConfig?.key === 'date' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('wallet')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Wallet
+                                        {sortConfig?.key === 'wallet' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('amount')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Amount
+                                        {sortConfig?.key === 'amount' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('price')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Price At Time
+                                        {sortConfig?.key === 'price' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('invested')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        USD Value
+                                        {sortConfig?.key === 'invested' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('current')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Current Value
+                                        {sortConfig?.key === 'current' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
+                                <th onClick={() => handleSort('profit')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        Profit
+                                        {sortConfig?.key === 'profit' ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-primary" /> : <ArrowDown className="w-3 h-3 text-primary" />
+                                        ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
+                                    </div>
+                                </th>
                                 <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Action</th>
                             </tr>
                         </thead>
