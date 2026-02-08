@@ -34,6 +34,31 @@ export default function PriceChart({ transactions }: PriceChartProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [days, setDays] = useState<number | 'max'>(30);
+    const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
+
+    // Extract unique wallets
+    const allWallets = useMemo(() => {
+        const wallets = new Set<string>();
+        transactions.forEach(tx => {
+            if (tx.wallet?.name) wallets.add(tx.wallet.name);
+        });
+        return Array.from(wallets).sort();
+    }, [transactions]);
+
+    // Initialize selected wallets on mount or when wallets change
+    useEffect(() => {
+        if (allWallets.length > 0 && selectedWallets.length === 0) {
+            setSelectedWallets(allWallets);
+        }
+    }, [allWallets]);
+
+    const toggleWallet = (wallet: string) => {
+        setSelectedWallets(prev =>
+            prev.includes(wallet)
+                ? prev.filter(w => w !== wallet)
+                : [...prev, wallet]
+        );
+    };
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -87,7 +112,9 @@ export default function PriceChart({ transactions }: PriceChartProps) {
 
         return transactions.filter(tx => {
             const txTime = new Date(tx.timestamp).getTime();
-            return txTime >= minDate;
+            const walletName = tx.wallet?.name;
+            const isWalletSelected = walletName ? selectedWallets.includes(walletName) : true;
+            return txTime >= minDate && isWalletSelected;
         }).map(tx => ({
             ...tx,
             date: new Date(tx.timestamp).getTime(),
@@ -145,6 +172,24 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                     ))}
                 </div>
             </div>
+
+            {/* Wallet Filters */}
+            {allWallets.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-6 px-1">
+                    {allWallets.map(wallet => (
+                        <button
+                            key={wallet}
+                            onClick={() => toggleWallet(wallet)}
+                            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border transition-all ${selectedWallets.includes(wallet)
+                                ? 'bg-primary/20 text-primary border-primary/50'
+                                : 'bg-transparent text-gray-500 border-white/10 hover:border-white/30'
+                                }`}
+                        >
+                            {wallet}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <div className="h-[300px] w-full">
                 {loading ? (
