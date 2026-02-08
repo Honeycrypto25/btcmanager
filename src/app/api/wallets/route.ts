@@ -80,7 +80,7 @@ export async function PUT(req: NextRequest) {
             console.log(`Syncing all ${wallets.length} wallets...`);
 
             const results = await Promise.all(
-                wallets.map(w => syncWallet(w.id, w.address).catch(e => ({ error: e.message, walletId: w.id })))
+                wallets.map((w: any) => syncWallet(w.id, w.address).catch((e: any) => ({ error: e.message, walletId: w.id })))
             );
 
             return NextResponse.json({ success: true, results });
