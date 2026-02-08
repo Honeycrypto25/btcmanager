@@ -39,8 +39,25 @@ export default function PriceChart({ transactions }: PriceChartProps) {
         const fetchHistory = async () => {
             setLoading(true);
             try {
+                let daysParam: string | number = days;
+
+                // Calculate custom "ALL" range based on earliest transaction
+                if (days === 'max') {
+                    if (transactions.length > 0) {
+                        const timestamps = transactions.map(t => new Date(t.timestamp).getTime());
+                        const earliestTimestamp = Math.min(...timestamps);
+                        const msPerDay = 1000 * 60 * 60 * 24;
+                        const daysSinceFirstBuy = Math.ceil((Date.now() - earliestTimestamp) / msPerDay);
+                        // Add 14 days buffer before first buy for context
+                        daysParam = daysSinceFirstBuy + 14;
+                    } else {
+                        // Fallback if no transactions
+                        daysParam = 365;
+                    }
+                }
+
                 // Fetch daily data for the selected range
-                const res = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}&interval=daily`);
+                const res = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${daysParam}&interval=daily`);
                 if (!res.ok) throw new Error("Failed to fetch price data");
 
                 const data = await res.json();
@@ -60,7 +77,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
         };
 
         fetchHistory();
-    }, [days]);
+    }, [days, transactions]);
 
     // Prepare transaction markers
     const markers = useMemo(() => {
