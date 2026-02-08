@@ -33,7 +33,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
     const [priceData, setPriceData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [days, setDays] = useState(30);
+    const [days, setDays] = useState<number | 'max'>(30);
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -116,14 +116,14 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                     </p>
                 </div>
                 <div className="flex bg-glass border border-white/5 rounded-xl p-1">
-                    {[30, 90].map(d => (
+                    {[30, 90, 'max'].map(d => (
                         <button
                             key={d}
-                            onClick={() => setDays(d)}
+                            onClick={() => setDays(d as number | 'max')}
                             className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${days === d ? 'bg-primary text-black' : 'text-gray-500 hover:text-white'
                                 }`}
                         >
-                            {d}D
+                            {d === 'max' ? 'ALL' : `${d}D`}
                         </button>
                     ))}
                 </div>
