@@ -1,26 +1,65 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #050505;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --color-primary: #F7931A;
+  --color-primary-alpha: rgba(247, 147, 26, 0.5);
+  --color-secondary: #8B5CF6;
+  --color-glass: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-glass: var(--color-glass);
+  --color-glass-border: var(--color-glass-border);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-background);
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Utilities for Premium Look */
+.glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-primary), #ffc107);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.card-shadow {
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.stat-glow {
+  filter: drop-shadow(0 0 8px var(--color-primary-alpha));
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
 }

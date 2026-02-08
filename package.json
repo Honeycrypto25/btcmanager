@@ -9,17 +9,39 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@next-auth/prisma-adapter": "^1.0.7",
+    "@prisma/adapter-pg": "^7.3.0",
+    "@prisma/client": "^7.3.0",
+    "@tanstack/react-query": "^5.90.20",
+    "@types/crypto-js": "^4.2.2",
+    "axios": "^1.13.5",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.33.0",
+    "lightweight-charts": "^5.1.0",
+    "lucide-react": "^0.563.0",
     "next": "16.1.6",
+    "next-auth": "^4.24.13",
+    "nodemailer": "^7.0.13",
+    "otplib": "^13.2.1",
+    "pg": "^8.18.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "recharts": "^3.7.0",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/node": "^20.19.33",
+    "@types/nodemailer": "^7.0.9",
+    "@types/pg": "^8.16.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "prisma": "^7.3.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
