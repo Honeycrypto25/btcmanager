@@ -78,41 +78,56 @@ export async function fetchBitcoinHistory(timeframe: string) {
     } catch (binanceError) {
         console.error("Binance attempt failed:", binanceError);
 
-        // 3. Fallback: COINGECKO (Works for everything)
+        // 3. Fallback: KRAKEN (Works when Binance blocks IP via 451)
         try {
-            console.log("Attempting Fallback: CoinGecko");
-            let days = '365';
-            if (timeframe === '1D') days = '1';
-            if (timeframe === '1W') days = '7';
-            if (timeframe === '1M') days = '30';
-            if (timeframe === '3M') days = '90';
-            if (timeframe === 'ALL') days = 'max';
+            console.log("Attempting Fallback: Kraken API");
+            let krakenInterval = 1440; // 1 day in minutes
 
-            const response = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=${days}`, {
+            if (timeframe === '1D') krakenInterval = 15;
+            if (timeframe === '1W') krakenInterval = 60;
+            if (timeframe === '1M') krakenInterval = 240;
+            if (timeframe === '3M') krakenInterval = 1440;
+            if (timeframe === 'ALL') krakenInterval = 10080; // 1 week candles for ALL
+
+            const response = await fetch(`https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=${krakenInterval}`, {
                 next: { revalidate: 3600 }
             });
 
             if (response.ok) {
-                const data = await response.json();
-                return { source: 'CoinGecko', data };
-            }
-        } catch (cgError) {
-            console.error("CoinGecko fallback failed:", cgError);
-        }
+                const krakenRaw = await response.json();
+                
+                if (krakenRaw.error && krakenRaw.error.length > 0) {
+                     throw new Error(krakenRaw.error[0]);
+                }
 
-        // 4. Last Resort: BINANCE Monthly (Very likely to work / less restricted sometimes)
-        try {
-            console.log("Attempting Last Resort: Binance Monthly");
-            const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1M&limit=60`, {
-                next: { revalidate: 3600 }
-            });
+                const pairs = Object.keys(krakenRaw.result).filter(k => k !== 'last');
+                if (pairs.length > 0) {
+                    const ohlcArray = krakenRaw.result[pairs[0]];
+                    
+                    // Limit to approximately what we need based on timeframe
+                    let limit = 365;
+                    if (timeframe === '1D') limit = 96;
+                    if (timeframe === '1W') limit = 168;
+                    if (timeframe === '1M') limit = 180;
+                    if (timeframe === '3M') limit = 90;
+                    if (timeframe === 'ALL') limit = 1000;
 
-            if (response.ok) {
-                const data = await response.json();
-                return { source: 'Binance', data };
+                    // Take the most recent 'limit' records
+                    const sliced = ohlcArray.slice(-limit);
+
+                    const data = sliced.map((item: any[]) => ({
+                        time: item[0], // Kraken already gives seconds
+                        open: parseFloat(item[1]),
+                        high: parseFloat(item[2]),
+                        low: parseFloat(item[3]),
+                        close: parseFloat(item[4])
+                    }));
+
+                    return { source: 'Kraken', data };
+                }
             }
-        } catch (lastError) {
-            console.error("Last resort failed:", lastError);
+        } catch (krakenError) {
+            console.error("Kraken fallback failed:", krakenError);
         }
 
         throw new Error("Failed to fetch Bitcoin data from all sources.");
