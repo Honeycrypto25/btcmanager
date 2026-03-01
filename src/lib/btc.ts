@@ -113,10 +113,11 @@ export async function getPriceHistory(interval: string = '1d', limit: number = 1
 }
 
 export async function syncWallet(walletId: string, address: string) {
-    const [mempoolTxs, bcInfoTxs, priceHistory] = await Promise.all([
+    const [mempoolTxs, bcInfoTxs, priceHistory, currentPrice] = await Promise.all([
         fetchMempoolTransactions(address),
         fetchBlockchainInfoTransactions(address),
         getPriceHistory('1d', 1000),
+        getCurrentBtcPrice(),
     ]);
 
     const allTxsMap = new Map<string, WalletTx>();
@@ -137,7 +138,7 @@ export async function syncWallet(walletId: string, address: string) {
     if (newTxs.length > 0) {
         const toInsert = newTxs.map(tx => {
             const candle = priceHistory.find((p: { time: number; close: number }) => p.time >= tx.timestamp);
-            const price = candle ? candle.close : (priceHistory.length > 0 ? priceHistory[priceHistory.length - 1].close : 95000);
+            const price = candle ? candle.close : (priceHistory.length > 0 ? priceHistory[priceHistory.length - 1].close : currentPrice);
 
             return {
                 txid: tx.txid,
@@ -169,7 +170,7 @@ export async function getCurrentBtcPrice(): Promise<number> {
                 next: { revalidate: 60 },
             });
             const data = await res.json();
-            return Number(data?.data?.BTC?.quote?.USD?.price || 95000);
+            return Number(data?.data?.BTC?.quote?.USD?.price || 0);
         } catch (e) {
             console.warn("CMC fetch failed, falling back to Coinbase");
         }
@@ -180,8 +181,8 @@ export async function getCurrentBtcPrice(): Promise<number> {
             next: { revalidate: 60 },
         });
         const data = await res.json();
-        return Number(data?.data?.amount || 95000);
+        return Number(data?.data?.amount || 0);
     } catch (e) {
-        return 95000;
+        return 0;
     }
 }

@@ -9,8 +9,6 @@ import {
   TrendingDown,
   Bitcoin,
   Wallet,
-  ArrowUpRight,
-  RefreshCcw,
   Activity
 } from "lucide-react";
 import { getCurrentBtcPrice } from "@/lib/btc";
@@ -18,6 +16,7 @@ import { db } from "@/lib/db";
 import { cn } from "@/components/ui/core";
 import Link from 'next/link';
 import PriceChart from "@/components/dashboard/PriceChart";
+import { DashboardRefreshButton } from "@/components/dashboard/DashboardRefreshButton";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -70,9 +69,7 @@ export default async function DashboardPage() {
               ${currentPrice.toLocaleString()}
             </span>
           </div>
-          <Button variant="outline" size="icon" className="rounded-2xl">
-            <RefreshCcw className="w-4 h-4" />
-          </Button>
+          <DashboardRefreshButton />
         </div>
       </div>
 
