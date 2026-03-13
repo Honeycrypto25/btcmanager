@@ -3,31 +3,48 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/components/ui/core';
+import { Bitcoin, Menu } from 'lucide-react';
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     return (
-        <div className="flex min-h-screen bg-[#050505]">
-            {/* Sidebar background and component */}
+        <div className="relative min-h-screen bg-transparent text-white">
             <Sidebar isOpen={isSidebarOpen} toggle={() => setIsSidebarOpen(!isSidebarOpen)} />
 
-            {/* Main Content Area */}
             <main className={cn(
-                "flex-1 p-10 transition-all duration-300",
-                isSidebarOpen ? "ml-64" : "ml-20"
+                "min-h-screen transition-all duration-300 lg:ml-[20rem]"
             )}>
-                <div className="max-w-7xl mx-auto space-y-10">
+                <div className="sticky top-0 z-30 border-b border-white/6 bg-[rgba(9,9,8,0.72)] px-4 py-4 backdrop-blur-xl sm:px-6 lg:hidden">
+                    <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/25 bg-primary/10 text-primary shadow-[0_10px_30px_rgba(214,169,95,0.12)]">
+                                <Bitcoin className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="font-display text-2xl leading-none text-white">BTC Manager</p>
+                                <p className="text-[10px] uppercase tracking-[0.35em] text-stone-400">Private Wealth</p>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
+                            aria-label="Open navigation"
+                        >
+                            <Menu className="h-5 w-5" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="mx-auto max-w-7xl space-y-6 px-4 py-5 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
                     {children}
                 </div>
             </main>
 
-            {/* Decorative Gradients for Premium Look */}
-            <div className="fixed top-0 right-0 -z-10 w-[500px] h-[500px] bg-primary/5 blur-[150px] rounded-full pointer-events-none" />
-            <div className={cn(
-                "fixed bottom-0 -z-10 w-[400px] h-[400px] bg-secondary/5 blur-[120px] rounded-full pointer-events-none transition-all duration-300",
-                isSidebarOpen ? "left-64" : "left-20"
-            )} />
+            <div className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[26rem] bg-[radial-gradient(circle_at_top,rgba(214,169,95,0.16),transparent_54%)]" />
+            <div className="pointer-events-none fixed bottom-[-8rem] right-[-2rem] -z-10 h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle,rgba(142,197,164,0.14),transparent_64%)] blur-2xl" />
         </div>
     );
 };

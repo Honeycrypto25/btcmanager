@@ -30,6 +30,8 @@ model User {
   
   accounts      Account[]
   sessions      Session[]
+  cycleAnalysisReports CycleAnalysisReport[]
+  cycleAnalysisEvaluations CycleAnalysisEvaluation[]
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -98,4 +100,45 @@ model BitcoinTransaction {
   createdAt    DateTime  @default(now())
 
   @@unique([txid, walletId])
+}
+
+model CycleAnalysisReport {
+  id               String   @id @default(cuid())
+  userId           String
+  language         String
+  modelId          String
+  marketRegime     String
+  confidence       Float
+  executiveSummary String   @db.Text
+  historicalMatch  String   @db.Text
+  evidence         Json
+  invalidationSignals Json
+  watchNext        Json
+  sourceNotes      Json
+  snapshotPrice    Float
+  snapshotAth      Float
+  generatedAt      DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evaluations CycleAnalysisEvaluation[]
+
+  @@index([userId, language, modelId, createdAt])
+}
+
+model CycleAnalysisEvaluation {
+  id              String   @id @default(cuid())
+  reportId        String
+  userId          String
+  evaluatedAt     DateTime @default(now())
+  horizonDays     Int
+  verdict         String
+  notes           String?  @db.Text
+
+  report CycleAnalysisReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, evaluatedAt])
+  @@index([reportId])
 }

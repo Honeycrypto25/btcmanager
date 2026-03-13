@@ -10,6 +10,16 @@ interface WalletTx {
     priceAtTime?: number;
 }
 
+export type BitcoinAthMeta = {
+    ath: number;
+    athDate: string;
+};
+
+function getCoinGeckoHeaders() {
+    const apiKey = process.env.COINGECKO_API_KEY;
+    return apiKey ? { "x-cg-demo-api-key": apiKey } : undefined;
+}
+
 export async function fetchMempoolTransactions(address: string): Promise<WalletTx[]> {
     try {
         const res = await fetch(`${MEMPOOL_URL}/address/${address}/txs`, {
@@ -184,5 +194,33 @@ export async function getCurrentBtcPrice(): Promise<number> {
         return Number(data?.data?.amount || 0);
     } catch (e) {
         return 0;
+    }
+}
+
+export async function getBitcoinAthMeta(): Promise<BitcoinAthMeta | null> {
+    try {
+        const res = await fetch(
+            'https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false',
+            {
+                cache: 'no-store',
+                headers: getCoinGeckoHeaders(),
+            }
+        );
+
+        if (!res.ok) {
+            return null;
+        }
+
+        const data = await res.json();
+        const ath = Number(data?.market_data?.ath?.usd ?? 0);
+        const athDate = data?.market_data?.ath_date?.usd;
+
+        if (!ath || !athDate) {
+            return null;
+        }
+
+        return { ath, athDate };
+    } catch (e) {
+        return null;
     }
 }
