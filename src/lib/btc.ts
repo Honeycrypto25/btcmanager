@@ -2,11 +2,14 @@ import { db } from './db';
 
 const MEMPOOL_URL = 'https://mempool.space/api';
 const BINANCE_URL = 'https://api.binance.com/api/v3';
+const MEMPOOL_PAGE_LIMIT = 40;
+const BLOCKCHAIN_INFO_LIMIT = 100;
+const BLOCKCHAIN_INFO_MAX_PAGES = 10;
 
 interface WalletTx {
     txid: string;
     timestamp: number;
-    amount: number; // in BTC
+    amount: number;
     priceAtTime?: number;
 }
 
@@ -20,60 +23,82 @@ function getCoinGeckoHeaders() {
     return apiKey ? { "x-cg-demo-api-key": apiKey } : undefined;
 }
 
-export async function fetchMempoolTransactions(address: string): Promise<WalletTx[]> {
-    try {
-        const res = await fetch(`${MEMPOOL_URL}/address/${address}/txs`, {
-            cache: 'no-store',
-        });
-
-        if (!res.ok) return [];
-
-        const txs = await res.json();
-
-        return txs.map((t: any) => {
-            const receivedAmount = t.vout.reduce((acc: number, out: any) => {
-                if (out.scriptpubkey_address?.toLowerCase() === address.toLowerCase()) {
-                    return acc + out.value;
-                }
-                return acc;
-            }, 0);
-
-            const sentAmount = t.vin.reduce((acc: number, vin: any) => {
-                if (vin.prevout?.scriptpubkey_address?.toLowerCase() === address.toLowerCase()) {
-                    return acc + vin.prevout.value;
-                }
-                return acc;
-            }, 0);
-
-            const netChange = receivedAmount - sentAmount;
-            let ts = t.status.block_time || Math.floor(Date.now() / 1000);
-
-            if (netChange > 0) {
-                return {
-                    txid: t.txid,
-                    timestamp: ts * 1000,
-                    amount: netChange / 100_000_000,
-                };
+function mapMempoolTransactions(txs: any[], address: string): WalletTx[] {
+    return txs.map((t: any) => {
+        const receivedAmount = t.vout.reduce((acc: number, out: any) => {
+            if (out.scriptpubkey_address?.toLowerCase() === address.toLowerCase()) {
+                return acc + out.value;
             }
-            return null;
-        }).filter((t: any): t is WalletTx => t !== null);
+            return acc;
+        }, 0);
+
+        const sentAmount = t.vin.reduce((acc: number, vin: any) => {
+            if (vin.prevout?.scriptpubkey_address?.toLowerCase() === address.toLowerCase()) {
+                return acc + vin.prevout.value;
+            }
+            return acc;
+        }, 0);
+
+        const netChange = receivedAmount - sentAmount;
+        if (netChange <= 0) return null;
+
+        return {
+            txid: t.txid,
+            timestamp: (t.status.block_time || Math.floor(Date.now() / 1000)) * 1000,
+            amount: netChange / 100_000_000,
+        };
+    }).filter((t: WalletTx | null): t is WalletTx => t !== null);
+}
+
+export async function fetchMempoolTransactions(address: string): Promise<WalletTx[]> {
+    const allTxs: any[] = [];
+    let endpoint = `${MEMPOOL_URL}/address/${address}/txs`;
+
+    try {
+        for (let page = 0; page < MEMPOOL_PAGE_LIMIT; page += 1) {
+            const res = await fetch(endpoint, { cache: 'no-store' });
+            if (!res.ok) {
+                throw new Error(`mempool.space returned ${res.status}`);
+            }
+
+            const txs = await res.json();
+            if (!Array.isArray(txs) || txs.length === 0) break;
+
+            allTxs.push(...txs);
+            const confirmed = txs.filter((tx: any) => tx.status?.confirmed);
+            if (confirmed.length < 25) break;
+
+            endpoint = `${MEMPOOL_URL}/address/${address}/txs/chain/${confirmed[confirmed.length - 1].txid}`;
+        }
+
+        return mapMempoolTransactions(allTxs, address);
     } catch (err) {
-        console.error(`Mempool fetch error:`, err);
-        return [];
+        console.error(`Mempool fetch error for ${address}:`, err);
+        throw err;
     }
 }
 
 export async function fetchBlockchainInfoTransactions(address: string): Promise<WalletTx[]> {
+    const allTxs: any[] = [];
+
     try {
-        const res = await fetch(`https://blockchain.info/rawaddr/${address}?limit=100`, {
-            cache: 'no-store',
-        });
-        if (!res.ok) return [];
+        for (let page = 0; page < BLOCKCHAIN_INFO_MAX_PAGES; page += 1) {
+            const offset = page * BLOCKCHAIN_INFO_LIMIT;
+            const res = await fetch(
+                `https://blockchain.info/rawaddr/${address}?limit=${BLOCKCHAIN_INFO_LIMIT}&offset=${offset}`,
+                { cache: 'no-store' }
+            );
+            if (!res.ok) {
+                throw new Error(`blockchain.info returned ${res.status}`);
+            }
 
-        const data = await res.json();
-        const txs = data.txs || [];
+            const data = await res.json();
+            const txs = Array.isArray(data.txs) ? data.txs : [];
+            allTxs.push(...txs);
+            if (txs.length < BLOCKCHAIN_INFO_LIMIT) break;
+        }
 
-        return txs.map((t: any) => {
+        return allTxs.map((t: any) => {
             const received = t.out.reduce((acc: number, o: any) => {
                 if (o.addr?.toLowerCase() === address.toLowerCase()) return acc + o.value;
                 return acc;
@@ -87,19 +112,17 @@ export async function fetchBlockchainInfoTransactions(address: string): Promise<
             }, 0);
 
             const net = received - sent;
+            if (net <= 0) return null;
 
-            if (net > 0) {
-                return {
-                    txid: t.hash,
-                    timestamp: t.time * 1000,
-                    amount: net / 100_000_000,
-                };
-            }
-            return null;
-        }).filter((t: any): t is WalletTx => t !== null);
+            return {
+                txid: t.hash,
+                timestamp: t.time * 1000,
+                amount: net / 100_000_000,
+            };
+        }).filter((t: WalletTx | null): t is WalletTx => t !== null);
     } catch (err) {
-        console.error(`Blockchain.info fetch error:`, err);
-        return [];
+        console.error(`Blockchain.info fetch error for ${address}:`, err);
+        throw err;
     }
 }
 
@@ -123,16 +146,20 @@ export async function getPriceHistory(interval: string = '1d', limit: number = 1
 }
 
 export async function syncWallet(walletId: string, address: string) {
-    const [mempoolTxs, bcInfoTxs, priceHistory, currentPrice] = await Promise.all([
-        fetchMempoolTransactions(address),
-        fetchBlockchainInfoTransactions(address),
+    const [mempoolResult, bcInfoResult, priceHistory, currentPrice] = await Promise.all([
+        fetchMempoolTransactions(address).then(value => ({ value, error: null })).catch(error => ({ value: [] as WalletTx[], error })),
+        fetchBlockchainInfoTransactions(address).then(value => ({ value, error: null })).catch(error => ({ value: [] as WalletTx[], error })),
         getPriceHistory('1d', 1000),
         getCurrentBtcPrice(),
     ]);
 
+    if (mempoolResult.error && bcInfoResult.error) {
+        throw new Error(`Both blockchain sources failed for ${address}`);
+    }
+
     const allTxsMap = new Map<string, WalletTx>();
-    mempoolTxs.forEach(tx => allTxsMap.set(tx.txid, tx));
-    bcInfoTxs.forEach(tx => {
+    mempoolResult.value.forEach(tx => allTxsMap.set(tx.txid, tx));
+    bcInfoResult.value.forEach(tx => {
         if (!allTxsMap.has(tx.txid)) allTxsMap.set(tx.txid, tx);
     });
 
@@ -142,7 +169,6 @@ export async function syncWallet(walletId: string, address: string) {
         select: { txid: true },
     });
     const existingSet = new Set(existingTxs.map((t: { txid: string }) => t.txid));
-
     const newTxs = uniqueTxs.filter(tx => !existingSet.has(tx.txid));
 
     if (newTxs.length > 0) {
@@ -159,13 +185,17 @@ export async function syncWallet(walletId: string, address: string) {
             };
         });
 
-        await db.bitcoinTransaction.createMany({
-            data: toInsert,
-            skipDuplicates: true,
-        });
+        await db.bitcoinTransaction.createMany({ data: toInsert, skipDuplicates: true });
     }
 
-    return { added: newTxs.length, total: uniqueTxs.length };
+    return {
+        added: newTxs.length,
+        total: uniqueTxs.length,
+        sources: {
+            mempool: mempoolResult.error ? 'failed' : 'ok',
+            blockchainInfo: bcInfoResult.error ? 'failed' : 'ok',
+        },
+    };
 }
 
 export async function getCurrentBtcPrice(): Promise<number> {
@@ -174,9 +204,7 @@ export async function getCurrentBtcPrice(): Promise<number> {
     if (cmcKey) {
         try {
             const res = await fetch('https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC', {
-                headers: {
-                    'X-CMC_PRO_API_KEY': cmcKey,
-                },
+                headers: { 'X-CMC_PRO_API_KEY': cmcKey },
                 next: { revalidate: 60 },
             });
             const data = await res.json();
@@ -187,9 +215,7 @@ export async function getCurrentBtcPrice(): Promise<number> {
     }
 
     try {
-        const res = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot', {
-            next: { revalidate: 60 },
-        });
+        const res = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot', { next: { revalidate: 60 } });
         const data = await res.json();
         return Number(data?.data?.amount || 0);
     } catch (e) {
@@ -201,23 +227,15 @@ export async function getBitcoinAthMeta(): Promise<BitcoinAthMeta | null> {
     try {
         const res = await fetch(
             'https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false',
-            {
-                cache: 'no-store',
-                headers: getCoinGeckoHeaders(),
-            }
+            { cache: 'no-store', headers: getCoinGeckoHeaders() }
         );
 
-        if (!res.ok) {
-            return null;
-        }
+        if (!res.ok) return null;
 
         const data = await res.json();
         const ath = Number(data?.market_data?.ath?.usd ?? 0);
         const athDate = data?.market_data?.ath_date?.usd;
-
-        if (!ath || !athDate) {
-            return null;
-        }
+        if (!ath || !athDate) return null;
 
         return { ath, athDate };
     } catch (e) {
