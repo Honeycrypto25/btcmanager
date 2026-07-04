@@ -36,17 +36,6 @@ export default withAuth(
             authorized: ({ token, req }) => {
                 // Protect all routes except auth pages
                 const isAuthPage = req.nextUrl.pathname.startsWith("/auth");
-
-                // TEMPORARY DEBUG LOGGING — remove after diagnosing the redirect loop
-                const cookieNames = req.cookies.getAll().map(c => c.name);
-                console.log(
-                    "[mw-debug]",
-                    req.nextUrl.pathname,
-                    "hasToken=", !!token,
-                    "tokenSub=", (token as any)?.sub ?? (token as any)?.id,
-                    "cookies=", JSON.stringify(cookieNames)
-                );
-
                 if (isAuthPage) return true;
                 return !!token;
             },

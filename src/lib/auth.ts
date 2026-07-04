@@ -33,8 +33,6 @@ export const authOptions: NextAuthOptions = {
                     where: { email: normalizedEmail },
                 });
 
-                console.log("[auth-debug] authorize: email=", normalizedEmail, "userFound=", !!user);
-
                 if (!user) {
                     throw new Error("User not found");
                 }
@@ -43,27 +41,17 @@ export const authOptions: NextAuthOptions = {
                 const adminEmails = process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()) || [];
                 const isAllowed = adminEmails.includes(user.email!.toLowerCase());
 
-                console.log("[auth-debug] authorize: isAllowed=", isAllowed, "adminEmailsCount=", adminEmails.length);
-
                 if (!isAllowed) {
                     throw new Error("AccessDenied");
                 }
 
                 // Verify OTP — comparăm hash-uri pentru a nu expune OTP-ul plaintext
-                const codeHash = hashOtp(credentials.code);
-                const hasOtp = !!user.loginOtp;
-                const hasExpiry = !!user.loginOtpExpires;
-                const notExpired = hasExpiry ? new Date() <= user.loginOtpExpires! : false;
-                const hashMatches = user.loginOtp === codeHash;
-
-                console.log(
-                    "[auth-debug] authorize: hasOtp=", hasOtp,
-                    "hasExpiry=", hasExpiry,
-                    "notExpired=", notExpired,
-                    "hashMatches=", hashMatches
-                );
-
-                if (!hasOtp || !hasExpiry || !notExpired || !hashMatches) {
+                if (
+                    !user.loginOtp ||
+                    !user.loginOtpExpires ||
+                    new Date() > user.loginOtpExpires ||
+                    user.loginOtp !== hashOtp(credentials.code)
+                ) {
                     throw new Error("Invalid or expired code");
                 }
 
@@ -75,8 +63,6 @@ export const authOptions: NextAuthOptions = {
                         loginOtpExpires: null,
                     },
                 });
-
-                console.log("[auth-debug] authorize: SUCCESS, returning user id=", user.id);
 
                 return {
                     id: user.id,
@@ -96,12 +82,9 @@ export const authOptions: NextAuthOptions = {
             const adminEmails = process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()) || [];
             const isAllowed = adminEmails.includes(user.email.toLowerCase());
 
-            console.log("[auth-debug] signIn callback: email=", user.email, "isAllowed=", isAllowed);
-
             return isAllowed;
         },
         async jwt({ token, user, trigger, session }) {
-            console.log("[auth-debug] jwt callback: hasUser=", !!user, "trigger=", trigger, "tokenSubBefore=", token.sub);
             if (user) {
                 token.id = user.id;
                 token.role = (user as any).role;

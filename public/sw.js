@@ -1,5 +1,5 @@
-const STATIC_CACHE = "btc-manager-static-v1";
-const RUNTIME_CACHE = "btc-manager-runtime-v1";
+const STATIC_CACHE = "btc-manager-static-v2";
+const RUNTIME_CACHE = "btc-manager-runtime-v2";
 const OFFLINE_URL = "/offline";
 
 self.addEventListener("install", (event) => {
@@ -41,6 +41,13 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Never cache API routes — auth (csrf/session/providers), wallets, etc.
+  // must always hit the network. Caching these broke login: a stale CSRF
+  // token or session response would be served forever from cache.
+  if (url.pathname.startsWith("/api/")) {
     return;
   }
 
