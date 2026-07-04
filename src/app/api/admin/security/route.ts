@@ -25,7 +25,13 @@ export async function GET(req: NextRequest) {
         const secret = generateTotpSecret();
         const qrCodeUrl = await generateQrCodeUrl(session.user.email, secret);
 
-        return NextResponse.json({ secret, qrCodeUrl });
+        // Salvăm secretul temporar pe server — NU îl trimitem înapoi de la client la POST
+        await db.user.update({
+            where: { email: session.user.email },
+            data: { pendingTotpSecret: secret }
+        });
+
+        return NextResponse.json({ qrCodeUrl });
     }
 
     return NextResponse.json({ enabled: user.twoFactorEnabled });
@@ -37,17 +43,32 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
-        const { token, secret } = await req.json();
-        if (!token || !secret) return NextResponse.json({ error: "Missing token or secret" }, { status: 400 });
+        const { token } = await req.json();
+        if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
 
-        const isValid = await verifyTotpToken(token, secret);
+        // Citim secretul din DB — nu din request (previne injectarea unui secret extern)
+        const user = await db.user.findUnique({
+            where: { email: session.user.email },
+            select: { pendingTotpSecret: true, twoFactorEnabled: true }
+        });
+
+        if (!user?.pendingTotpSecret) {
+            return NextResponse.json({ error: "No pending 2FA setup. Start setup again." }, { status: 400 });
+        }
+        if (user.twoFactorEnabled) {
+            return NextResponse.json({ error: "2FA already enabled" }, { status: 400 });
+        }
+
+        const isValid = verifyTotpToken(token, user.pendingTotpSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
+        // Activăm 2FA și ștergem secretul temporar
         await db.user.update({
             where: { email: session.user.email },
             data: {
-                twoFactorSecret: secret,
-                twoFactorEnabled: true
+                twoFactorSecret: user.pendingTotpSecret,
+                twoFactorEnabled: true,
+                pendingTotpSecret: null
             }
         });
 
@@ -71,7 +92,7 @@ export async function DELETE(req: NextRequest) {
 
         if (!user?.twoFactorSecret) return NextResponse.json({ error: "2FA not enabled" }, { status: 400 });
 
-        const isValid = await verifyTotpToken(token, user.twoFactorSecret);
+        const isValid = verifyTotpToken(token, user.twoFactorSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
         await db.user.update({

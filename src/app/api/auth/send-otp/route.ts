@@ -2,8 +2,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateToken } from "@/lib/token";
 import { Resend } from "resend";
+import crypto from "crypto";
+
+function hashOtp(otp: string): string {
+    return crypto.createHash("sha256").update(otp).digest("hex");
+}
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Rate limiting: max 3 cereri per email la fiecare 10 minute, max 1 la fiecare 60 secunde
+const OTP_COOLDOWN_SECONDS = 60;
+const OTP_MAX_PER_WINDOW = 3;
+const OTP_WINDOW_MINUTES = 10;
 
 export async function POST(req: Request) {
     try {
@@ -36,16 +46,53 @@ export async function POST(req: Request) {
             });
         }
 
-        // 2. Generate OTP
+        // 2. Rate limiting bazat pe DB
+        if (user.loginOtpExpires) {
+            // Cooldown: blochează dacă ultimul OTP a fost trimis acum mai puțin de 60 secunde
+            const otpCreatedAt = new Date(user.loginOtpExpires.getTime() - 15 * 60 * 1000);
+            const secondsSinceLast = (Date.now() - otpCreatedAt.getTime()) / 1000;
+            if (secondsSinceLast < OTP_COOLDOWN_SECONDS) {
+                const retryAfter = Math.ceil(OTP_COOLDOWN_SECONDS - secondsSinceLast);
+                return NextResponse.json(
+                    { error: `Please wait ${retryAfter} seconds before requesting a new code.` },
+                    { status: 429 }
+                );
+            }
+        }
+
+        // Window: max 3 OTP-uri în 10 minute (verificăm prin otpAttempts)
+        const windowStart = new Date(Date.now() - OTP_WINDOW_MINUTES * 60 * 1000);
+        if (
+            user.otpWindowStart &&
+            user.otpWindowStart > windowStart &&
+            (user.otpAttempts ?? 0) >= OTP_MAX_PER_WINDOW
+        ) {
+            return NextResponse.json(
+                { error: "Too many code requests. Please try again in 10 minutes." },
+                { status: 429 }
+            );
+        }
+
+        // Resetează fereastra dacă a expirat
+        const newWindowStart = (!user.otpWindowStart || user.otpWindowStart <= windowStart)
+            ? new Date()
+            : user.otpWindowStart;
+        const newAttempts = (!user.otpWindowStart || user.otpWindowStart <= windowStart)
+            ? 1
+            : (user.otpAttempts ?? 0) + 1;
+
+        // 3. Generate OTP
         const otp = generateToken(6);
         const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-        // 3. Save to DB
+        // 4. Save to DB — stocăm hash-ul SHA-256, nu OTP-ul în clar
         await db.user.update({
             where: { id: user.id },
             data: {
-                loginOtp: otp,
+                loginOtp: hashOtp(otp),
                 loginOtpExpires: expires,
+                otpAttempts: newAttempts,
+                otpWindowStart: newWindowStart,
             },
         });
 

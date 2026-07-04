@@ -1,5 +1,6 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { verify2faCookie, COOKIE_NAME } from "@/lib/cookie-sign";
 
 export default withAuth(
     async function middleware(req) {
@@ -16,7 +17,12 @@ export default withAuth(
         // 2. If user is logged in, check if 2FA is required and verified
         if (isAuth && !isAuthPage) {
             const requires2fa = (token as any).requires2fa;
-            const is2faVerified = req.cookies.get("2fa_verified")?.value === "true";
+            const userId = (token as any).id as string | undefined;
+            const rawCookie = req.cookies.get(COOKIE_NAME)?.value;
+
+            // Verifică semnătura HMAC — un string simplu "true" nu mai este acceptat
+            const verifiedUserId = rawCookie ? verify2faCookie(rawCookie) : null;
+            const is2faVerified = !!verifiedUserId && verifiedUserId === userId;
 
             if (requires2fa && !is2faVerified) {
                 return NextResponse.redirect(new URL("/auth/totp", req.url));

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { verifyTotpToken } from "@/lib/totp";
 import { cookies } from "next/headers";
+import { sign2faCookie, COOKIE_NAME } from "@/lib/cookie-sign";
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -15,24 +16,23 @@ export async function POST(req: NextRequest) {
 
         const user = await db.user.findUnique({
             where: { email: session.user.email },
-            select: { twoFactorSecret: true, twoFactorEnabled: true }
+            select: { id: true, twoFactorSecret: true, twoFactorEnabled: true }
         });
 
         if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
             return NextResponse.json({ error: "2FA not enabled for this account" }, { status: 400 });
         }
 
-        const isValid = await verifyTotpToken(token, user.twoFactorSecret);
+        const isValid = verifyTotpToken(token, user.twoFactorSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
-        // Set a secure, HTTP-only cookie to track 2FA verification for this session
-        // In a real production app, this should be a signed JWT or similar.
+        // Cookie semnat HMAC-SHA256 cu userId + timestamp — nu poate fi falsificat
         const cookieStore = await cookies();
-        cookieStore.set('2fa_verified', 'true', {
+        cookieStore.set(COOKIE_NAME, sign2faCookie(user.id), {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',
-            maxAge: 60 * 60 * 24, // 24 hours
+            maxAge: 60 * 60 * 24, // 24 ore
             path: '/'
         });
 

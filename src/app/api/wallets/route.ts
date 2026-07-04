@@ -33,6 +33,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(wallets);
 }
 
+// Validare format adresă Bitcoin: Legacy (1...), SegWit (3...), Bech32 (bc1...)
+function isValidBitcoinAddress(address: string): boolean {
+    return /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87})$/.test(address);
+}
+
 /** POST: Add a new wallet */
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -43,6 +48,10 @@ export async function POST(req: NextRequest) {
         if (!name || !address) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
         const normalizedAddress = address.trim();
+
+        if (!isValidBitcoinAddress(normalizedAddress)) {
+            return NextResponse.json({ error: "Invalid Bitcoin address format" }, { status: 400 });
+        }
         const wallet = await db.bitcoinWallet.create({
             data: { name, address: normalizedAddress },
         });

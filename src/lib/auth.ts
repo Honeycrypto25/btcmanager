@@ -2,6 +2,11 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { db } from "./db";
+import crypto from "crypto";
+
+function hashOtp(otp: string): string {
+    return crypto.createHash("sha256").update(otp).digest("hex");
+}
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(db),
@@ -37,12 +42,12 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("AccessDenied");
                 }
 
-                // Verify OTP
+                // Verify OTP — comparăm hash-uri pentru a nu expune OTP-ul plaintext
                 if (
                     !user.loginOtp ||
                     !user.loginOtpExpires ||
                     new Date() > user.loginOtpExpires ||
-                    user.loginOtp !== credentials.code
+                    user.loginOtp !== hashOtp(credentials.code)
                 ) {
                     throw new Error("Invalid or expired code");
                 }

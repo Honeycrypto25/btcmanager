@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await client.responses.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       tools: [{ type: "web_search_preview" }],
       input: [
         {

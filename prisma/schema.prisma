@@ -10,6 +10,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -23,10 +24,13 @@ model User {
   // 2FA Fields
   twoFactorSecret     String?
   twoFactorEnabled    Boolean   @default(false)
+  pendingTotpSecret   String?   // Secret temporar la setup 2FA — șters după activare
 
   // OTP Login Fields
   loginOtp            String?
   loginOtpExpires     DateTime?
+  otpAttempts         Int?      // Rate limiting: număr cereri în fereastra curentă
+  otpWindowStart      DateTime? // Rate limiting: începutul ferestrei de 10 minute
   
   accounts      Account[]
   sessions      Session[]
