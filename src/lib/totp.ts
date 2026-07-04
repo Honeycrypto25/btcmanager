@@ -38,16 +38,30 @@ function base32Encode(bytes: Uint8Array): string {
 }
 
 async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
+    // Construiește 8-byte big-endian counter
     const counterBytes = new Uint8Array(8);
     let c = counter;
     for (let i = 7; i >= 0; i--) {
         counterBytes[i] = Number(c & 0xffn);
         c >>= 8n;
     }
+
+    // HMAC-SHA1 cu Web Crypto API
     const key = await crypto.subtle.importKey(
-        'raw', secret, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+        'raw',
+        secret.buffer.slice(secret.byteOffset, secret.byteOffset + secret.byteLength),
+        { name: 'HMAC', hash: 'SHA-1' },
+        false,
+        ['sign']
     );
-    const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, counterBytes));
+
+    const hmacResult = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        counterBytes.buffer.slice(counterBytes.byteOffset, counterBytes.byteOffset + counterBytes.byteLength)
+    );
+
+    const sig = new Uint8Array(hmacResult);
     const offset = sig[19] & 0xf;
     const code = ((sig[offset] & 0x7f) << 24)
         | (sig[offset + 1] << 16)
