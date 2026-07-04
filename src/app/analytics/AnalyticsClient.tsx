@@ -54,25 +54,25 @@ export default function AnalyticsClient({ wallets, transactions }: AnalyticsClie
         <div className="space-y-6">
             {/* Header */}
             <div>
-                <h1 className="text-4xl font-black tracking-tight text-white mb-2 flex items-center gap-3">
+                <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1 flex items-center gap-3">
                     <LineChart className="w-8 h-8 text-primary" />
                     Analytics <span className="gradient-text">& Charts</span>
                 </h1>
-                <p className="text-gray-500 font-medium tracking-wide">
+                <p className="text-muted text-sm">
                     Visual analysis of your purchase history across wallets.
                 </p>
             </div>
 
             {/* Wallet Filter */}
-            <Card className="p-4 border-white/5 space-y-4">
+            <Card className="p-4 border-border space-y-4">
                 <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-gray-500" />
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-muted" />
                         Filter by Wallet
                     </h3>
                     <button
                         onClick={toggleAll}
-                        className="text-[10px] font-bold uppercase tracking-widest text-primary hover:text-white transition-colors"
+                        className="text-[10px] font-bold uppercase tracking-widest text-primary hover:text-foreground transition-colors"
                     >
                         {selectedWalletIds.length === wallets.length ? 'Deselect All' : 'Select All'}
                     </button>
@@ -88,8 +88,8 @@ export default function AnalyticsClient({ wallets, transactions }: AnalyticsClie
                                 className={cn(
                                     "px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2",
                                     isSelected
-                                        ? "bg-primary text-black border-primary shadow-[0_0_15px_rgba(247,147,26,0.2)]"
-                                        : "bg-glass border-white/5 text-gray-500 hover:border-white/20 hover:text-white"
+                                        ? "bg-primary text-black border-primary"
+                                        : "bg-glass border-border text-muted hover:border-white/20 hover:text-foreground"
                                 )}
                             >
                                 {wallet.name}

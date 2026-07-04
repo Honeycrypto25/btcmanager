@@ -26,13 +26,13 @@ export async function GET(req: NextRequest) {
         const secret = generateTotpSecret();
         const qrCodeUrl = await generateQrCodeUrl(session.user.email, secret);
 
-        // Salvăm secretul temporar pe server — NU îl trimitem înapoi de la client la POST
+        // Salvăm secretul temporar pe server — POST-ul de verificare NU va accepta niciun secret trimis de client
         await db.user.update({
             where: { email: session.user.email },
             data: { pendingTotpSecret: secret }
         });
 
-        return NextResponse.json({ qrCodeUrl });
+        return NextResponse.json({ secret, qrCodeUrl });
     }
 
     return NextResponse.json({ enabled: user.twoFactorEnabled });

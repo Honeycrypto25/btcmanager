@@ -69,59 +69,57 @@ export default function SignInPage() {
     };
 
     return (
-        <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,169,95,0.16),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(142,197,164,0.12),transparent_28%)]" />
-
-            <Card className="relative w-full max-w-[28rem] space-y-8 p-6 sm:p-10 animate-in fade-in zoom-in duration-500">
-                <div className="text-center space-y-3">
-                    <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-[1.35rem] border border-primary/30 bg-primary/12 text-primary shadow-[0_18px_40px_rgba(214,169,95,0.16)] animate-float">
-                        <Bitcoin className="h-9 w-9" />
+        <div className="relative flex min-h-screen items-center justify-center px-4 py-10 sm:px-6 bg-background">
+            <Card className="relative w-full max-w-[26rem] space-y-7 p-6 sm:p-9">
+                <div className="text-center space-y-2.5">
+                    <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
+                        <Bitcoin className="h-6 w-6" />
                     </div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.42em] text-stone-500">Private access</p>
-                    <h1 className="font-display text-5xl leading-none gradient-text">BTC Manager</h1>
-                    <p className="mx-auto max-w-sm text-sm leading-6 text-stone-400">
-                        {step === 'email' ? 'Sign in with your authorized email to access the portfolio control room.' : `Enter the code sent to ${email}`}
+                    <p className="text-[10px] font-medium uppercase tracking-[0.3em] text-faint">Private access</p>
+                    <h1 className="font-display text-2xl font-medium text-foreground">BTC Manager</h1>
+                    <p className="mx-auto max-w-sm text-sm leading-6 text-muted">
+                        {step === 'email' ? 'Sign in with your authorized email to access your portfolio.' : `Enter the code sent to ${email}`}
                     </p>
                 </div>
 
                 <form onSubmit={step === 'email' ? handleSendOtp : handleLogin} className="space-y-4">
                     {step === 'email' ? (
                         <div className="space-y-2">
-                            <label className="ml-1 text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
-                                Email Address
+                            <label className="ml-1 text-xs font-medium uppercase tracking-wider text-faint">
+                                Email address
                             </label>
                             <div className="relative group">
-                                <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500 transition-colors group-focus-within:text-primary" />
+                                <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint transition-colors group-focus-within:text-primary" />
                                 <input
                                     type="email"
                                     placeholder="name@example.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    className="w-full rounded-[1.35rem] border border-border bg-white/[0.04] py-4 pl-12 pr-4 text-white placeholder:text-stone-600 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all"
+                                    className="w-full rounded-lg border border-border bg-white/[0.03] py-3 pl-10 pr-4 text-foreground placeholder:text-faint focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
                                 />
                             </div>
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            <label className="ml-1 text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
-                                Verification Code
+                            <label className="ml-1 text-xs font-medium uppercase tracking-wider text-faint">
+                                Verification code
                             </label>
                             <div className="relative group">
-                                <KeyRound className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500 transition-colors group-focus-within:text-primary" />
+                                <KeyRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint transition-colors group-focus-within:text-primary" />
                                 <input
                                     type="text"
                                     placeholder="123456"
                                     value={code}
                                     onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                     required
-                                    className="w-full rounded-[1.35rem] border border-border bg-white/[0.04] py-4 pl-12 pr-4 text-center font-mono text-lg tracking-[0.5em] text-white placeholder:text-stone-600 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-all"
+                                    className="w-full rounded-lg border border-border bg-white/[0.03] py-3 pl-10 pr-4 text-center font-num text-lg tracking-[0.4em] text-foreground placeholder:text-faint focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
                                 />
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setStep('email')}
-                                className="w-full text-center text-xs text-stone-500 underline transition-colors hover:text-white"
+                                className="w-full text-center text-xs text-faint underline transition-colors hover:text-foreground"
                             >
                                 Change email
                             </button>
@@ -129,7 +127,7 @@ export default function SignInPage() {
                     )}
 
                     {error && (
-                        <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">
+                        <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-300">
                             {error}
                         </div>
                     )}
@@ -142,18 +140,18 @@ export default function SignInPage() {
                         disabled={loading}
                     >
                         {loading ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                             <>
-                                {step === 'email' ? 'Send Code' : 'Secure Login'}
-                                <ArrowRight className="w-4 h-4 ml-2" />
+                                {step === 'email' ? 'Send code' : 'Secure login'}
+                                <ArrowRight className="w-4 h-4 ml-1" />
                             </>
                         )}
                     </Button>
                 </form>
 
-                <p className="text-center text-xs leading-5 text-stone-500">
-                    This is a private administrative dashboard. <br />
+                <p className="text-center text-xs leading-5 text-faint">
+                    This is a private administrative dashboard.<br />
                     Access is restricted to authorized personnel only.
                 </p>
             </Card>

@@ -10,11 +10,10 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    ReferenceDot,
-    ReferenceLine
+    ReferenceDot
 } from 'recharts';
 import { Card } from "@/components/ui/core";
-import { Loader2, TrendingUp, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 
 interface Transaction {
@@ -128,10 +127,10 @@ export default function PriceChart({ transactions }: PriceChartProps) {
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-[#101010] border border-white/10 p-3 rounded-xl shadow-xl">
-                    <p className="text-gray-400 text-xs mb-1">{format(new Date(label), 'MMM dd, yyyy')}</p>
-                    <p className="text-white font-bold text-sm">
-                        Price: <span className="text-primary">{formatCurrency(payload[0].value)}</span>
+                <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg">
+                    <p className="text-faint text-xs mb-1">{format(new Date(label), 'MMM dd, yyyy')}</p>
+                    <p className="text-foreground font-medium text-sm font-num">
+                        {formatCurrency(payload[0].value)}
                     </p>
                 </div>
             );
@@ -139,32 +138,23 @@ export default function PriceChart({ transactions }: PriceChartProps) {
         return null;
     };
 
-    // Custom Dot for Transactions
-    const renderCustomDot = (props: any) => {
-        const { cx, cy, payload } = props;
-        // Check if there's a transaction close to this point? 
-        // Actually ReferenceDot is better for specific disconnected points.
-        return null;
-    };
-
     return (
-        <Card className="p-6 border-white/5 relative overflow-hidden">
-            <div className="flex justify-between items-center mb-6">
+        <Card className="p-6 relative overflow-hidden h-full flex flex-col">
+            <div className="flex justify-between items-center mb-5">
                 <div>
-                    <h3 className="text-lg font-black text-white flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5 text-primary" />
-                        Buy Frequency
+                    <h3 className="text-sm font-medium text-foreground">
+                        Price history
                     </h3>
-                    <p className="text-xs text-gray-500 font-medium">
-                        Bitcoin price with your purchase points overlay.
+                    <p className="text-xs text-faint mt-0.5">
+                        Bitcoin price with your purchase points
                     </p>
                 </div>
-                <div className="flex bg-glass border border-white/5 rounded-xl p-1">
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                     {[30, 90, 'max'].map(d => (
                         <button
                             key={d}
                             onClick={() => setDays(d as number | 'max')}
-                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${days === d ? 'bg-primary text-black' : 'text-gray-500 hover:text-white'
+                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${days === d ? 'bg-primary text-black' : 'text-muted hover:text-foreground'
                                 }`}
                         >
                             {d === 'max' ? 'ALL' : `${d}D`}
@@ -175,14 +165,14 @@ export default function PriceChart({ transactions }: PriceChartProps) {
 
             {/* Wallet Filters */}
             {allWallets.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-6 px-1">
+                <div className="flex flex-wrap gap-1.5 mb-5">
                     {allWallets.map(wallet => (
                         <button
                             key={wallet}
                             onClick={() => toggleWallet(wallet)}
-                            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border transition-all ${selectedWallets.includes(wallet)
-                                ? 'bg-primary/20 text-primary border-primary/50'
-                                : 'bg-transparent text-gray-500 border-white/10 hover:border-white/30'
+                            className={`px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors ${selectedWallets.includes(wallet)
+                                ? 'bg-primary/10 text-primary border-primary/30'
+                                : 'bg-transparent text-faint border-border hover:border-border-strong'
                                 }`}
                         >
                             {wallet}
@@ -191,45 +181,48 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                 </div>
             )}
 
-            <div className="h-[300px] w-full">
+            <div className="h-[280px] w-full flex-1">
                 {loading ? (
                     <div className="h-full flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
                     </div>
                 ) : error ? (
-                    <div className="h-full flex items-center justify-center text-red-500 gap-2">
-                        <AlertCircle className="w-5 h-5" />
-                        <span className="text-sm font-medium">{error}</span>
+                    <div className="h-full flex items-center justify-center text-red-400 gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="text-sm">{error}</span>
                     </div>
                 ) : (
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={priceData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                            <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
                             <XAxis
                                 dataKey="date"
                                 tickFormatter={(tick) => format(new Date(tick), 'MMM dd')}
-                                stroke="#555"
-                                tick={{ fontSize: 10, fill: '#666' }}
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
                                 minTickGap={30}
                                 type="number"
                                 domain={['dataMin', 'dataMax']}
                                 scale="time"
+                                tickLine={false}
                             />
                             <YAxis
                                 domain={['auto', 'auto']}
-                                stroke="#555"
-                                tick={{ fontSize: 10, fill: '#666' }}
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
                                 tickFormatter={(val) => `$${val.toLocaleString()}`}
                                 width={50}
+                                tickLine={false}
+                                axisLine={false}
                             />
-                            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#ffffff20' }} />
+                            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
                             <Line
                                 type="monotone"
                                 dataKey="price"
-                                stroke="#F7931A"
-                                strokeWidth={2}
+                                stroke="#d6a24c"
+                                strokeWidth={1.5}
                                 dot={false}
-                                activeDot={{ r: 4, fill: '#fff' }}
+                                activeDot={{ r: 3, fill: '#d6a24c', strokeWidth: 0 }}
                             />
 
                             {/* Render Buy Points as Reference Dots */}
@@ -238,20 +231,10 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                                     key={tx.id}
                                     x={tx.date}
                                     y={tx.priceAtTime}
-                                    r={6}
-                                    fill="#22c55e"
-                                    stroke="#fff"
-                                    strokeWidth={2}
-                                >
-                                    {/* <Label 
-                                        value="BUY" 
-                                        position="top" 
-                                        fill="#22c55e" 
-                                        fontSize={10} 
-                                        fontWeight="bold"
-                                        offset={10}
-                                    /> */}
-                                </ReferenceDot>
+                                    r={3.5}
+                                    fill="#52c98a"
+                                    stroke="none"
+                                />
                             ))}
                         </LineChart>
                     </ResponsiveContainer>
@@ -259,13 +242,13 @@ export default function PriceChart({ transactions }: PriceChartProps) {
             </div>
 
             <div className="mt-4 flex items-center justify-center gap-4 text-xs">
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-0.5 bg-[#F7931A]" />
-                    <span className="text-gray-400">BTC Price</span>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-0.5 bg-primary" />
+                    <span className="text-faint">BTC price</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500 border border-white" />
-                    <span className="text-gray-400">Your Buys</span>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-accent" />
+                    <span className="text-faint">Your buys</span>
                 </div>
             </div>
         </Card>

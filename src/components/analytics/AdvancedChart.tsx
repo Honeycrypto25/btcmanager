@@ -99,7 +99,7 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
                 return {
                     time: txTime as UTCTimestamp,
                     position: 'belowBar',
-                    color: '#22c55e',
+                    color: '#52c98a',
                     shape: 'arrowUp',
                     text: `Buy ${tx.amount.toFixed(4)}`,
                     size: 1,
@@ -119,7 +119,7 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { type: ColorType.Solid, color: 'transparent' },
-                textColor: '#d1d5db',
+                textColor: '#8c8a80',
             },
             grid: {
                 vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
@@ -131,22 +131,22 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
                 mode: CrosshairMode.Normal,
             },
             timeScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
                 timeVisible: true,
             },
             rightPriceScale: {
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
             },
         });
 
         chartRef.current = chart;
 
         const candlestickSeries = chart.addSeries(CandlestickSeries, {
-            upColor: '#22c55e',
-            downColor: '#ef4444',
+            upColor: '#52c98a',
+            downColor: '#e5605a',
             borderVisible: false,
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
+            wickUpColor: '#52c98a',
+            wickDownColor: '#e5605a',
         });
 
         candlestickSeries.setData(ohlcData);
@@ -200,27 +200,27 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
     }, [ohlcData, markers, transactions, timeframe]);
 
     return (
-        <Card className="p-0 border-white/5 bg-[#080808] flex flex-col">
+        <Card className="p-0 flex flex-col">
             {/* Header with Title and Selectors */}
-            <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-white/5 gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-center p-4 border-b border-border gap-4">
                 <div className="flex items-center gap-2 self-start md:self-auto">
-                    <TrendingUp className="w-5 h-5 text-primary" />
+                    <TrendingUp className="w-4 h-4 text-primary" />
                     <div>
-                        <h3 className="text-lg font-black text-white">Advanced Analysis</h3>
-                        <p className="text-xs text-gray-500 font-medium">Binance Data • {timeframe} Candle</p>
+                        <h3 className="text-sm font-medium text-foreground">Advanced analysis</h3>
+                        <p className="text-xs text-faint">Binance data &middot; {timeframe} candle</p>
                     </div>
                 </div>
 
-                <div className="flex bg-white/5 rounded-lg p-1 border border-white/5 overflow-x-auto max-w-full">
+                <div className="flex bg-white/[0.03] rounded-lg p-0.5 border border-border overflow-x-auto max-w-full">
                     {(['1D', '1W', '1M', '3M', '1Y', 'ALL'] as Timeframe[]).map((t) => (
                         <button
                             key={t}
                             onClick={() => setTimeframe(t)}
                             className={cn(
-                                "px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap",
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap",
                                 timeframe === t
-                                    ? "bg-primary text-black shadow-lg shadow-primary/20"
-                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                                    ? "bg-primary text-black"
+                                    : "text-muted hover:text-foreground hover:bg-white/5"
                             )}
                         >
                             {t}
@@ -231,17 +231,17 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
 
             <div ref={chartContainerRef} className="w-full h-[500px] relative">
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm transition-all">
-                        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-20 transition-opacity">
+                        <Loader2 className="w-6 h-6 text-primary animate-spin" />
                     </div>
                 )}
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20 text-red-500 gap-2 backdrop-blur-sm">
-                        <AlertCircle className="w-5 h-5" />
-                        <span className="text-sm font-bold">{error}</span>
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-20 text-red-400 gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span className="text-sm font-medium">{error}</span>
                         <button
                             onClick={() => setTimeframe('3M')}
-                            className="ml-4 px-3 py-1 bg-white/10 text-white text-xs rounded-md hover:bg-white/20"
+                            className="ml-4 px-3 py-1 bg-white/10 text-foreground text-xs rounded-md hover:bg-white/20"
                         >
                             Retry
                         </button>

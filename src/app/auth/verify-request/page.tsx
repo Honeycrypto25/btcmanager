@@ -7,17 +7,15 @@ import Link from 'next/link';
 
 export default function VerifyRequestPage() {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#050505] p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/10 blur-[150px] rounded-full -z-10" />
-
-            <Card className="max-w-md w-full p-10 text-center space-y-6">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-glass border border-white/10 rounded-2xl mb-4">
-                    <Mail className="text-primary w-8 h-8 animate-pulse" />
+        <div className="min-h-screen flex items-center justify-center bg-background p-6">
+            <Card className="max-w-md w-full p-8 text-center space-y-6">
+                <div className="inline-flex items-center justify-center w-12 h-12 bg-primary/10 border border-primary/20 rounded-lg mb-3">
+                    <Mail className="text-primary w-6 h-6" />
                 </div>
 
                 <div className="space-y-2">
-                    <h1 className="text-2xl font-bold tracking-tight text-white">Check your email</h1>
-                    <p className="text-gray-500 text-sm">
+                    <h1 className="font-display text-xl font-medium text-foreground">Check your email</h1>
+                    <p className="text-muted text-sm">
                         We've sent a magic link to your email address. <br />
                         Click the link to sign in securely.
                     </p>
@@ -27,12 +25,12 @@ export default function VerifyRequestPage() {
                     <Link href="/auth/signin">
                         <Button variant="ghost" size="md">
                             <ArrowLeft className="w-4 h-4 mr-2" />
-                            Back to Sign In
+                            Back to sign in
                         </Button>
                     </Link>
                 </div>
 
-                <p className="text-[10px] text-gray-700 uppercase font-bold tracking-widest">
+                <p className="text-[10px] text-faint uppercase font-medium tracking-wider">
                     Link expires in 24 hours
                 </p>
             </Card>

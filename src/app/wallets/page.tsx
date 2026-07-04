@@ -116,10 +116,10 @@ export default function WalletsPage() {
         <DashboardLayout>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-4xl font-black tracking-tight text-white mb-2">
+                    <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
                         Address <span className="gradient-text">Management</span>
                     </h1>
-                    <p className="text-gray-500 font-medium tracking-wide">
+                    <p className="text-muted text-sm">
                         Track and monitor Bitcoin addresses for DCA analysis.
                     </p>
                 </div>
@@ -128,7 +128,7 @@ export default function WalletsPage() {
                         variant="ghost"
                         onClick={handleRefreshAll}
                         disabled={syncingAll || loading}
-                        className="rounded-2xl border border-white/10 bg-glass text-white font-semibold hover:bg-primary/10 hover:text-primary py-6 px-8 transition-all"
+                        className="rounded-lg border border-border text-foreground font-medium hover:bg-white/5 py-2.5 px-6 transition-colors"
                     >
                         <RefreshCcw className={cn("w-5 h-5 mr-2", syncingAll ? "animate-spin" : "")} />
                         Refresh All
@@ -136,7 +136,7 @@ export default function WalletsPage() {
                     <Button
                         variant="primary"
                         onClick={() => setShowAddForm(true)}
-                        className="rounded-2xl shadow-[0_0_20px_rgba(247,147,26,0.1)] py-6 px-8"
+                        className="rounded-lg py-2.5 px-6"
                     >
                         <Plus className="w-5 h-5 mr-2" />
                         Add Address
@@ -147,12 +147,12 @@ export default function WalletsPage() {
             {/* Search & Stats */}
             <div className="flex gap-4">
                 <div className="flex-1 relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600 group-focus-within:text-primary transition-colors" />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-faint group-focus-within:text-primary transition-colors" />
                     <input
                         placeholder="Search by name or address..."
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        className="w-full bg-glass border border-white/5 rounded-3xl py-4 pl-12 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-white/20 transition-all"
+                        className="w-full bg-glass border border-border rounded-2xl py-4 pl-12 pr-4 text-foreground placeholder:text-faint focus:outline-none focus:border-white/20 transition-all"
                     />
                 </div>
             </div>
@@ -162,14 +162,14 @@ export default function WalletsPage() {
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-4">
                         <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Loading addresses...</p>
+                        <p className="text-muted font-bold uppercase tracking-widest text-xs">Loading addresses...</p>
                     </div>
                 ) : filteredWallets.length === 0 ? (
                     <Card className="py-20 text-center space-y-4">
-                        <div className="inline-flex items-center justify-center w-20 h-20 bg-glass border border-white/5 rounded-3xl mb-4">
-                            <Bitcoin className="text-gray-700 w-10 h-10" />
+                        <div className="inline-flex items-center justify-center w-20 h-20 bg-glass border border-border rounded-2xl mb-4">
+                            <Bitcoin className="text-faint w-10 h-10" />
                         </div>
-                        <p className="text-gray-500 font-medium">No Bitcoin addresses found.</p>
+                        <p className="text-muted font-medium">No Bitcoin addresses found.</p>
                         <Button variant="outline" onClick={() => setShowAddForm(true)}>Add your first address</Button>
                     </Card>
                 ) : (
@@ -180,8 +180,8 @@ export default function WalletsPage() {
                                     <Bitcoin className="w-8 h-8" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-black text-white">{wallet.name}</h3>
-                                    <div className="flex items-center gap-2 text-gray-500 font-mono text-sm">
+                                    <h3 className="text-xl font-medium text-foreground">{wallet.name}</h3>
+                                    <div className="flex items-center gap-2 text-muted font-mono text-sm">
                                         <span>{wallet.address}</span>
                                         <div className="flex gap-2 ml-2">
                                             <a href={`https://mempool.space/address/${wallet.address}`} target="_blank" className="p-1 hover:text-primary transition-colors" title="View on Mempool.space">
@@ -197,15 +197,15 @@ export default function WalletsPage() {
 
                             <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end">
                                 <div className="text-right">
-                                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mb-1">Total Tx Count</p>
-                                    <p className="text-xl font-black text-white">{wallet._count?.transactions || 0}</p>
+                                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total Tx Count</p>
+                                    <p className="text-xl font-medium text-foreground">{wallet._count?.transactions || 0}</p>
                                 </div>
 
                                 <div className="flex items-center gap-2">
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="w-12 h-12 rounded-2xl bg-glass border border-white/5 hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
+                                        className="w-12 h-12 rounded-2xl bg-glass border border-border hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
                                         onClick={() => handleSyncWallet(wallet.id)}
                                         disabled={syncing === wallet.id}
                                     >
@@ -228,33 +228,33 @@ export default function WalletsPage() {
 
             {/* Add Wallet Modal Modal */}
             {showAddForm && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-6">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
                     <Card className="max-w-xl w-full p-10 space-y-8 animate-in fade-in zoom-in duration-300">
                         <div className="flex justify-between items-center">
-                            <h2 className="text-2xl font-black text-white">Add New <span className="text-primary tracking-tighter">Address</span></h2>
+                            <h2 className="text-2xl font-medium text-foreground">Add New <span className="text-primary tracking-tighter">Address</span></h2>
                             <Button variant="ghost" size="sm" onClick={() => setShowAddForm(false)}>Cancel</Button>
                         </div>
 
                         <form onSubmit={handleAddWallet} className="space-y-6">
                             <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-gray-500 ml-1">Wallet Label</label>
+                                <label className="text-xs font-bold uppercase tracking-widest text-muted ml-1">Wallet Label</label>
                                 <input
                                     required
                                     placeholder="e.g. My Ledger Wallet"
                                     value={newName}
                                     onChange={(e) => setNewName(e.target.value)}
-                                    className="w-full bg-[#101010] border border-white/5 rounded-2xl p-4 text-white focus:outline-none focus:border-primary transition-all"
+                                    className="w-full bg-white/[0.03] border border-border rounded-2xl p-4 text-foreground focus:outline-none focus:border-primary transition-all"
                                 />
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-gray-500 ml-1">Bitcoin Address</label>
+                                <label className="text-xs font-bold uppercase tracking-widest text-muted ml-1">Bitcoin Address</label>
                                 <input
                                     required
                                     placeholder="bc1q..."
                                     value={newAddress}
                                     onChange={(e) => setNewAddress(e.target.value)}
-                                    className="w-full bg-[#101010] border border-white/5 rounded-2xl p-4 text-white font-mono text-sm focus:outline-none focus:border-primary transition-all"
+                                    className="w-full bg-white/[0.03] border border-border rounded-2xl p-4 text-foreground font-mono text-sm focus:outline-none focus:border-primary transition-all"
                                 />
                             </div>
 

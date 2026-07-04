@@ -76,17 +76,17 @@ export default function AdminPage() {
         <DashboardLayout>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-4xl font-black tracking-tight text-white mb-2">
+                    <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
                         Admin <span className="gradient-text">Console</span>
                     </h1>
-                    <p className="text-gray-500 font-medium tracking-wide">
+                    <p className="text-muted text-sm">
                         Manage your account security and platform extensions.
                     </p>
                 </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-4 border-b border-white/5 pb-1">
+            <div className="flex gap-4 border-b border-border pb-1">
                 {[
                     { id: 'security', name: 'Security & Auth', icon: ShieldCheck },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
@@ -96,7 +96,7 @@ export default function AdminPage() {
                         onClick={() => setActiveTab(tab.id as any)}
                         className={cn(
                             "flex items-center gap-2 px-6 py-4 text-sm font-bold uppercase tracking-widest transition-all relative",
-                            activeTab === tab.id ? "text-primary" : "text-gray-500 hover:text-white"
+                            activeTab === tab.id ? "text-primary" : "text-muted hover:text-foreground"
                         )}
                     >
                         <tab.icon className="w-4 h-4" />
@@ -113,16 +113,16 @@ export default function AdminPage() {
                     <Card className="flex flex-col md:flex-row items-center justify-between gap-8 p-10">
                         <div className="flex items-center gap-6">
                             <div className={cn(
-                                "w-16 h-16 rounded-3xl flex items-center justify-center border transition-all duration-500",
+                                "w-16 h-16 rounded-2xl flex items-center justify-center border transition-all duration-500",
                                 is2faEnabled
-                                    ? "bg-accent/10 border-accent/20 text-accent shadow-[0_0_30px_rgba(34,197,94,0.1)]"
+                                    ? "bg-accent/10 border-accent/20 text-accent"
                                     : "bg-orange-500/10 border-orange-500/20 text-orange-500"
                             )}>
                                 <Smartphone className="w-8 h-8" />
                             </div>
                             <div>
-                                <h3 className="text-2xl font-black text-white">Google Authenticator</h3>
-                                <p className="text-gray-500 font-medium max-w-md">
+                                <h3 className="text-2xl font-medium text-foreground">Google Authenticator</h3>
+                                <p className="text-muted font-medium max-w-md">
                                     Add an extra layer of security by requiring a verification code from your mobile device when logging in.
                                 </p>
                             </div>
@@ -153,10 +153,10 @@ export default function AdminPage() {
 
                     <Card className="p-10 space-y-4 opacity-50 grayscale pointer-events-none">
                         <div className="flex items-center gap-4 mb-4">
-                            <Key className="w-6 h-6 text-gray-400" />
-                            <h3 className="text-xl font-bold text-white tracking-tight">API Key Management</h3>
+                            <Key className="w-6 h-6 text-muted" />
+                            <h3 className="text-xl font-bold text-foreground tracking-tight">API Key Management</h3>
                         </div>
-                        <p className="text-sm text-gray-500 font-medium">Coming soon: Manage your external service API keys and permissions securely from this panel.</p>
+                        <p className="text-sm text-muted font-medium">Coming soon: Manage your external service API keys and permissions securely from this panel.</p>
                     </Card>
                 </div>
             )}
@@ -171,13 +171,13 @@ export default function AdminPage() {
                     ].map((f, i) => (
                         <Card key={i} hover className="p-8 group">
                             <div className="flex justify-between items-start mb-6">
-                                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-all">
+                                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-muted group-hover:bg-primary/10 group-hover:text-primary transition-all">
                                     <Puzzle className="w-6 h-6" />
                                 </div>
-                                <div className="px-3 py-1 rounded-full bg-glass text-[10px] font-black uppercase tracking-widest text-gray-600">Pending</div>
+                                <div className="px-3 py-1 rounded-full bg-glass text-[10px] font-medium uppercase tracking-widest text-faint">Pending</div>
                             </div>
-                            <h3 className="text-xl font-black text-white mb-2">{f.title}</h3>
-                            <p className="text-sm text-gray-500 font-medium leading-relaxed mb-6">{f.desc}</p>
+                            <h3 className="text-xl font-medium text-foreground mb-2">{f.title}</h3>
+                            <p className="text-sm text-muted font-medium leading-relaxed mb-6">{f.desc}</p>
                             <div className="flex items-center gap-2 text-primary text-xs font-bold group-hover:translate-x-1 transition-transform cursor-pointer">
                                 Vote for this feature <ChevronRight className="w-4 h-4" />
                             </div>
@@ -188,21 +188,21 @@ export default function AdminPage() {
 
             {/* Setup 2FA Modal */}
             {showSetup && (
-                <div className="fixed inset-0 bg-black/90 backdrop-blur-xl flex items-center justify-center z-[100] p-6">
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-6">
                     <Card className="max-w-xl w-full p-10 space-y-8 border-primary/20 animate-in fade-in zoom-in duration-300">
                         <div className="text-center space-y-2">
-                            <h2 className="text-3xl font-black text-white">Setup <span className="text-primary tracking-tighter">Security</span></h2>
-                            <p className="text-gray-500 font-medium">Scan the QR code with Google Authenticator or Authy.</p>
+                            <h2 className="text-3xl font-medium text-foreground">Setup <span className="text-primary tracking-tighter">Security</span></h2>
+                            <p className="text-muted font-medium">Scan the QR code with Google Authenticator or Authy.</p>
                         </div>
 
                         <div className="flex flex-col items-center gap-8">
-                            <div className="bg-white p-4 rounded-3xl animate-in zoom-in duration-500 delay-200">
+                            <div className="bg-white p-4 rounded-2xl animate-in zoom-in duration-500 delay-200">
                                 {qrCodeUrl && <img src={qrCodeUrl} alt="2FA QR Code" className="w-48 h-48" />}
                             </div>
 
                             <div className="w-full space-y-2">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest text-center mb-4">Manual Entry Key</p>
-                                <div className="bg-glass border border-white/5 p-4 rounded-2xl font-mono text-center text-primary font-bold tracking-widest">
+                                <p className="text-xs font-bold text-muted uppercase tracking-widest text-center mb-4">Manual Entry Key</p>
+                                <div className="bg-glass border border-border p-4 rounded-2xl font-mono text-center text-primary font-bold tracking-widest">
                                     {secret}
                                 </div>
                             </div>
@@ -210,14 +210,14 @@ export default function AdminPage() {
 
                         <form onSubmit={handleVerifyAndEnable} className="space-y-6 pt-4">
                             <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-gray-500 ml-1">Verification Code</label>
+                                <label className="text-xs font-bold uppercase tracking-widest text-muted ml-1">Verification Code</label>
                                 <input
                                     required
                                     placeholder="000 000"
                                     maxLength={6}
                                     value={token}
                                     onChange={(e) => setToken(e.target.value)}
-                                    className="w-full bg-[#101010] border border-white/5 rounded-2xl p-4 text-center text-2xl font-black text-white tracking-[0.5em] focus:outline-none focus:border-primary transition-all"
+                                    className="w-full bg-white/[0.03] border border-border rounded-2xl p-4 text-center text-2xl font-medium text-foreground tracking-[0.5em] focus:outline-none focus:border-primary transition-all"
                                 />
                             </div>
 

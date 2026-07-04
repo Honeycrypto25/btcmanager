@@ -67,14 +67,14 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-4xl font-black tracking-tight text-white mb-2">
+                    <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
                         ROI & <span className="gradient-text">Analytics</span>
                     </h1>
-                    <p className="text-gray-500 font-medium tracking-wide">
+                    <p className="text-muted text-sm">
                         Track your investment performance over time.
                     </p>
                 </div>
-                <div className="flex items-center gap-2 bg-glass border border-white/5 rounded-2xl p-1">
+                <div className="flex items-center gap-2 bg-glass border border-border rounded-2xl p-1">
                     <button
                         onClick={() => {
                             setView('yearly');
@@ -84,7 +84,7 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                         }}
                         className={cn(
                             "px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            view === 'yearly' ? "bg-primary text-black shadow-lg" : "text-gray-500 hover:text-white"
+                            view === 'yearly' ? "bg-primary text-black" : "text-muted hover:text-foreground"
                         )}
                     >
                         Yearly
@@ -98,7 +98,7 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                         }}
                         className={cn(
                             "px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            view === 'monthly' ? "bg-primary text-black shadow-lg" : "text-gray-500 hover:text-white"
+                            view === 'monthly' ? "bg-primary text-black" : "text-muted hover:text-foreground"
                         )}
                     >
                         Monthly
@@ -112,23 +112,23 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <DollarSign className="w-24 h-24 text-primary" />
                     </div>
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mb-1">Total Invested</p>
-                    <p className="text-3xl font-black text-white">{formatCurrency(overall.totalInvested)}</p>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total Invested</p>
+                    <p className="text-3xl font-medium text-foreground">{formatCurrency(overall.totalInvested)}</p>
                 </Card>
                 <Card className="p-6 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <TrendingUp className="w-24 h-24 text-green-500" />
                     </div>
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mb-1">Current Value</p>
-                    <p className="text-3xl font-black text-white">{formatCurrency(overall.currentValue)}</p>
-                    <p className="text-xs text-gray-500 mt-1 font-mono">@ {formatCurrency(currentPrice)}</p>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Current Value</p>
+                    <p className="text-3xl font-medium text-foreground">{formatCurrency(overall.currentValue)}</p>
+                    <p className="text-xs text-muted mt-1 font-mono">@ {formatCurrency(currentPrice)}</p>
                 </Card>
                 <Card className="p-6 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <Bitcoin className="w-24 h-24 text-orange-500" />
                     </div>
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mb-1">Total BTC</p>
-                    <p className="text-3xl font-black text-white">{formatBtc(overall.totalBtc)}</p>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total BTC</p>
+                    <p className="text-3xl font-medium text-foreground">{formatBtc(overall.totalBtc)}</p>
                 </Card>
                 <Card className={cn(
                     "p-6 relative overflow-hidden group border",
@@ -137,9 +137,9 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <Percent className={cn("w-24 h-24", overall.roiPercentage >= 0 ? "text-green-500" : "text-red-500")} />
                     </div>
-                    <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest mb-1">Total ROI</p>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total ROI</p>
                     <div className="flex items-baseline gap-2">
-                        <p className={cn("text-3xl font-black", overall.roiPercentage >= 0 ? "text-green-500" : "text-red-500")}>
+                        <p className={cn("text-3xl font-medium", overall.roiPercentage >= 0 ? "text-green-500" : "text-red-500")}>
                             {formatPercent(overall.roiPercentage)}
                         </p>
                         {overall.roiPercentage >= 0 ? (
@@ -155,9 +155,9 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
             <PriceChart transactions={transactions} />
 
             {/* Data Table */}
-            <Card className="overflow-hidden p-0 border-white/5">
-                <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex justify-between items-center">
-                    <h3 className="font-bold text-white flex items-center gap-2">
+            <Card className="overflow-hidden p-0 border-border">
+                <div className="px-6 py-4 border-b border-border bg-white/[0.02] flex justify-between items-center">
+                    <h3 className="font-bold text-foreground flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-primary" />
                         {view === 'yearly' ? 'Yearly Performance' : 'Monthly Breakdown'}
                     </h3>
@@ -165,38 +165,38 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="border-b border-white/5 bg-white/[0.01]">
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest">Period</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Invested</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Current Value</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">BTC Acquired</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Avg Price</th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">ROI</th>
+                            <tr className="border-b border-border bg-white/[0.01]">
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Period</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Invested</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Current Value</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">BTC Acquired</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Avg Price</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">ROI</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {paginatedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-20 text-center text-gray-600 font-medium italic">
+                                    <td colSpan={6} className="px-6 py-20 text-center text-faint font-medium italic">
                                         No data available for this period.
                                     </td>
                                 </tr>
                             ) : (
                                 paginatedData.map((row) => (
                                     <tr key={row.period} className="hover:bg-white/[0.01] transition-colors group">
-                                        <td className="px-6 py-5 font-bold text-white">
+                                        <td className="px-6 py-5 font-bold text-foreground">
                                             {row.period}
                                         </td>
-                                        <td className="px-6 py-5 text-right font-mono text-gray-400">
+                                        <td className="px-6 py-5 text-right font-mono text-muted">
                                             {formatCurrency(row.totalInvested)}
                                         </td>
-                                        <td className="px-6 py-5 text-right font-mono text-white">
+                                        <td className="px-6 py-5 text-right font-mono text-foreground">
                                             {formatCurrency(row.currentValue)}
                                         </td>
-                                        <td className="px-6 py-5 text-right font-mono text-white font-bold">
+                                        <td className="px-6 py-5 text-right font-mono text-foreground font-bold">
                                             {row.totalBtc.toFixed(8)} <span className="text-primary text-[10px]">BTC</span>
                                         </td>
-                                        <td className="px-6 py-5 text-right font-mono text-gray-400">
+                                        <td className="px-6 py-5 text-right font-mono text-muted">
                                             {formatCurrency(row.totalInvested / row.totalBtc)}
                                         </td>
                                         <td className="px-6 py-5 text-right">
@@ -216,11 +216,11 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
 
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
-                        <p className="text-sm text-gray-500">
-                            Showing <span className="font-bold text-white">{startIndex + 1}</span> to{' '}
-                            <span className="font-bold text-white">{Math.min(endIndex, currentData.length)}</span> of{' '}
-                            <span className="font-bold text-white">{currentData.length}</span> {view === 'yearly' ? 'years' : 'months'}
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+                        <p className="text-sm text-muted">
+                            Showing <span className="font-bold text-foreground">{startIndex + 1}</span> to{' '}
+                            <span className="font-bold text-foreground">{Math.min(endIndex, currentData.length)}</span> of{' '}
+                            <span className="font-bold text-foreground">{currentData.length}</span> {view === 'yearly' ? 'years' : 'months'}
                         </p>
                         <div className="flex items-center gap-2">
                             <button
@@ -229,8 +229,8 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                                 className={cn(
                                     "px-4 py-2 rounded-xl text-sm font-bold transition-all",
                                     currentPage === 1
-                                        ? "bg-glass text-gray-600 cursor-not-allowed"
-                                        : "bg-glass text-white hover:bg-white/10"
+                                        ? "bg-glass text-faint cursor-not-allowed"
+                                        : "bg-glass text-foreground hover:bg-white/10"
                                 )}
                             >
                                 Previous
@@ -244,7 +244,7 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                                             "w-8 h-8 rounded-lg text-sm font-bold transition-all",
                                             currentPage === page
                                                 ? "bg-primary text-black"
-                                                : "bg-glass text-gray-400 hover:bg-white/5 hover:text-white"
+                                                : "bg-glass text-muted hover:bg-white/5 hover:text-foreground"
                                         )}
                                     >
                                         {page}
@@ -257,8 +257,8 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                                 className={cn(
                                     "px-4 py-2 rounded-xl text-sm font-bold transition-all",
                                     currentPage === totalPages
-                                        ? "bg-glass text-gray-600 cursor-not-allowed"
-                                        : "bg-glass text-white hover:bg-white/10"
+                                        ? "bg-glass text-faint cursor-not-allowed"
+                                        : "bg-glass text-foreground hover:bg-white/10"
                                 )}
                             >
                                 Next

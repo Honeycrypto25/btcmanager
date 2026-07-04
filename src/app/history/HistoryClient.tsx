@@ -165,10 +165,10 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-4xl font-black tracking-tight text-white mb-2">
+                    <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
                         Transaction <span className="gradient-text">History</span>
                     </h1>
-                    <p className="text-gray-500 font-medium tracking-wide">
+                    <p className="text-muted text-sm">
                         Detailed record of all monitored Bitcoin acquisitions.
                     </p>
                 </div>
@@ -178,7 +178,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                             variant="ghost"
                             size="md"
                             onClick={clearFilters}
-                            className="rounded-2xl text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                         >
                             <X className="w-4 h-4 mr-2" />
                             Clear
@@ -187,7 +187,6 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     <Button
                         variant={startDate || endDate ? "primary" : "outline"}
                         size="md"
-                        className="rounded-2xl"
                         onClick={() => {
                             setShowDateModal(!showDateModal);
                             setShowFilterModal(false);
@@ -199,7 +198,6 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     <Button
                         variant={selectedWallet ? "primary" : "outline"}
                         size="md"
-                        className="rounded-2xl"
                         onClick={() => {
                             setShowFilterModal(!showFilterModal);
                             setShowDateModal(false);
@@ -212,25 +210,25 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     {/* Date Modal */}
                     {showDateModal && (
                         <div className="absolute top-12 right-0 z-50 w-80">
-                            <Card className="shadow-2xl border-white/10 bg-[#0A0A0A] p-4 animate-in fade-in zoom-in-95 duration-200">
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Select Date Range</h3>
+                            <Card className="border border-border bg-surface-strong p-4 animate-in fade-in zoom-in-95 duration-200">
+                                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Select Date Range</h3>
                                 <div className="space-y-4">
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500">Start Date</label>
+                                        <label className="text-xs text-muted">Start Date</label>
                                         <input
                                             type="date"
                                             value={startDate}
                                             onChange={(e) => setStartDate(e.target.value)}
-                                            className="w-full bg-[#151515] border border-white/5 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-primary transition-colors"
+                                            className="w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500">End Date</label>
+                                        <label className="text-xs text-muted">End Date</label>
                                         <input
                                             type="date"
                                             value={endDate}
                                             onChange={(e) => setEndDate(e.target.value)}
-                                            className="w-full bg-[#151515] border border-white/5 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-primary transition-colors"
+                                            className="w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
                                         />
                                     </div>
                                     <div className="flex gap-2 pt-2">
@@ -262,14 +260,14 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     {/* Filter Modal */}
                     {showFilterModal && (
                         <div className="absolute top-12 right-0 z-50 w-64">
-                            <Card className="shadow-2xl border-white/10 bg-[#0A0A0A] p-4 animate-in fade-in zoom-in-95 duration-200">
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Filter by Wallet</h3>
+                            <Card className="border border-border bg-surface-strong p-4 animate-in fade-in zoom-in-95 duration-200">
+                                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Filter by Wallet</h3>
                                 <div className="space-y-2 max-h-60 overflow-y-auto">
                                     <button
                                         onClick={() => setSelectedWallet(null)}
                                         className={cn(
                                             "w-full text-left px-4 py-3 rounded-xl text-sm transition-colors flex items-center justify-between group",
-                                            !selectedWallet ? "bg-primary/10 text-primary font-bold" : "bg-[#151515] text-gray-400 hover:bg-white/5 hover:text-white"
+                                            !selectedWallet ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
                                         )}
                                     >
                                         All Wallets
@@ -281,7 +279,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                             onClick={() => setSelectedWallet(wallet === selectedWallet ? null : wallet)}
                                             className={cn(
                                                 "w-full text-left px-4 py-3 rounded-xl text-sm transition-colors flex items-center justify-between group",
-                                                selectedWallet === wallet ? "bg-primary/10 text-primary font-bold" : "bg-[#151515] text-gray-400 hover:bg-white/5 hover:text-white"
+                                                selectedWallet === wallet ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
                                             )}
                                         >
                                             {wallet}
@@ -289,7 +287,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         </button>
                                     ))}
                                 </div>
-                                <div className="pt-4 mt-2 border-t border-white/5">
+                                <div className="pt-4 mt-2 border-t border-border">
                                     <Button
                                         variant="primary"
                                         size="sm"
@@ -312,8 +310,8 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                         <History className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest leading-tight">Total Syncs</p>
-                        <p className="text-xl font-black text-white">{filteredTransactions.length}</p>
+                        <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider leading-tight">Total Syncs</p>
+                        <p className="text-xl font-medium text-foreground">{filteredTransactions.length}</p>
                     </div>
                 </Card>
                 <Card className="p-4 flex items-center gap-4">
@@ -321,8 +319,8 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                         <ArrowUpRight className="w-6 h-6" />
                     </div>
                     <div>
-                        <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest leading-tight">Last 30 Days</p>
-                        <p className="text-xl font-black text-white">
+                        <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider leading-tight">Last 30 Days</p>
+                        <p className="text-xl font-medium text-foreground">
                             {filteredTransactions.filter((t: any) => new Date(t.timestamp) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).length} Txs
                         </p>
                     </div>
@@ -331,22 +329,22 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
 
             {/* Search Filter Placeholder */}
             <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600 group-focus-within:text-primary transition-colors" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-faint group-focus-within:text-primary transition-colors" />
                 <input
                     placeholder="Search by TxID or Wallet Name..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-glass border border-white/5 rounded-3xl py-4 pl-12 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-white/20 transition-all"
+                    className="w-full bg-glass border border-border rounded-2xl py-4 pl-12 pr-4 text-foreground placeholder:text-faint focus:outline-none focus:border-white/20 transition-all"
                 />
             </div>
 
             {/* Transactions Table */}
-            <Card className="overflow-hidden p-0 border-white/5">
+            <Card className="overflow-hidden p-0 border-border">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="border-b border-white/5 bg-white/[0.02]">
-                                <th onClick={() => handleSort('date')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                            <tr className="border-b border-border bg-white/[0.02]">
+                                <th onClick={() => handleSort('date')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Date & Time
                                         {sortConfig?.key === 'date' ? (
@@ -354,7 +352,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('wallet')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('wallet')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Wallet
                                         {sortConfig?.key === 'wallet' ? (
@@ -362,7 +360,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('amount')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('amount')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Amount
                                         {sortConfig?.key === 'amount' ? (
@@ -370,7 +368,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('price')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('price')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Price At Time
                                         {sortConfig?.key === 'price' ? (
@@ -378,7 +376,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('invested')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('invested')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         USD Value
                                         {sortConfig?.key === 'invested' ? (
@@ -386,7 +384,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('current')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('current')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Current Value
                                         {sortConfig?.key === 'current' ? (
@@ -394,7 +392,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th onClick={() => handleSort('profit')} className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest cursor-pointer hover:text-white transition-colors group">
+                                <th onClick={() => handleSort('profit')} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider cursor-pointer hover:text-foreground transition-colors group">
                                     <div className="flex items-center gap-1">
                                         Profit
                                         {sortConfig?.key === 'profit' ? (
@@ -402,13 +400,13 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                         ) : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50" />}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 text-[10px] text-gray-500 uppercase font-black tracking-widest text-right">Action</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {paginatedTransactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-20 text-center text-gray-600 font-medium italic">
+                                    <td colSpan={8} className="px-6 py-20 text-center text-faint font-medium italic">
                                         No transactions found matching your filters.
                                     </td>
                                 </tr>
@@ -423,10 +421,10 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                     return (
                                         <tr key={tx.id} className="hover:bg-white/[0.01] transition-colors group">
                                             <td className="px-6 py-5">
-                                                <p className="text-sm font-bold text-white leading-tight">
+                                                <p className="text-sm font-bold text-foreground leading-tight">
                                                     {format(new Date(tx.timestamp), 'MMM dd, yyyy')}
                                                 </p>
-                                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                                <p className="text-[10px] text-muted font-mono mt-0.5">
                                                     {format(new Date(tx.timestamp), 'HH:mm:ss')}
                                                 </p>
                                             </td>
@@ -437,18 +435,18 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                                 </div>
                                             </td>
                                             <td className="px-6 py-5 font-mono text-sm">
-                                                <span className="text-white font-bold">{tx.amount.toFixed(8)}</span>
+                                                <span className="text-foreground font-bold">{tx.amount.toFixed(8)}</span>
                                                 <span className="text-primary ml-1 text-[10px]">BTC</span>
                                             </td>
-                                            <td className="px-6 py-5 text-sm text-gray-400 font-mono">
+                                            <td className="px-6 py-5 text-sm text-muted font-mono">
                                                 ${tx.priceAtTime.toLocaleString()}
                                             </td>
-                                            <td className="px-6 py-5 text-sm text-accent font-black">
+                                            <td className="px-6 py-5 text-sm text-accent font-medium">
                                                 ${investedValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-6 py-5">
                                                 <p className={cn(
-                                                    "text-sm font-black",
+                                                    "text-sm font-medium",
                                                     isPositive ? "text-green-500" : "text-red-500"
                                                 )}>
                                                     ${currentValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -457,7 +455,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                             <td className="px-6 py-5">
                                                 <div className="space-y-0.5">
                                                     <p className={cn(
-                                                        "text-sm font-black",
+                                                        "text-sm font-medium",
                                                         isPositive ? "text-green-500" : "text-red-500"
                                                     )}>
                                                         {isPositive ? "+" : ""}${profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -474,7 +472,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                                 <a
                                                     href={`https://mempool.space/tx/${tx.txid}`}
                                                     target="_blank"
-                                                    className="inline-flex items-center justify-center p-2 rounded-lg bg-glass border border-white/5 text-gray-500 hover:text-primary hover:border-primary/20 transition-all"
+                                                    className="inline-flex items-center justify-center p-2 rounded-lg bg-glass border border-border text-muted hover:text-primary hover:border-primary/20 transition-all"
                                                 >
                                                     <ExternalLink className="w-4 h-4" />
                                                 </a>
@@ -489,11 +487,11 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
 
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
-                        <p className="text-sm text-gray-500">
-                            Showing <span className="font-bold text-white">{startIndex + 1}</span> to{' '}
-                            <span className="font-bold text-white">{Math.min(endIndex, filteredTransactions.length)}</span> of{' '}
-                            <span className="font-bold text-white">{filteredTransactions.length}</span> transactions
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+                        <p className="text-sm text-muted">
+                            Showing <span className="font-bold text-foreground">{startIndex + 1}</span> to{' '}
+                            <span className="font-bold text-foreground">{Math.min(endIndex, filteredTransactions.length)}</span> of{' '}
+                            <span className="font-bold text-foreground">{filteredTransactions.length}</span> transactions
                         </p>
                         <div className="flex items-center gap-2">
                             <Button
@@ -514,7 +512,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                                             "w-8 h-8 rounded-lg text-sm font-bold transition-all",
                                             currentPage === page
                                                 ? "bg-primary text-black"
-                                                : "bg-glass text-gray-400 hover:bg-white/5 hover:text-white"
+                                                : "bg-glass text-muted hover:bg-white/5 hover:text-foreground"
                                         )}
                                     >
                                         {page}
