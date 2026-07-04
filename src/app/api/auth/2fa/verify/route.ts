@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
         // Cookie semnat HMAC-SHA256 cu userId + timestamp — nu poate fi falsificat
         const cookieStore = await cookies();
-        cookieStore.set(COOKIE_NAME, sign2faCookie(user.id), {
+        cookieStore.set(COOKIE_NAME, await sign2faCookie(user.id), {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',

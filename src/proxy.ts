@@ -21,7 +21,7 @@ export default withAuth(
             const rawCookie = req.cookies.get(COOKIE_NAME)?.value;
 
             // Verifică semnătura HMAC — un string simplu "true" nu mai este acceptat
-            const verifiedUserId = rawCookie ? verify2faCookie(rawCookie) : null;
+            const verifiedUserId = rawCookie ? await verify2faCookie(rawCookie) : null;
             const is2faVerified = !!verifiedUserId && verifiedUserId === userId;
 
             if (requires2fa && !is2faVerified) {

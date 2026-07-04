@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 const COOKIE_NAME = '2fa_verified';
 
 function getSecret(): string {
@@ -8,37 +6,49 @@ function getSecret(): string {
     return secret;
 }
 
+async function getHmacKey(secret: string): Promise<CryptoKey> {
+    const enc = new TextEncoder();
+    return crypto.subtle.importKey(
+        'raw',
+        enc.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign', 'verify']
+    );
+}
+
+function bufToHex(buf: ArrayBuffer): string {
+    return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+
 /** Creează un payload semnat HMAC-SHA256: "<userId>.<timestamp>.<signature>" */
-export function sign2faCookie(userId: string): string {
+export async function sign2faCookie(userId: string): Promise<string> {
     const timestamp = Date.now().toString();
     const payload = `${userId}.${timestamp}`;
-    const sig = crypto
-        .createHmac('sha256', getSecret())
-        .update(payload)
-        .digest('hex');
-    return `${payload}.${sig}`;
+    const key = await getHmacKey(getSecret());
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+    return `${payload}.${bufToHex(sig)}`;
 }
 
 /** Verifică semnătura și returnează userId dacă e valid, null altfel */
-export function verify2faCookie(value: string, maxAgeSeconds = 86400): string | null {
+export async function verify2faCookie(value: string, maxAgeSeconds = 86400): Promise<string | null> {
     try {
-        const parts = value.split('.');
-        if (parts.length !== 3) return null;
+        const lastDot = value.lastIndexOf('.');
+        const secondLastDot = value.lastIndexOf('.', lastDot - 1);
+        if (lastDot === -1 || secondLastDot === -1) return null;
 
-        const [userId, timestamp, sig] = parts;
-        const payload = `${userId}.${timestamp}`;
+        const payload = value.substring(0, lastDot);
+        const sig = value.substring(lastDot + 1);
+        const userId = value.substring(0, secondLastDot);
+        const timestamp = value.substring(secondLastDot + 1, lastDot);
 
-        const expected = crypto
-            .createHmac('sha256', getSecret())
-            .update(payload)
-            .digest('hex');
+        const key = await getHmacKey(getSecret());
+        const sigBytes = Uint8Array.from(sig.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+        const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload));
+        if (!valid) return null;
 
-        // Comparare în timp constant pentru a preveni timing attacks
-        if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
-            return null;
-        }
-
-        // Verifică expirarea
         const age = (Date.now() - parseInt(timestamp, 10)) / 1000;
         if (age > maxAgeSeconds) return null;
 
