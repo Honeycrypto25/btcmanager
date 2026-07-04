@@ -10,7 +10,8 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    ReferenceDot
+    ReferenceDot,
+    ReferenceLine
 } from 'recharts';
 import { Card } from "@/components/ui/core";
 import { Loader2, AlertCircle } from "lucide-react";
@@ -121,6 +122,17 @@ export default function PriceChart({ transactions }: PriceChartProps) {
         }));
     }, [transactions, priceData]);
 
+    // Average buy price across currently selected wallets (cost basis per BTC)
+    const avgBuyPrice = useMemo(() => {
+        const relevant = transactions.filter(tx => {
+            const walletName = tx.wallet?.name;
+            return walletName ? selectedWallets.includes(walletName) : true;
+        });
+        const totalBtc = relevant.reduce((acc, tx) => acc + tx.amount, 0);
+        const totalInvested = relevant.reduce((acc, tx) => acc + tx.amount * tx.priceAtTime, 0);
+        return totalBtc > 0 ? totalInvested / totalBtc : 0;
+    }, [transactions, selectedWallets]);
+
     const formatCurrency = (val: number) =>
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 
@@ -216,6 +228,22 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
+
+                            {avgBuyPrice > 0 && (
+                                <ReferenceLine
+                                    y={avgBuyPrice}
+                                    stroke="#52c98a"
+                                    strokeDasharray="4 4"
+                                    strokeWidth={1}
+                                    label={{
+                                        value: `Avg buy ${formatCurrency(avgBuyPrice)}`,
+                                        position: 'insideBottomLeft',
+                                        fill: '#52c98a',
+                                        fontSize: 10,
+                                    }}
+                                />
+                            )}
+
                             <Line
                                 type="monotone"
                                 dataKey="price"
@@ -250,6 +278,12 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                     <div className="w-1.5 h-1.5 rounded-full bg-accent" />
                     <span className="text-faint">Your buys</span>
                 </div>
+                {avgBuyPrice > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-0.5 bg-accent" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #52c98a 0, #52c98a 3px, transparent 3px, transparent 5px)' }} />
+                        <span className="text-faint">Avg buy price</span>
+                    </div>
+                )}
             </div>
         </Card>
     );

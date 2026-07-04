@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, ColorType, CrosshairMode, IChartApi, CandlestickSeries, createSeriesMarkers, Time, UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, IChartApi, CandlestickSeries, createSeriesMarkers, LineStyle, Time, UTCTimestamp } from 'lightweight-charts';
 import { Card, cn } from "@/components/ui/core";
 import { Loader2, TrendingUp, AlertCircle, Calendar } from "lucide-react";
 import { fetchBitcoinHistory } from '@/app/actions/bitcoin';
@@ -104,6 +104,13 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
     }, [transactions, ohlcData]);
 
 
+    // Average buy price across the transactions currently passed in (cost basis per BTC)
+    const avgBuyPrice = useMemo(() => {
+        const totalBtc = transactions.reduce((acc, tx) => acc + tx.amount, 0);
+        const totalInvested = transactions.reduce((acc, tx) => acc + tx.amount * tx.priceAtTime, 0);
+        return totalBtc > 0 ? totalInvested / totalBtc : 0;
+    }, [transactions]);
+
     // Initialize Chart
     useEffect(() => {
         if (!chartContainerRef.current || !ohlcData.length) return;
@@ -142,6 +149,18 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
         });
 
         candlestickSeries.setData(ohlcData);
+
+        // Average buy price reference line
+        if (avgBuyPrice > 0) {
+            candlestickSeries.createPriceLine({
+                price: avgBuyPrice,
+                color: '#52c98a',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'Avg buy',
+            });
+        }
 
         // Add markers logic
         const adjustedMarkers = markers.map(m => {
@@ -189,7 +208,7 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
             chart.remove();
             chartRef.current = null;
         };
-    }, [ohlcData, markers, transactions, timeframe]);
+    }, [ohlcData, markers, transactions, timeframe, avgBuyPrice]);
 
     return (
         <Card className="p-0 flex flex-col">
@@ -240,6 +259,13 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
                     </div>
                 )}
             </div>
+
+            {avgBuyPrice > 0 && !loading && !error && (
+                <div className="flex items-center justify-center gap-1.5 text-xs py-3 border-t border-border">
+                    <div className="w-2.5 h-0.5" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #52c98a 0, #52c98a 3px, transparent 3px, transparent 5px)' }} />
+                    <span className="text-faint">Avg buy price &middot; ${avgBuyPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+            )}
         </Card>
     );
 }
