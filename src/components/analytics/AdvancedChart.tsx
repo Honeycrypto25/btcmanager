@@ -39,8 +39,8 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
 
                 let formatted: any[] = [];
 
-                if (source === 'CoinCap') {
-                    // Pre-aggregated monthly data from server
+                if (source === 'CoinCap' || source === 'Kraken') {
+                    // Pre-formatted object data from server (already numeric OHLC + time in seconds)
                     formatted = data.map((item: any) => ({
                         time: item.time as UTCTimestamp,
                         open: item.open,
@@ -48,16 +48,8 @@ export default function AdvancedChart({ transactions }: AdvancedChartProps) {
                         low: item.low,
                         close: item.close
                     }));
-                } else if (source === 'CoinGecko') {
-                    formatted = data.map((item: number[]) => ({
-                        time: (item[0] / 1000) as UTCTimestamp,
-                        open: item[1],
-                        high: item[2],
-                        low: item[3],
-                        close: item[4]
-                    }));
                 } else {
-                    // Binance
+                    // Binance: raw klines array of [openTime, open, high, low, close, ...] with string numerics
                     formatted = data.map((item: any[]) => ({
                         time: (item[0] / 1000) as UTCTimestamp,
                         open: parseFloat(item[1]),
