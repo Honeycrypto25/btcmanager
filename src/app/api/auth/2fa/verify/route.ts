@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "2FA not enabled for this account" }, { status: 400 });
         }
 
-        const isValid = verifyTotpToken(token, user.twoFactorSecret);
+        const isValid = await verifyTotpToken(token, user.twoFactorSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
         // Cookie semnat HMAC-SHA256 cu userId + timestamp — nu poate fi falsificat

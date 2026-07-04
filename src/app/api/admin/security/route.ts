@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "2FA already enabled" }, { status: 400 });
         }
 
-        const isValid = verifyTotpToken(token, user.pendingTotpSecret);
+        const isValid = await verifyTotpToken(token, user.pendingTotpSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
         // Activăm 2FA și ștergem secretul temporar
@@ -93,7 +93,7 @@ export async function DELETE(req: NextRequest) {
 
         if (!user?.twoFactorSecret) return NextResponse.json({ error: "2FA not enabled" }, { status: 400 });
 
-        const isValid = verifyTotpToken(token, user.twoFactorSecret);
+        const isValid = await verifyTotpToken(token, user.twoFactorSecret);
         if (!isValid) return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
 
         await db.user.update({
