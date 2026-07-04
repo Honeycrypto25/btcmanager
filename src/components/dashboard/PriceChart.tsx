@@ -139,7 +139,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
     };
 
     return (
-        <Card className="p-6 relative overflow-hidden h-full flex flex-col">
+        <Card className="p-6 relative overflow-hidden">
             <div className="flex justify-between items-center mb-5">
                 <div>
                     <h3 className="text-sm font-medium text-foreground">
@@ -181,7 +181,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                 </div>
             )}
 
-            <div className="h-[280px] w-full flex-1">
+            <div className="h-[280px] w-full">
                 {loading ? (
                     <div className="h-full flex items-center justify-center">
                         <Loader2 className="w-6 h-6 text-primary animate-spin" />
