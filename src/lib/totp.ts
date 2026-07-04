@@ -37,6 +37,13 @@ function base32Encode(bytes: Uint8Array): string {
     return result;
 }
 
+/** Copiază bytes într-un ArrayBuffer nou, cu tip garantat (evită union ArrayBuffer|SharedArrayBuffer) */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const buf = new ArrayBuffer(bytes.length);
+    new Uint8Array(buf).set(bytes);
+    return buf;
+}
+
 async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
     // Construiește 8-byte big-endian counter
     const counterBytes = new Uint8Array(8);
@@ -49,7 +56,7 @@ async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
     // HMAC-SHA1 cu Web Crypto API
     const key = await crypto.subtle.importKey(
         'raw',
-        secret.buffer.slice(secret.byteOffset, secret.byteOffset + secret.byteLength),
+        toArrayBuffer(secret),
         { name: 'HMAC', hash: 'SHA-1' },
         false,
         ['sign']
@@ -58,7 +65,7 @@ async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
     const hmacResult = await crypto.subtle.sign(
         'HMAC',
         key,
-        counterBytes.buffer.slice(counterBytes.byteOffset, counterBytes.byteOffset + counterBytes.byteLength)
+        toArrayBuffer(counterBytes)
     );
 
     const sig = new Uint8Array(hmacResult);
