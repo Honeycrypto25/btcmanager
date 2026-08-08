@@ -75,13 +75,19 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         await sleep(1500);
         const pies = await getPies(environment, creds.apiKey, creds.apiSecret);
 
+        // P&L calculat ca total - liber - investit, NU preluat direct din
+        // câmpul result/ppl al T212 — acela pare să reflecte altceva (posibil
+        // variația de azi), nu profitul/pierderea totală față de cât s-a
+        // investit. total = liber + investit + P&L, deci P&L = total - liber - investit.
+        const resultPpl = cash.total - cash.free - cash.invested;
+
         await db.t212Snapshot.create({
             data: {
                 accountId: account.id,
                 totalValue: cash.total,
                 investedValue: cash.invested,
                 freeCash: cash.free,
-                resultPpl: cash.result,
+                resultPpl,
                 currency: account.currency ?? "GBP",
                 positions: positions as any,
                 pies: pies as any,

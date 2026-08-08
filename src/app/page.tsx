@@ -14,12 +14,8 @@ interface PeriodAgg {
     t212Invested: number;
 }
 
-function emptyAsset(): AssetFigures {
-    return { invested: 0, value: 0, pnl: 0, pnlPercent: 0 };
-}
-
-function computeAsset(invested: number, value: number): AssetFigures {
-    const pnl = value - invested;
+function computeAsset(invested: number, value: number, pnlOverride?: number): AssetFigures {
+    const pnl = pnlOverride !== undefined ? pnlOverride : value - invested;
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
     return { invested, value, pnl, pnlPercent };
 }
@@ -42,6 +38,7 @@ export default async function OverviewPage() {
     const t212Account = await db.t212Account.findFirst();
     let t212CurrentValueUsd = 0;
     let t212InvestedUsd = 0;
+    let t212PnlUsd = 0;
     let t212Connected = false;
     let t212Snapshot: any = null;
     let gbpToUsd = 1;
@@ -57,19 +54,23 @@ export default async function OverviewPage() {
             gbpToUsd = await getExchangeRate(t212Snapshot.currency, "USD");
             t212CurrentValueUsd = t212Snapshot.totalValue * gbpToUsd;
             t212InvestedUsd = t212Snapshot.investedValue * gbpToUsd;
+            // Folosim P&L-ul deja calculat corect la sincronizare (total - liber -
+            // investit), NU value-invested — altfel cash-ul liber din cont ar fi
+            // numărat greșit ca profit.
+            t212PnlUsd = t212Snapshot.resultPpl * gbpToUsd;
         }
     }
-    const t212 = computeAsset(t212InvestedUsd, t212CurrentValueUsd);
-    // Raport valoare-curentă/investit la nivel de cont — folosit ca să estimăm
-    // valoarea curentă a banilor investiți în FIECARE perioadă (nu avem, per
-    // depunere individuală, ce anume s-a cumpărat cu ea, deci nu putem calcula
-    // exact ca la BTC — presupunem performanță uniformă pe toate depunerile).
-    const t212Ratio = t212InvestedUsd > 0 ? t212CurrentValueUsd / t212InvestedUsd : 1;
+    const t212 = computeAsset(t212InvestedUsd, t212CurrentValueUsd, t212PnlUsd);
+    // Raport câștig/investit la nivel de cont — folosit ca să estimăm valoarea
+    // curentă a banilor investiți în FIECARE perioadă (nu avem, per depunere
+    // individuală, ce anume s-a cumpărat cu ea, deci nu putem calcula exact ca
+    // la BTC — presupunem performanță uniformă pe toate depunerile).
+    const t212Ratio = t212InvestedUsd > 0 ? (t212InvestedUsd + t212PnlUsd) / t212InvestedUsd : 1;
 
     // --- Combined totals ---
     const totalInvested = btc.invested + t212.invested;
     const totalValue = btc.value + t212.value;
-    const combined = computeAsset(totalInvested, totalValue);
+    const combined = computeAsset(totalInvested, totalValue, btc.pnl + t212.pnl);
 
     // --- Yearly / monthly breakdown ---
     const yearly = new Map<number, PeriodAgg>();
