@@ -3,16 +3,25 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, cn } from "@/components/ui/core";
-import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight } from "lucide-react";
-import Link from 'next/link';
 import { getCurrentBtcPrice } from "@/lib/btc";
 import { db } from "@/lib/db";
 import { getExchangeRate } from "@/lib/fx";
+import { OverviewClient, type OverviewData, type PeriodRow, type AssetFigures } from "@/components/overview/OverviewClient";
 
-interface PeriodTotals {
-    btc: number;
-    t212: number;
+interface PeriodAgg {
+    btcInvested: number;
+    btcAmount: number;
+    t212Invested: number;
+}
+
+function emptyAsset(): AssetFigures {
+    return { invested: 0, value: 0, pnl: 0, pnlPercent: 0 };
+}
+
+function computeAsset(invested: number, value: number): AssetFigures {
+    const pnl = value - invested;
+    const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
+    return { invested, value, pnl, pnlPercent };
 }
 
 export default async function OverviewPage() {
@@ -24,9 +33,10 @@ export default async function OverviewPage() {
     const wallets = await db.bitcoinWallet.findMany({ include: { transactions: true } });
     const allBtcTx = wallets.flatMap((w: any) => w.transactions);
 
-    const totalBtc = allBtcTx.reduce((acc: number, t: any) => acc + t.amount, 0);
-    const btcCurrentValue = totalBtc * currentBtcPrice;
+    const totalBtcAmount = allBtcTx.reduce((acc: number, t: any) => acc + t.amount, 0);
+    const btcCurrentValue = totalBtcAmount * currentBtcPrice;
     const btcInvested = allBtcTx.reduce((acc: number, t: any) => acc + t.amount * t.priceAtTime, 0);
+    const btc = computeAsset(btcInvested, btcCurrentValue);
 
     // --- T212 data ---
     const t212Account = await db.t212Account.findFirst();
@@ -34,7 +44,7 @@ export default async function OverviewPage() {
     let t212InvestedUsd = 0;
     let t212Connected = false;
     let t212Snapshot: any = null;
-    let fxRate = 1;
+    let gbpToUsd = 1;
 
     if (t212Account) {
         t212Connected = true;
@@ -44,33 +54,42 @@ export default async function OverviewPage() {
         });
 
         if (t212Snapshot) {
-            fxRate = await getExchangeRate(t212Snapshot.currency, "USD");
-            t212CurrentValueUsd = t212Snapshot.totalValue * fxRate;
-            t212InvestedUsd = t212Snapshot.investedValue * fxRate;
+            gbpToUsd = await getExchangeRate(t212Snapshot.currency, "USD");
+            t212CurrentValueUsd = t212Snapshot.totalValue * gbpToUsd;
+            t212InvestedUsd = t212Snapshot.investedValue * gbpToUsd;
         }
     }
+    const t212 = computeAsset(t212InvestedUsd, t212CurrentValueUsd);
+    // Raport valoare-curentă/investit la nivel de cont — folosit ca să estimăm
+    // valoarea curentă a banilor investiți în FIECARE perioadă (nu avem, per
+    // depunere individuală, ce anume s-a cumpărat cu ea, deci nu putem calcula
+    // exact ca la BTC — presupunem performanță uniformă pe toate depunerile).
+    const t212Ratio = t212InvestedUsd > 0 ? t212CurrentValueUsd / t212InvestedUsd : 1;
 
     // --- Combined totals ---
-    const totalInvested = btcInvested + t212InvestedUsd;
-    const totalValue = btcCurrentValue + t212CurrentValueUsd;
-    const totalPnl = totalValue - totalInvested;
-    const pnlPercent = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+    const totalInvested = btc.invested + t212.invested;
+    const totalValue = btc.value + t212.value;
+    const combined = computeAsset(totalInvested, totalValue);
 
-    // --- Yearly / monthly invested breakdown ---
-    const yearly = new Map<number, PeriodTotals>();
-    const monthly = new Map<string, PeriodTotals>(); // "YYYY-MM"
+    // --- Yearly / monthly breakdown ---
+    const yearly = new Map<number, PeriodAgg>();
+    const monthly = new Map<string, PeriodAgg>(); // "YYYY-MM"
 
-    const addTo = (map: Map<any, PeriodTotals>, key: any, source: 'btc' | 't212', amount: number) => {
-        const existing = map.get(key) ?? { btc: 0, t212: 0 };
-        existing[source] += amount;
-        map.set(key, existing);
+    const addTo = (map: Map<any, PeriodAgg>, key: any, patch: Partial<PeriodAgg>) => {
+        const existing = map.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0 };
+        map.set(key, {
+            btcInvested: existing.btcInvested + (patch.btcInvested ?? 0),
+            btcAmount: existing.btcAmount + (patch.btcAmount ?? 0),
+            t212Invested: existing.t212Invested + (patch.t212Invested ?? 0),
+        });
     };
 
     for (const tx of allBtcTx) {
         const d = new Date(tx.timestamp);
         const invested = tx.amount * tx.priceAtTime;
-        addTo(yearly, d.getFullYear(), 'btc', invested);
-        addTo(monthly, `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, 'btc', invested);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        addTo(yearly, d.getFullYear(), { btcInvested: invested, btcAmount: tx.amount });
+        addTo(monthly, monthKey, { btcInvested: invested, btcAmount: tx.amount });
     }
 
     if (t212Account) {
@@ -79,177 +98,53 @@ export default async function OverviewPage() {
         });
         for (const dep of deposits) {
             const d = new Date(dep.dateTime);
-            const investedUsd = dep.amount * fxRate;
-            addTo(yearly, d.getFullYear(), 't212', investedUsd);
-            addTo(monthly, `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, 't212', investedUsd);
+            const investedUsd = dep.amount * gbpToUsd;
+            const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            addTo(yearly, d.getFullYear(), { t212Invested: investedUsd });
+            addTo(monthly, monthKey, { t212Invested: investedUsd });
         }
     }
 
-    const yearlyRows = Array.from(yearly.entries())
-        .sort((a, b) => b[0] - a[0])
-        .map(([year, totals]) => ({ label: String(year), ...totals, total: totals.btc + totals.t212 }));
+    const buildRow = (label: string, agg: PeriodAgg): PeriodRow => {
+        const btcValue = agg.btcAmount * currentBtcPrice;
+        const btcRow = computeAsset(agg.btcInvested, btcValue);
+        const t212Value = agg.t212Invested * t212Ratio;
+        const t212Row = computeAsset(agg.t212Invested, t212Value);
+        const totalRow = computeAsset(agg.btcInvested + agg.t212Invested, btcValue + t212Value);
+        return { label, btc: btcRow, t212: t212Row, total: totalRow };
+    };
 
-    const currentYear = new Date().getFullYear();
+    const yearlyRows: PeriodRow[] = Array.from(yearly.entries())
+        .sort((a, b) => b[0] - a[0])
+        .map(([year, agg]) => buildRow(String(year), agg));
+
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const monthlyRows = Array.from(monthly.entries())
-        .filter(([key]) => key.startsWith(String(currentYear)))
+    const monthlyRows: PeriodRow[] = Array.from(monthly.entries())
         .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([key, totals]) => {
-            const monthIdx = parseInt(key.split('-')[1], 10) - 1;
-            return { label: monthNames[monthIdx], ...totals, total: totals.btc + totals.t212 };
+        .map(([key, agg]) => {
+            const [y, m] = key.split('-');
+            const monthIdx = parseInt(m, 10) - 1;
+            return buildRow(`${monthNames[monthIdx]} ${y}`, agg);
         });
 
-    const fmt = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const usdToGbp = await getExchangeRate("USD", "GBP");
+
+    const data: OverviewData = {
+        totalInvested: combined.invested,
+        totalValue: combined.value,
+        totalPnl: combined.pnl,
+        pnlPercent: combined.pnlPercent,
+        btc: { ...btc, amount: totalBtcAmount },
+        t212: { ...t212, connected: t212Connected, hasSnapshot: !!t212Snapshot },
+        yearlyRows,
+        monthlyRows,
+        t212NativeCurrency: t212Snapshot?.currency ?? null,
+        t212FxRate: gbpToUsd,
+    };
 
     return (
         <DashboardLayout>
-            <div>
-                <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
-                    Overview
-                </h1>
-                <p className="text-muted text-sm">
-                    Combined performance across all your long-term investments.
-                </p>
-            </div>
-
-            {/* Combined Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                    <p className="text-xs font-medium text-muted uppercase tracking-wider mb-3">Total invested</p>
-                    <h2 className="text-2xl font-medium font-num text-foreground">{fmt(totalInvested)}</h2>
-                </Card>
-                <Card>
-                    <p className="text-xs font-medium text-muted uppercase tracking-wider mb-3">Current value</p>
-                    <h2 className="text-2xl font-medium font-num text-foreground">{fmt(totalValue)}</h2>
-                </Card>
-                <Card>
-                    <p className="text-xs font-medium text-muted uppercase tracking-wider mb-3">Total P&amp;L</p>
-                    <div className="flex items-center gap-2">
-                        <h2 className={cn("text-2xl font-medium font-num", totalPnl >= 0 ? "text-accent" : "text-red-400")}>
-                            {totalPnl >= 0 ? '+' : ''}{fmt(Math.abs(totalPnl))}
-                        </h2>
-                        {totalPnl >= 0 ? <TrendingUp className="w-4 h-4 text-accent" /> : <TrendingDown className="w-4 h-4 text-red-400" />}
-                    </div>
-                </Card>
-                <Card>
-                    <p className="text-xs font-medium text-muted uppercase tracking-wider mb-3">ROI</p>
-                    <h2 className={cn("text-2xl font-medium font-num", pnlPercent >= 0 ? "text-accent" : "text-red-400")}>
-                        {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
-                    </h2>
-                </Card>
-            </div>
-
-            {/* Per-asset breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Link href="/btc">
-                    <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
-                        <div className="flex items-center gap-4 min-w-0">
-                            <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                                <Bitcoin className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground">Bitcoin</p>
-                                <p className="text-xs text-faint font-num">{totalBtc.toFixed(6)} BTC &middot; {fmt(btcInvested)} invested</p>
-                            </div>
-                        </div>
-                        <div className="text-right shrink-0 flex items-center gap-2">
-                            <div>
-                                <p className="text-sm font-medium font-num text-foreground">{fmt(btcCurrentValue)}</p>
-                                <p className={cn("text-xs font-num", btcCurrentValue >= btcInvested ? "text-accent" : "text-red-400")}>
-                                    {btcCurrentValue >= btcInvested ? '+' : ''}{fmt(btcCurrentValue - btcInvested)}
-                                </p>
-                            </div>
-                            <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                        </div>
-                    </Card>
-                </Link>
-
-                <Link href="/t212">
-                    <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
-                        <div className="flex items-center gap-4 min-w-0">
-                            <div className="w-11 h-11 rounded-lg bg-white/[0.04] border border-border flex items-center justify-center text-muted shrink-0">
-                                <BarChart3 className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground">Trading 212</p>
-                                <p className="text-xs text-faint font-num">
-                                    {t212Connected ? `${fmt(t212InvestedUsd)} invested` : 'Not connected'}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="text-right shrink-0 flex items-center gap-2">
-                            {t212Connected && t212Snapshot ? (
-                                <div>
-                                    <p className="text-sm font-medium font-num text-foreground">{fmt(t212CurrentValueUsd)}</p>
-                                    <p className={cn("text-xs font-num", t212CurrentValueUsd >= t212InvestedUsd ? "text-accent" : "text-red-400")}>
-                                        {t212CurrentValueUsd >= t212InvestedUsd ? '+' : ''}{fmt(t212CurrentValueUsd - t212InvestedUsd)}
-                                    </p>
-                                </div>
-                            ) : (
-                                <span className="text-xs text-primary font-medium">Connect in Admin</span>
-                            )}
-                            <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                        </div>
-                    </Card>
-                </Link>
-            </div>
-
-            {/* Yearly / Monthly invested breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Card>
-                    <h3 className="text-sm font-medium text-foreground mb-4">Invested by year</h3>
-                    {yearlyRows.length === 0 ? (
-                        <p className="text-muted text-sm py-6 text-center">No investments recorded yet.</p>
-                    ) : (
-                        <div className="space-y-0">
-                            <div className="grid grid-cols-4 text-[10px] text-faint uppercase tracking-wider pb-2 border-b border-border">
-                                <span>Year</span>
-                                <span className="text-right">BTC</span>
-                                <span className="text-right">T212</span>
-                                <span className="text-right">Total</span>
-                            </div>
-                            {yearlyRows.map((row) => (
-                                <div key={row.label} className="grid grid-cols-4 text-sm py-2.5 border-b border-border last:border-0 font-num">
-                                    <span className="text-foreground font-medium">{row.label}</span>
-                                    <span className="text-right text-muted">{row.btc > 0 ? fmt(row.btc) : '—'}</span>
-                                    <span className="text-right text-muted">{row.t212 > 0 ? fmt(row.t212) : '—'}</span>
-                                    <span className="text-right text-foreground font-medium">{fmt(row.total)}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </Card>
-
-                <Card>
-                    <h3 className="text-sm font-medium text-foreground mb-4">Invested by month &middot; {currentYear}</h3>
-                    {monthlyRows.length === 0 ? (
-                        <p className="text-muted text-sm py-6 text-center">No investments recorded this year.</p>
-                    ) : (
-                        <div className="space-y-0">
-                            <div className="grid grid-cols-4 text-[10px] text-faint uppercase tracking-wider pb-2 border-b border-border">
-                                <span>Month</span>
-                                <span className="text-right">BTC</span>
-                                <span className="text-right">T212</span>
-                                <span className="text-right">Total</span>
-                            </div>
-                            {monthlyRows.map((row) => (
-                                <div key={row.label} className="grid grid-cols-4 text-sm py-2.5 border-b border-border last:border-0 font-num">
-                                    <span className="text-foreground font-medium">{row.label}</span>
-                                    <span className="text-right text-muted">{row.btc > 0 ? fmt(row.btc) : '—'}</span>
-                                    <span className="text-right text-muted">{row.t212 > 0 ? fmt(row.t212) : '—'}</span>
-                                    <span className="text-right text-foreground font-medium">{fmt(row.total)}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </Card>
-            </div>
-
-            {t212Connected && t212Snapshot && t212Snapshot.currency !== 'USD' && (
-                <p className="text-[10px] text-faint text-center">
-                    Trading212 amounts converted from {t212Snapshot.currency} to USD at the current exchange rate (&asymp;{fxRate.toFixed(4)}) — historical entries use today&apos;s rate, not the rate on the deposit date.
-                </p>
-            )}
+            <OverviewClient data={data} usdToGbp={usdToGbp} />
         </DashboardLayout>
     );
 }
