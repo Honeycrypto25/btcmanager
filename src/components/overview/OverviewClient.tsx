@@ -5,12 +5,14 @@ import { Card, cn } from "@/components/ui/core";
 import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight } from "lucide-react";
 import Link from 'next/link';
 import {
-    LineChart,
+    ComposedChart,
+    Area,
     Line,
     XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
+    ReferenceLine,
     ResponsiveContainer,
 } from 'recharts';
 
@@ -259,15 +261,41 @@ function InvestmentChart({
     const investedKey = scope === 'BTC' ? 'btcInvested' : scope === 'T212' ? 't212Invested' : 'totalInvested';
     const valueKey = scope === 'BTC' ? 'btcValue' : scope === 'T212' ? 't212Value' : 'totalValue';
 
+    // Diferența valoare - investit: pozitivă = profit (verde), negativă =
+    // pierdere (roșu). Gradientul e poziționat exact la zero, cu intensitate
+    // crescândă spre extreme — difuz lângă linia de investit, puternic acolo
+    // unde diferența e cea mai mare.
+    const chartData = useMemo(
+        () => data.map((d) => ({ ...d, diff: (d as any)[valueKey] - (d as any)[investedKey] })),
+        [data, valueKey, investedKey]
+    );
+
+    const { zeroOffsetPercent, hasBoth } = useMemo(() => {
+        const diffs = chartData.map((d) => d.diff);
+        const maxDiff = Math.max(0, ...diffs);
+        const minDiff = Math.min(0, ...diffs);
+        const range = maxDiff - minDiff;
+        return {
+            zeroOffsetPercent: range > 0 ? (maxDiff / range) * 100 : 50,
+            hasBoth: maxDiff > 0 && minDiff < 0,
+        };
+    }, [chartData]);
+
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (!active || !payload || !payload.length) return null;
-        const invested = payload.find((p: any) => p.dataKey === investedKey)?.value ?? 0;
-        const value = payload.find((p: any) => p.dataKey === valueKey)?.value ?? 0;
+        const point = payload[0]?.payload;
+        if (!point) return null;
+        const invested = point[investedKey] ?? 0;
+        const value = point[valueKey] ?? 0;
+        const diff = point.diff ?? 0;
         return (
             <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg">
                 <p className="text-faint text-xs mb-1">{label}</p>
                 <p className="text-primary text-xs font-num">Invested: {fmt(invested)}</p>
-                <p className="text-accent text-xs font-num">Value: {fmt(value)}</p>
+                <p className="text-foreground text-xs font-num">Value: {fmt(value)}</p>
+                <p className={cn("text-xs font-num", diff >= 0 ? "text-accent" : "text-red-400")}>
+                    {diff >= 0 ? '+' : ''}{fmt(diff)}
+                </p>
             </div>
         );
     };
@@ -277,7 +305,7 @@ function InvestmentChart({
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
                 <div>
                     <h3 className="text-sm font-medium text-foreground">Growth over time</h3>
-                    <p className="text-xs text-faint mt-0.5">Cumulative invested vs. current value, by month</p>
+                    <p className="text-xs text-faint mt-0.5">Gap between invested and current value, by month</p>
                 </div>
                 <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                     {([
@@ -306,7 +334,21 @@ function InvestmentChart({
             ) : (
                 <div className="h-[240px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data}>
+                        <ComposedChart data={chartData}>
+                            <defs>
+                                <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#52c98a" stopOpacity={0.85} />
+                                    <stop offset={`${zeroOffsetPercent}%`} stopColor="#52c98a" stopOpacity={0.06} />
+                                    {hasBoth && <stop offset={`${zeroOffsetPercent}%`} stopColor="#e5605a" stopOpacity={0.06} />}
+                                    <stop offset="100%" stopColor="#e5605a" stopOpacity={0.85} />
+                                </linearGradient>
+                                <linearGradient id="pnlLine" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#52c98a" />
+                                    <stop offset={`${zeroOffsetPercent}%`} stopColor="#52c98a" />
+                                    {hasBoth && <stop offset={`${zeroOffsetPercent}%`} stopColor="#e5605a" />}
+                                    <stop offset="100%" stopColor="#e5605a" />
+                                </linearGradient>
+                            </defs>
                             <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
                             <XAxis
                                 dataKey="label"
@@ -324,35 +366,36 @@ function InvestmentChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
-                            <Line
+                            <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" />
+                            <Area
                                 type="monotone"
-                                dataKey={investedKey}
-                                stroke="#d6a24c"
-                                strokeWidth={1.5}
-                                dot={false}
-                                activeDot={{ r: 3, fill: '#d6a24c', strokeWidth: 0 }}
+                                dataKey="diff"
+                                stroke="none"
+                                fill="url(#pnlGradient)"
+                                isAnimationActive={false}
                             />
                             <Line
                                 type="monotone"
-                                dataKey={valueKey}
-                                stroke="#52c98a"
-                                strokeWidth={1.5}
+                                dataKey="diff"
+                                stroke="url(#pnlLine)"
+                                strokeWidth={1.75}
                                 dot={false}
-                                activeDot={{ r: 3, fill: '#52c98a', strokeWidth: 0 }}
+                                activeDot={{ r: 3, strokeWidth: 0, fill: '#fff' }}
+                                isAnimationActive={false}
                             />
-                        </LineChart>
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
             )}
 
             <div className="mt-4 flex items-center justify-center gap-4 text-xs">
                 <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 bg-primary" />
-                    <span className="text-faint">Invested</span>
+                    <div className="w-2.5 h-0.5 bg-accent" />
+                    <span className="text-faint">Above invested</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 bg-accent" />
-                    <span className="text-faint">Current value</span>
+                    <div className="w-2.5 h-0.5 bg-red-400" />
+                    <span className="text-faint">Below invested</span>
                 </div>
             </div>
         </Card>
