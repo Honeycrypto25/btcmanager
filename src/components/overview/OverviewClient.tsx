@@ -4,6 +4,15 @@ import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
 import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight } from "lucide-react";
 import Link from 'next/link';
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+} from 'recharts';
 
 export interface AssetFigures {
     invested: number;
@@ -67,6 +76,30 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
 
     const fmt = (n: number) => `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 0 : 2 })}`;
     const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
+
+    // Serie cumulată, cronologică (cea mai veche lună întâi), pentru grafic:
+    // "invested" = câți bani am pus până în acea lună, "value" = cât valorează
+    // azi banii puși până atunci. Ultimul punct coincide mereu cu statisticile
+    // de sus (Total invested / Current value).
+    const chartData = useMemo(() => {
+        const chronological = [...view.monthlyRows].reverse();
+        let cumBtcInvested = 0, cumBtcValue = 0, cumT212Invested = 0, cumT212Value = 0;
+        return chronological.map((row) => {
+            cumBtcInvested += row.btc.invested;
+            cumBtcValue += row.btc.value;
+            cumT212Invested += row.t212.invested;
+            cumT212Value += row.t212.value;
+            return {
+                label: row.label,
+                btcInvested: cumBtcInvested,
+                btcValue: cumBtcValue,
+                t212Invested: cumT212Invested,
+                t212Value: cumT212Value,
+                totalInvested: cumBtcInvested + cumT212Invested,
+                totalValue: cumBtcValue + cumT212Value,
+            };
+        });
+    }, [view.monthlyRows]);
 
     return (
         <>
@@ -177,6 +210,9 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                 </Link>
             </div>
 
+            {/* Growth chart */}
+            <InvestmentChart data={chartData} fmt={fmt} btcConnected={view.btc.invested > 0} t212Connected={view.t212.connected} />
+
             {/* Yearly / Monthly invested breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <PeriodBreakdown title="Invested by year" rows={view.yearlyRows} fmt={fmt} pnlColor={pnlColor} scrollable={false} />
@@ -192,6 +228,134 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                 )}
             </p>
         </>
+    );
+}
+
+type AssetScope = 'BTC' | 'T212' | 'BOTH';
+
+interface ChartPoint {
+    label: string;
+    btcInvested: number;
+    btcValue: number;
+    t212Invested: number;
+    t212Value: number;
+    totalInvested: number;
+    totalValue: number;
+}
+
+function InvestmentChart({
+    data,
+    fmt,
+    btcConnected,
+    t212Connected,
+}: {
+    data: ChartPoint[];
+    fmt: (n: number) => string;
+    btcConnected: boolean;
+    t212Connected: boolean;
+}) {
+    const [scope, setScope] = useState<AssetScope>('BOTH');
+
+    const investedKey = scope === 'BTC' ? 'btcInvested' : scope === 'T212' ? 't212Invested' : 'totalInvested';
+    const valueKey = scope === 'BTC' ? 'btcValue' : scope === 'T212' ? 't212Value' : 'totalValue';
+
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload || !payload.length) return null;
+        const invested = payload.find((p: any) => p.dataKey === investedKey)?.value ?? 0;
+        const value = payload.find((p: any) => p.dataKey === valueKey)?.value ?? 0;
+        return (
+            <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg">
+                <p className="text-faint text-xs mb-1">{label}</p>
+                <p className="text-primary text-xs font-num">Invested: {fmt(invested)}</p>
+                <p className="text-accent text-xs font-num">Value: {fmt(value)}</p>
+            </div>
+        );
+    };
+
+    return (
+        <Card>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
+                <div>
+                    <h3 className="text-sm font-medium text-foreground">Growth over time</h3>
+                    <p className="text-xs text-faint mt-0.5">Cumulative invested vs. current value, by month</p>
+                </div>
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                    {([
+                        { key: 'BTC' as AssetScope, label: 'BTC' },
+                        { key: 'T212' as AssetScope, label: 'T212' },
+                        { key: 'BOTH' as AssetScope, label: 'Both' },
+                    ]).map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setScope(opt.key)}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                scope === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {data.length === 0 || (scope === 'BTC' && !btcConnected) || (scope === 'T212' && !t212Connected) ? (
+                <div className="h-[240px] flex items-center justify-center text-muted text-sm">
+                    {scope === 'T212' && !t212Connected ? 'Connect Trading212 in Admin to see this.' : 'Not enough data yet.'}
+                </div>
+            ) : (
+                <div className="h-[240px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data}>
+                            <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis
+                                dataKey="label"
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickLine={false}
+                                minTickGap={24}
+                            />
+                            <YAxis
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickFormatter={(val) => fmt(val)}
+                                width={56}
+                                tickLine={false}
+                                axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
+                            <Line
+                                type="monotone"
+                                dataKey={investedKey}
+                                stroke="#d6a24c"
+                                strokeWidth={1.5}
+                                dot={false}
+                                activeDot={{ r: 3, fill: '#d6a24c', strokeWidth: 0 }}
+                            />
+                            <Line
+                                type="monotone"
+                                dataKey={valueKey}
+                                stroke="#52c98a"
+                                strokeWidth={1.5}
+                                dot={false}
+                                activeDot={{ r: 3, fill: '#52c98a', strokeWidth: 0 }}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-center gap-4 text-xs">
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-0.5 bg-primary" />
+                    <span className="text-faint">Invested</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-0.5 bg-accent" />
+                    <span className="text-faint">Current value</span>
+                </div>
+            </div>
+        </Card>
     );
 }
 
