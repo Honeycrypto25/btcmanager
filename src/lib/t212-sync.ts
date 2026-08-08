@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import {
+    getAccountInfo,
     getAccountCash,
     getPortfolio,
     getPies,
@@ -49,6 +50,23 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
     const environment = getEnvironment();
 
     try {
+        let account = await ensureT212Account();
+
+        // Prindem moneda reală a contului o singură dată — nu la fiecare sync,
+        // ca să nu adăugăm un apel API în plus de fiecare dată (moneda contului
+        // practic nu se schimbă niciodată).
+        if (!account.currency) {
+            const info = await getAccountInfo(environment, creds.apiKey, creds.apiSecret);
+            const currency = info?.currencyCode ?? info?.currency ?? null;
+            if (currency) {
+                account = await db.t212Account.update({
+                    where: { id: account.id },
+                    data: { currency },
+                });
+            }
+            await sleep(1500);
+        }
+
         // Secvențial, nu Promise.all — Trading212 are limite stricte per-endpoint
         // (ex: 1 cerere/5s pe unele rute); cererile paralele multiplică riscul de 429.
         const cash = await getAccountCash(environment, creds.apiKey, creds.apiSecret);
@@ -57,8 +75,6 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         await sleep(1500);
         const pies = await getPies(environment, creds.apiKey, creds.apiSecret);
 
-        const account = await ensureT212Account();
-
         await db.t212Snapshot.create({
             data: {
                 accountId: account.id,
@@ -66,7 +82,7 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
                 investedValue: cash.invested,
                 freeCash: cash.free,
                 resultPpl: cash.result,
-                currency: account.currency ?? "USD",
+                currency: account.currency ?? "GBP",
                 positions: positions as any,
                 pies: pies as any,
             },
