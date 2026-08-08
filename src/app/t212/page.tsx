@@ -97,6 +97,13 @@ export default async function T212Page() {
                 <T212SyncButton />
             </div>
 
+            {account.lastSyncError && (
+                <div className="bg-orange-500/10 border border-orange-500/20 text-orange-300 text-sm p-3 rounded-lg flex items-start gap-2">
+                    <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{account.lastSyncError}</span>
+                </div>
+            )}
+
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>

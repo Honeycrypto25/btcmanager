@@ -89,11 +89,12 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         });
 
         // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview
+        let cashFlowError: string | null = null;
         try {
-            await sleep(1500);
+            await sleep(3000);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
             const cashOnly = transactions.filter(
-                (t) => t.type === "DEPOSIT" || t.type === "WITHDRAWAL"
+                (t) => t.type === "DEPOSIT" || t.type === "WITHDRAW"
             );
 
             for (const tx of cashOnly) {
@@ -117,15 +118,21 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
                     },
                 });
             }
-        } catch (txErr) {
+        } catch (txErr: any) {
             // Nu blocăm tot sync-ul dacă doar istoricul de tranzacții eșuează —
-            // cash-ul și pozițiile curente sunt mai importante.
+            // cash-ul și pozițiile curente sunt mai importante. Dar NU ascundem
+            // eroarea complet — o arătăm în UI, ca să știi că investitul
+            // lunar/anual poate fi incomplet.
+            cashFlowError = txErr instanceof T212ApiError ? txErr.message : (txErr?.message ?? "Cash flow sync failed");
             console.error("T212 cash flow sync failed:", txErr);
         }
 
         await db.t212Account.update({
             where: { id: account.id },
-            data: { lastSyncedAt: new Date(), lastSyncError: null },
+            data: {
+                lastSyncedAt: new Date(),
+                lastSyncError: cashFlowError ? `Positions synced OK, but transaction history failed: ${cashFlowError}` : null,
+            },
         });
 
         return { ok: true };

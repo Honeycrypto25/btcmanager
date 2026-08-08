@@ -187,7 +187,7 @@ export async function getAllCashTransactions(
     let pages = 0;
 
     while (path && pages < maxPages) {
-        const data: any = await t212Fetch(environment, path, apiKey, apiSecret);
+        const data: any = await t212Fetch(environment, path, apiKey, apiSecret, 4);
         const items = Array.isArray(data?.items) ? data.items : [];
         results.push(...items);
 
