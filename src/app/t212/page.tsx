@@ -13,10 +13,7 @@ export default async function T212Page() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const userId = (session.user as any).id as string;
-
     const account = await db.t212Account.findFirst({
-        where: { userId },
         orderBy: { createdAt: "desc" },
     });
 
@@ -34,9 +31,9 @@ export default async function T212Page() {
                         <Link2 className="w-6 h-6" />
                     </div>
                     <div className="space-y-1">
-                        <p className="text-foreground font-medium">No Trading212 account connected</p>
+                        <p className="text-foreground font-medium">Trading212 not configured</p>
                         <p className="text-muted text-sm max-w-sm">
-                            Connect your Trading212 API key in Admin to start tracking your positions here.
+                            Add T212_API_KEY and T212_API_SECRET as environment variables in Vercel to start tracking your positions here.
                         </p>
                     </div>
                     <Link href="/admin" className="text-primary text-sm font-medium hover:underline">

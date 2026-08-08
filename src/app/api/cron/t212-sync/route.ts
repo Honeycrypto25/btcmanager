@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { syncAllT212Accounts } from "@/lib/t212-sync";
+import { syncT212Account } from "@/lib/t212-sync";
 
 /**
  * Apelat automat de Vercel Cron (vezi vercel.json) o dată la 24h.
@@ -16,14 +16,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const results = await syncAllT212Accounts();
+    const result = await syncT212Account();
 
-    return NextResponse.json({
-        synced: results.length,
-        results: results.map((r) => ({
-            accountId: r.accountId,
-            ok: r.result.ok,
-            error: r.result.ok ? null : r.result.error,
-        })),
-    });
+    return NextResponse.json(result);
 }

@@ -19,8 +19,6 @@ export default async function OverviewPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const userId = (session.user as any).id as string;
-
     // --- BTC data ---
     const currentBtcPrice = await getCurrentBtcPrice();
     const wallets = await db.bitcoinWallet.findMany({ include: { transactions: true } });
@@ -31,7 +29,7 @@ export default async function OverviewPage() {
     const btcInvested = allBtcTx.reduce((acc: number, t: any) => acc + t.amount * t.priceAtTime, 0);
 
     // --- T212 data ---
-    const t212Account = await db.t212Account.findFirst({ where: { userId } });
+    const t212Account = await db.t212Account.findFirst();
     let t212CurrentValueUsd = 0;
     let t212InvestedUsd = 0;
     let t212Connected = false;

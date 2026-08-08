@@ -1,34 +1,57 @@
 import { db } from "@/lib/db";
-import { decryptSecret } from "@/lib/crypto";
 import {
     getAccountCash,
     getPortfolio,
     getPies,
     getAllCashTransactions,
+    testConnection,
     T212ApiError,
 } from "@/lib/t212";
 
+function getEnvironment(): string {
+    return process.env.T212_ENVIRONMENT === "demo" ? "demo" : "live";
+}
+
+function getCredentials(): { apiKey: string; apiSecret: string } | null {
+    const apiKey = process.env.T212_API_KEY;
+    const apiSecret = process.env.T212_API_SECRET;
+    if (!apiKey || !apiSecret) return null;
+    return { apiKey, apiSecret };
+}
+
+/** Găsește (sau creează) rândul T212Account pentru mediul curent — nu există per-user, e un singur cont, global la nivel de deployment */
+async function ensureT212Account(currency?: string) {
+    const environment = getEnvironment();
+    const existing = await db.t212Account.findUnique({ where: { environment } });
+    if (existing) return existing;
+    return db.t212Account.create({ data: { environment, currency } });
+}
+
 /**
- * Sincronizează un cont Trading212: preia cash, poziții, pies și tranzacții
- * de la API-ul lor, salvează un snapshot nou și adaugă orice depunere/
- * retragere nouă în istoricul cash-flow (deduplicat după id-ul T212).
+ * Sincronizează contul Trading212: preia cash, poziții, pies și tranzacții
+ * de la API-ul lor (credențiale din T212_API_KEY / T212_API_SECRET, setate
+ * direct în Vercel — nu sunt introduse niciodată prin UI sau stocate în DB),
+ * salvează un snapshot nou și adaugă orice depunere/retragere nouă în
+ * istoricul cash-flow (deduplicat după id-ul T212).
  *
  * Citim mereu starea CURENTĂ (nu cantități presupuse fixe), deci orice
  * rebalansare automată a unui pie e reflectată automat, fără logică specială.
  */
-export async function syncT212Account(accountId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    const account = await db.t212Account.findUnique({ where: { id: accountId } });
-    if (!account) return { ok: false, error: "Account not found" };
+export async function syncT212Account(): Promise<{ ok: true } | { ok: false; error: string }> {
+    const creds = getCredentials();
+    if (!creds) {
+        return { ok: false, error: "T212_API_KEY / T212_API_SECRET nu sunt setate în variabilele de mediu" };
+    }
+    const environment = getEnvironment();
 
     try {
-        const apiKey = await decryptSecret(account.apiKeyEncrypted);
-        const apiSecret = await decryptSecret(account.apiSecretEncrypted);
-
         const [cash, positions, pies] = await Promise.all([
-            getAccountCash(account.environment, apiKey, apiSecret),
-            getPortfolio(account.environment, apiKey, apiSecret),
-            getPies(account.environment, apiKey, apiSecret),
+            getAccountCash(environment, creds.apiKey, creds.apiSecret),
+            getPortfolio(environment, creds.apiKey, creds.apiSecret),
+            getPies(environment, creds.apiKey, creds.apiSecret),
         ]);
+
+        const account = await ensureT212Account();
 
         await db.t212Snapshot.create({
             data: {
@@ -45,7 +68,7 @@ export async function syncT212Account(accountId: string): Promise<{ ok: true } |
 
         // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview
         try {
-            const transactions = await getAllCashTransactions(account.environment, apiKey, apiSecret);
+            const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
             const cashOnly = transactions.filter(
                 (t) => t.type === "DEPOSIT" || t.type === "WITHDRAWAL"
             );
@@ -86,30 +109,36 @@ export async function syncT212Account(accountId: string): Promise<{ ok: true } |
     } catch (err: any) {
         const message = err instanceof T212ApiError ? err.message : (err?.message ?? "Sync failed");
 
-        await db.t212Account.update({
-            where: { id: account.id },
-            data: { lastSyncError: message },
-        });
+        // Salvăm eroarea doar dacă rândul deja există — nu creăm un cont "gol" doar ca să înregistrăm o eroare
+        const existing = await db.t212Account.findUnique({ where: { environment } });
+        if (existing) {
+            await db.t212Account.update({
+                where: { id: existing.id },
+                data: { lastSyncError: message },
+            });
+        }
 
         return { ok: false, error: message };
     }
 }
 
-/** Sincronizează toate conturile T212 înregistrate — apelat din cron */
-export async function syncAllT212Accounts(): Promise<{ accountId: string; result: Awaited<ReturnType<typeof syncT212Account>> }[]> {
-    const accounts = await db.t212Account.findMany({ select: { id: true } });
-    const results = [];
-    for (const acc of accounts) {
-        const result = await syncT212Account(acc.id);
-        results.push({ accountId: acc.id, result });
+/** Status rapid: sunt credențialele setate și valide? Folosit de UI-ul din Admin. */
+export async function getT212ConnectionStatus() {
+    const creds = getCredentials();
+    if (!creds) {
+        return { configured: false as const };
     }
-    return results;
+
+    const environment = getEnvironment();
+    const account = await db.t212Account.findUnique({ where: { environment } });
+
+    return {
+        configured: true as const,
+        environment,
+        currency: account?.currency ?? null,
+        lastSyncedAt: account?.lastSyncedAt ?? null,
+        lastSyncError: account?.lastSyncError ?? null,
+    };
 }
 
-/** Cel mai recent snapshot pentru un cont, dacă există */
-export async function getLatestSnapshot(accountId: string) {
-    return db.t212Snapshot.findFirst({
-        where: { accountId },
-        orderBy: { capturedAt: "desc" },
-    });
-}
+export { testConnection as testT212Credentials };
