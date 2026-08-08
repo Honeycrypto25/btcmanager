@@ -96,15 +96,21 @@ export default async function OverviewPage() {
     }
 
     if (t212Account) {
-        // Folosim istoricul de ORDINE (cumpărări), nu tranzacțiile cash — la
-        // conturile cu investiție automată recurentă, banii trec direct în
-        // ordine de cumpărare, fără o "depunere" cash separată vizibilă.
-        const buyOrders = await db.t212Order.findMany({
-            where: { accountId: t212Account.id, side: "BUY" },
+        // Folosim istoricul de ORDINE, nu tranzacțiile cash — la conturile cu
+        // investiție automată recurentă, banii trec direct în ordine de
+        // cumpărare, fără o "depunere" cash separată vizibilă.
+        //
+        // IMPORTANT: scădem VÂNZĂRILE din cumpărări. La o rebalansare (vinde
+        // X, cumpără Y), banii doar se mută între active — nu sunt bani noi
+        // din exterior. Dacă am aduna doar cumpărările, o rebalansare ar
+        // umfla artificial "investit" (aceiași bani numărați de două ori).
+        const orders = await db.t212Order.findMany({
+            where: { accountId: t212Account.id },
         });
-        for (const o of buyOrders) {
+        for (const o of orders) {
             const d = new Date(o.filledAt);
-            const investedUsd = o.total * gbpToUsd;
+            const signedTotal = o.side === "SELL" ? -o.total : o.total;
+            const investedUsd = signedTotal * gbpToUsd;
             const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             addTo(yearly, d.getFullYear(), { t212Invested: investedUsd });
             addTo(monthly, monthKey, { t212Invested: investedUsd });

@@ -97,6 +97,15 @@ export default async function T212Page() {
         take: 20,
     });
 
+    // Statistici din vânzări realizate — inclusiv rebalansări de pie (vinde X,
+    // cumpără Y). Randamentul e calculat față de costul mediu al acțiunilor
+    // vândute (cost = valoare vânzare - profit realizat), la fel ca în T212.
+    const sellOrders = orders.filter((o: any) => o.side === 'SELL');
+    const realizedProfit = sellOrders.reduce((acc: number, o: any) => acc + (o.realizedProfit ?? 0), 0);
+    const soldValue = sellOrders.reduce((acc: number, o: any) => acc + o.total, 0);
+    const soldCostBasis = soldValue - realizedProfit;
+    const realizedReturnPercent = soldCostBasis > 0 ? (realizedProfit / soldCostBasis) * 100 : 0;
+
     return (
         <DashboardLayout>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -226,6 +235,29 @@ export default async function T212Page() {
                     <Repeat className="w-4 h-4 text-primary" />
                     <h3 className="text-sm font-medium text-foreground">Buy &amp; sell orders</h3>
                 </div>
+
+                {sellOrders.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5 pb-5 border-b border-border">
+                        <div>
+                            <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1.5">Realized P&amp;L from sales</p>
+                            <p className={cn("text-lg font-medium font-num", realizedProfit >= 0 ? "text-accent" : "text-red-400")}>
+                                {realizedProfit >= 0 ? '+' : ''}{fmt(realizedProfit)}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1.5">Sold value</p>
+                            <p className="text-lg font-medium font-num text-foreground">{fmt(soldValue)}</p>
+                            <p className="text-xs text-faint">{sellOrders.length} sale{sellOrders.length === 1 ? '' : 's'}</p>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1.5">Realized return</p>
+                            <p className={cn("text-lg font-medium font-num", realizedReturnPercent >= 0 ? "text-accent" : "text-red-400")}>
+                                {realizedReturnPercent >= 0 ? '+' : ''}{realizedReturnPercent.toFixed(2)}%
+                            </p>
+                            <p className="text-xs text-faint">vs. average cost</p>
+                        </div>
+                    </div>
+                )}
                 {orders.length === 0 ? (
                     <p className="text-muted text-sm py-6 text-center">No filled orders recorded yet.</p>
                 ) : (

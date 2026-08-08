@@ -222,7 +222,7 @@ function PeriodBreakdown({
                                 <div className="text-right font-num">
                                     <span className="text-sm font-medium text-foreground">{fmt(row.total.value)}</span>
                                     <span className={cn("text-xs ml-2", pnlColor(row.total.pnlPercent))}>
-                                        {row.total.invested > 0 ? `${row.total.pnlPercent >= 0 ? '+' : ''}${row.total.pnlPercent.toFixed(1)}%` : '\u2014'}
+                                        {row.total.invested !== 0 ? `${row.total.pnlPercent >= 0 ? '+' : ''}${row.total.pnlPercent.toFixed(1)}%` : '\u2014'}
                                     </span>
                                 </div>
                             </div>
@@ -249,7 +249,7 @@ function AssetSubRow({
     fmt: (n: number) => string;
     pnlColor: (n: number) => string;
 }) {
-    const hasData = figures.invested > 0;
+    const hasData = figures.invested !== 0;
     return (
         <div className="flex justify-between items-center text-xs pl-3 border-l border-border">
             <span className="text-faint">
