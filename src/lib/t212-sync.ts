@@ -24,6 +24,10 @@ function getCredentials(): { apiKey: string; apiSecret: string } | null {
     return { apiKey, apiSecret };
 }
 
+function errMsg(err: any): string {
+    return err instanceof T212ApiError ? err.message : (err?.message ?? "failed");
+}
+
 /** Găsește (sau creează) rândul T212Account pentru mediul curent — nu există per-user, e un singur cont, global la nivel de deployment */
 async function ensureT212Account(currency?: string) {
     const environment = getEnvironment();
@@ -38,6 +42,11 @@ async function ensureT212Account(currency?: string) {
  * direct în Vercel — nu sunt introduse niciodată prin UI sau stocate în DB),
  * salvează un snapshot nou și adaugă orice depunere/retragere nouă în
  * istoricul cash-flow (deduplicat după id-ul T212).
+ *
+ * Cash-ul e singurul apel considerat critic (fără el nu avem ce salva).
+ * Poziții, pies și tranzacții sunt independente — dacă unul eșuează (ex: 429
+ * pe un singur endpoint), restul tot se salvează, în loc să blocheze tot
+ * sync-ul așa cum se întâmpla înainte.
  *
  * Citim mereu starea CURENTĂ (nu cantități presupuse fixe), deci orice
  * rebalansare automată a unui pie e reflectată automat, fără logică specială.
@@ -67,13 +76,29 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             await sleep(1500);
         }
 
-        // Secvențial, nu Promise.all — Trading212 are limite stricte per-endpoint
-        // (ex: 1 cerere/5s pe unele rute); cererile paralele multiplică riscul de 429.
+        // Cash-ul e esențial — dacă asta eșuează, nu avem ce salva, deci
+        // sync-ul chiar eșuează (cade în catch-ul de mai jos).
         const cash = await getAccountCash(environment, creds.apiKey, creds.apiSecret);
         await sleep(1500);
-        const positions = await getPortfolio(environment, creds.apiKey, creds.apiSecret);
+
+        const partialErrors: string[] = [];
+
+        // Poziții și pies — independente una de alta. Dacă una pică (ex: 429
+        // pe /equity/pies), nu mai blocăm cash-ul, snapshot-ul sau tranzacțiile.
+        let positions: Awaited<ReturnType<typeof getPortfolio>> = [];
+        try {
+            positions = await getPortfolio(environment, creds.apiKey, creds.apiSecret);
+        } catch (posErr: any) {
+            partialErrors.push(`Positions: ${errMsg(posErr)}`);
+        }
         await sleep(1500);
-        const pies = await getPies(environment, creds.apiKey, creds.apiSecret);
+
+        let pies: Awaited<ReturnType<typeof getPies>> = [];
+        try {
+            pies = await getPies(environment, creds.apiKey, creds.apiSecret);
+        } catch (piesErr: any) {
+            partialErrors.push(`Pies: ${errMsg(piesErr)}`);
+        }
 
         // P&L calculat ca total - liber - investit, NU preluat direct din
         // câmpul result/ppl al T212 — acela pare să reflecte altceva (posibil
@@ -97,7 +122,6 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview.
         // Includem și TRANSFER (nu doar DEPOSIT/WITHDRAW) — la conturile ISA banii
         // pot intra printr-un transfer de la alt broker, nu neapărat o "depunere" clasică.
-        let cashFlowError: string | null = null;
         try {
             await sleep(3000);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
@@ -105,12 +129,12 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             const cashOnly = transactions.filter((t) => relevantTypes.has(t.type));
 
             if (transactions.length === 0) {
-                cashFlowError = "Trading212 returned zero transactions for this account.";
+                partialErrors.push("Transactions: Trading212 returned zero transactions for this account.");
             } else if (cashOnly.length === 0) {
                 // Am primit tranzacții, dar niciuna nu se potrivește cu tipurile
                 // așteptate — afișăm exact ce tipuri există, ca să putem ajusta filtrul.
                 const seenTypes = Array.from(new Set(transactions.map((t) => t.type))).join(", ");
-                cashFlowError = `Fetched ${transactions.length} transactions but none matched expected types. Types seen: ${seenTypes}`;
+                partialErrors.push(`Transactions: fetched ${transactions.length} but none matched expected types. Types seen: ${seenTypes}`);
             }
 
             for (const tx of cashOnly) {
@@ -137,9 +161,8 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         } catch (txErr: any) {
             // Nu blocăm tot sync-ul dacă doar istoricul de tranzacții eșuează —
             // cash-ul și pozițiile curente sunt mai importante. Dar NU ascundem
-            // eroarea complet — o arătăm în UI, ca să știi că investitul
-            // lunar/anual poate fi incomplet.
-            cashFlowError = txErr instanceof T212ApiError ? txErr.message : (txErr?.message ?? "Cash flow sync failed");
+            // eroarea complet — o arătăm în UI.
+            partialErrors.push(`Transactions: ${errMsg(txErr)}`);
             console.error("T212 cash flow sync failed:", txErr);
         }
 
@@ -147,13 +170,13 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             where: { id: account.id },
             data: {
                 lastSyncedAt: new Date(),
-                lastSyncError: cashFlowError ? `Positions synced OK, but transaction history failed: ${cashFlowError}` : null,
+                lastSyncError: partialErrors.length > 0 ? partialErrors.join(" | ") : null,
             },
         });
 
         return { ok: true };
     } catch (err: any) {
-        const message = err instanceof T212ApiError ? err.message : (err?.message ?? "Sync failed");
+        const message = errMsg(err);
 
         // Salvăm eroarea doar dacă rândul deja există — nu creăm un cont "gol" doar ca să înregistrăm o eroare
         const existing = await db.t212Account.findUnique({ where: { environment } });
