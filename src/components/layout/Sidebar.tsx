@@ -13,18 +13,36 @@ import {
     TrendingUp,
     TrendingDown,
     LineChart,
-    X
+    X,
+    Globe,
+    BarChart3
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
 
-const navItems = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Wallets', href: '/wallets', icon: Wallet },
-    { name: 'History', href: '/history', icon: History },
-    { name: 'ROI', href: '/roi', icon: TrendingUp },
-    { name: 'Analytics', href: '/analytics', icon: LineChart },
-    { name: 'Cycles', href: '/cycle', icon: TrendingDown },
+type NavLeaf = { name: string; href: string; icon: React.ElementType };
+type NavSection = { section: string; items: NavLeaf[] };
+type NavEntry = NavLeaf | NavSection;
+
+const navEntries: NavEntry[] = [
+    { name: 'Overview', href: '/', icon: Globe },
+    {
+        section: 'Bitcoin',
+        items: [
+            { name: 'Dashboard', href: '/btc', icon: LayoutDashboard },
+            { name: 'Wallets', href: '/btc/wallets', icon: Wallet },
+            { name: 'History', href: '/btc/history', icon: History },
+            { name: 'ROI', href: '/btc/roi', icon: TrendingUp },
+            { name: 'Analytics', href: '/btc/analytics', icon: LineChart },
+            { name: 'Cycles', href: '/btc/cycle', icon: TrendingDown },
+        ],
+    },
+    {
+        section: 'Trading 212',
+        items: [
+            { name: 'Dashboard', href: '/t212', icon: BarChart3 },
+        ],
+    },
     { name: 'Admin', href: '/admin', icon: Lock },
 ];
 
@@ -35,6 +53,32 @@ interface SidebarProps {
 
 export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
     const pathname = usePathname();
+
+    const renderLeaf = (item: NavLeaf, close: () => void) => {
+        const isActive = pathname === item.href;
+        return (
+            <Link
+                key={item.href}
+                href={item.href}
+                onClick={close}
+                className={cn(
+                    'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors duration-150',
+                    isActive
+                        ? 'bg-white/[0.06] text-foreground'
+                        : 'text-muted hover:bg-white/[0.03] hover:text-foreground'
+                )}
+            >
+                <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-faint group-hover:text-muted")} />
+                <span className="truncate font-medium">{item.name}</span>
+            </Link>
+        );
+    };
+
+    const handleLinkClick = () => {
+        if (window.innerWidth < 1024) {
+            toggle();
+        }
+    };
 
     return (
         <>
@@ -50,13 +94,13 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
                 "fixed left-0 top-0 z-50 flex h-screen w-[17rem] flex-col border-r border-border bg-background p-4 transition-transform duration-200 lg:translate-x-0 lg:p-5",
                 isOpen ? "translate-x-0" : "-translate-x-full"
             )}>
-                <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-                    <div className="mb-6 flex items-center justify-between gap-3 px-1">
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+                    <div className="mb-2 flex items-center justify-between gap-3 px-1">
                         <div className="flex items-center gap-3">
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
                                 <Bitcoin className="h-5 w-5" />
                             </div>
-                            <p className="font-display text-lg font-medium leading-none text-foreground">BTC Manager</p>
+                            <p className="font-display text-lg font-medium leading-none text-foreground">Portfolio</p>
                         </div>
 
                         <button
@@ -69,31 +113,25 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
                         </button>
                     </div>
 
-                    <nav className="space-y-0.5">
-                        {navItems.map((item) => {
-                            const isActive = pathname === item.href;
+                    {navEntries.map((entry) => {
+                        if ('href' in entry) {
                             return (
-                                <Link
-                                    key={item.name}
-                                    href={item.href}
-                                    onClick={() => {
-                                        if (window.innerWidth < 1024) {
-                                            toggle();
-                                        }
-                                    }}
-                                    className={cn(
-                                        'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors duration-150',
-                                        isActive
-                                            ? 'bg-white/[0.06] text-foreground'
-                                            : 'text-muted hover:bg-white/[0.03] hover:text-foreground'
-                                    )}
-                                >
-                                    <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-faint group-hover:text-muted")} />
-                                    <span className="truncate font-medium">{item.name}</span>
-                                </Link>
+                                <nav key={entry.href} className="space-y-0.5">
+                                    {renderLeaf(entry, handleLinkClick)}
+                                </nav>
                             );
-                        })}
-                    </nav>
+                        }
+                        return (
+                            <div key={entry.section} className="space-y-0.5">
+                                <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+                                    {entry.section}
+                                </p>
+                                <nav className="space-y-0.5">
+                                    {entry.items.map((item) => renderLeaf(item, handleLinkClick))}
+                                </nav>
+                            </div>
+                        );
+                    })}
                 </div>
 
                 <div className="shrink-0 pt-4 hairline-top">

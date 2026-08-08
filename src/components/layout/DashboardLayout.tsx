@@ -21,7 +21,7 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
                             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
                                 <Bitcoin className="h-4 w-4" />
                             </div>
-                            <p className="font-display text-base font-medium leading-none text-foreground">BTC Manager</p>
+                            <p className="font-display text-base font-medium leading-none text-foreground">Portfolio</p>
                         </div>
 
                         <button

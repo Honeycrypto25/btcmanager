@@ -13,12 +13,24 @@ import {
     CheckCircle2,
     AlertCircle,
     Puzzle,
-    ChevronRight
+    ChevronRight,
+    RefreshCw,
+    Link2,
+    Unlink,
+    BarChart3
 } from "lucide-react";
 import axios from 'axios';
 
+interface T212Status {
+    connected: boolean;
+    environment?: string;
+    currency?: string;
+    lastSyncedAt?: string | null;
+    lastSyncError?: string | null;
+}
+
 export default function AdminPage() {
-    const [activeTab, setActiveTab] = useState<'security' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'integrations' | 'features'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -29,6 +41,16 @@ export default function AdminPage() {
     const [token, setToken] = useState('');
     const [verifying, setVerifying] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // T212 State
+    const [t212Status, setT212Status] = useState<T212Status>({ connected: false });
+    const [t212Loading, setT212Loading] = useState(true);
+    const [t212ApiKey, setT212ApiKey] = useState('');
+    const [t212ApiSecret, setT212ApiSecret] = useState('');
+    const [t212Environment, setT212Environment] = useState<'live' | 'demo'>('live');
+    const [t212Connecting, setT212Connecting] = useState(false);
+    const [t212Syncing, setT212Syncing] = useState(false);
+    const [t212Error, setT212Error] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         try {
@@ -41,9 +63,64 @@ export default function AdminPage() {
         }
     };
 
+    const fetchT212Status = async () => {
+        try {
+            const { data } = await axios.get('/api/t212');
+            setT212Status(data);
+        } catch (err) {
+            console.error('Failed to fetch Trading212 status');
+        } finally {
+            setT212Loading(false);
+        }
+    };
+
     useEffect(() => {
         fetchStatus();
+        fetchT212Status();
     }, []);
+
+    const handleConnectT212 = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setT212Connecting(true);
+        setT212Error(null);
+        try {
+            await axios.post('/api/t212', {
+                apiKey: t212ApiKey,
+                apiSecret: t212ApiSecret,
+                environment: t212Environment,
+            });
+            setT212ApiKey('');
+            setT212ApiSecret('');
+            await fetchT212Status();
+        } catch (err: any) {
+            setT212Error(err.response?.data?.error || 'Failed to connect');
+        } finally {
+            setT212Connecting(false);
+        }
+    };
+
+    const handleSyncNow = async () => {
+        setT212Syncing(true);
+        setT212Error(null);
+        try {
+            await axios.post('/api/t212/sync');
+            await fetchT212Status();
+        } catch (err: any) {
+            setT212Error(err.response?.data?.error || 'Sync failed');
+        } finally {
+            setT212Syncing(false);
+        }
+    };
+
+    const handleDisconnectT212 = async () => {
+        if (!confirm('Disconnect your Trading212 account? Historical snapshots will be deleted.')) return;
+        try {
+            await axios.delete('/api/t212');
+            await fetchT212Status();
+        } catch (err) {
+            alert('Failed to disconnect');
+        }
+    };
 
     const handleStartSetup = async () => {
         try {
@@ -89,6 +166,7 @@ export default function AdminPage() {
             <div className="flex gap-4 border-b border-border pb-1">
                 {[
                     { id: 'security', name: 'Security & Auth', icon: ShieldCheck },
+                    { id: 'integrations', name: 'Integrations', icon: Link2 },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -157,6 +235,151 @@ export default function AdminPage() {
                             <h3 className="text-xl font-bold text-foreground tracking-tight">API Key Management</h3>
                         </div>
                         <p className="text-sm text-muted font-medium">Coming soon: Manage your external service API keys and permissions securely from this panel.</p>
+                    </Card>
+                </div>
+            )}
+
+            {activeTab === 'integrations' && (
+                <div className="space-y-6">
+                    <Card className="p-6 md:p-8 space-y-6">
+                        <div className="flex items-center gap-4">
+                            <div className={cn(
+                                "w-12 h-12 rounded-xl flex items-center justify-center border shrink-0",
+                                t212Status.connected
+                                    ? "bg-accent/10 border-accent/20 text-accent"
+                                    : "bg-white/[0.04] border-border text-muted"
+                            )}>
+                                <BarChart3 className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Trading 212</h3>
+                                <p className="text-muted text-sm">
+                                    Import your stocks &amp; ETF investments (Invest / ISA accounts). Synced automatically every 24 hours.
+                                </p>
+                            </div>
+                        </div>
+
+                        {t212Loading ? (
+                            <div className="flex justify-center py-6">
+                                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                            </div>
+                        ) : t212Status.connected ? (
+                            <div className="space-y-4">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="flex items-center gap-2 text-accent bg-accent/5 px-3 py-1.5 rounded-lg border border-accent/10 text-xs font-medium uppercase">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        Connected &middot; {t212Status.environment}
+                                    </div>
+                                    {t212Status.currency && (
+                                        <span className="text-xs text-faint">Currency: {t212Status.currency}</span>
+                                    )}
+                                </div>
+
+                                <div className="text-sm text-muted">
+                                    Last synced:{' '}
+                                    <span className="text-foreground font-num">
+                                        {t212Status.lastSyncedAt
+                                            ? new Date(t212Status.lastSyncedAt).toLocaleString()
+                                            : 'never yet'}
+                                    </span>
+                                </div>
+
+                                {t212Status.lastSyncError && (
+                                    <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg flex items-start gap-2">
+                                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                        <span>Last sync failed: {t212Status.lastSyncError}</span>
+                                    </div>
+                                )}
+
+                                {t212Error && (
+                                    <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                        {t212Error}
+                                    </div>
+                                )}
+
+                                <div className="flex gap-3">
+                                    <Button variant="outline" size="md" onClick={handleSyncNow} disabled={t212Syncing}>
+                                        {t212Syncing ? (
+                                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        ) : (
+                                            <RefreshCw className="w-4 h-4 mr-2" />
+                                        )}
+                                        Sync now
+                                    </Button>
+                                    <Button variant="danger" size="md" onClick={handleDisconnectT212}>
+                                        <Unlink className="w-4 h-4 mr-2" />
+                                        Disconnect
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleConnectT212} className="space-y-4">
+                                <p className="text-xs text-faint leading-relaxed">
+                                    Generate an API key from the Trading212 app: Settings &rarr; API (Beta) &rarr; Generate API key.
+                                    Your key and secret are encrypted before being stored.
+                                </p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium uppercase tracking-wider text-faint">API Key</label>
+                                        <input
+                                            required
+                                            type="text"
+                                            value={t212ApiKey}
+                                            onChange={(e) => setT212ApiKey(e.target.value)}
+                                            className="w-full bg-white/[0.03] border border-border rounded-lg p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
+                                            autoComplete="off"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium uppercase tracking-wider text-faint">API Secret</label>
+                                        <input
+                                            required
+                                            type="password"
+                                            value={t212ApiSecret}
+                                            onChange={(e) => setT212ApiSecret(e.target.value)}
+                                            className="w-full bg-white/[0.03] border border-border rounded-lg p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
+                                            autoComplete="off"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium uppercase tracking-wider text-faint">Environment</label>
+                                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5 w-fit">
+                                        {(['live', 'demo'] as const).map((env) => (
+                                            <button
+                                                key={env}
+                                                type="button"
+                                                onClick={() => setT212Environment(env)}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-xs font-medium rounded-md capitalize transition-colors",
+                                                    t212Environment === env ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                                )}
+                                            >
+                                                {env}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {t212Error && (
+                                    <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4 shrink-0" />
+                                        {t212Error}
+                                    </div>
+                                )}
+
+                                <Button variant="primary" type="submit" disabled={t212Connecting}>
+                                    {t212Connecting ? (
+                                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                    ) : (
+                                        <Link2 className="w-4 h-4 mr-2" />
+                                    )}
+                                    Connect Trading212
+                                </Button>
+                            </form>
+                        )}
                     </Card>
                 </div>
             )}
