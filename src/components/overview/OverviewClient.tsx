@@ -208,31 +208,42 @@ function PeriodBreakdown({
     pnlColor: (n: number) => string;
     scrollable: boolean;
 }) {
+    const gridCols = "grid-cols-[minmax(0,1fr)_minmax(56px,auto)_minmax(56px,auto)_minmax(40px,auto)]";
+
     return (
         <Card>
-            <h3 className="text-sm font-medium text-foreground mb-4">{title}</h3>
+            <h3 className="text-sm font-medium text-foreground mb-2">{title}</h3>
             {rows.length === 0 ? (
                 <p className="text-muted text-sm py-6 text-center">No investments recorded yet.</p>
             ) : (
-                <div className={cn(scrollable && "max-h-[420px] overflow-y-auto pr-1")}>
-                    {rows.map((row) => (
-                        <div key={row.label} className="py-3 border-b border-border last:border-0">
-                            <div className="flex justify-between items-baseline mb-1.5">
-                                <span className="text-sm font-medium text-foreground">{row.label}</span>
-                                <div className="text-right font-num">
-                                    <span className="text-sm font-medium text-foreground">{fmt(row.total.value)}</span>
-                                    <span className={cn("text-xs ml-2", pnlColor(row.total.pnlPercent))}>
+                <>
+                    <div className={cn("grid gap-x-3 pb-1.5 border-b border-border", gridCols)}>
+                        <span />
+                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">Invested</span>
+                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">Value</span>
+                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">P&amp;L</span>
+                    </div>
+                    <div className={cn(scrollable && "max-h-[420px] overflow-y-auto pr-1")}>
+                        {rows.map((row) => (
+                            <div key={row.label} className="py-2.5 border-b border-border last:border-0">
+                                <div className={cn("grid gap-x-3 items-baseline", gridCols)}>
+                                    <span className="text-sm font-medium text-foreground truncate">{row.label}</span>
+                                    <span className="text-sm font-medium font-num text-foreground text-right">
+                                        {row.total.invested !== 0 ? fmt(row.total.invested) : '\u2014'}
+                                    </span>
+                                    <span className="text-sm font-medium font-num text-foreground text-right">{fmt(row.total.value)}</span>
+                                    <span className={cn("text-xs font-num text-right", pnlColor(row.total.pnlPercent))}>
                                         {row.total.invested !== 0 ? `${row.total.pnlPercent >= 0 ? '+' : ''}${row.total.pnlPercent.toFixed(1)}%` : '\u2014'}
                                     </span>
                                 </div>
+                                <div className="mt-1 space-y-0.5">
+                                    <AssetSubRow name="Bitcoin" figures={row.btc} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                    <AssetSubRow name="Trading 212" figures={row.t212} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                </div>
                             </div>
-                            <div className="space-y-1">
-                                <AssetSubRow name="Bitcoin" figures={row.btc} fmt={fmt} pnlColor={pnlColor} />
-                                <AssetSubRow name="Trading 212" figures={row.t212} fmt={fmt} pnlColor={pnlColor} />
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                </>
             )}
         </Card>
     );
@@ -243,29 +254,22 @@ function AssetSubRow({
     figures,
     fmt,
     pnlColor,
+    gridCols,
 }: {
     name: string;
     figures: AssetFigures;
     fmt: (n: number) => string;
     pnlColor: (n: number) => string;
+    gridCols: string;
 }) {
     const hasData = figures.invested !== 0;
     return (
-        <div className="flex justify-between items-center text-xs pl-3 border-l border-border">
-            <span className="text-faint">
-                {name} &middot; invested {hasData ? fmt(figures.invested) : '\u2014'}
-            </span>
-            <span className="font-num text-faint">
-                {hasData ? (
-                    <>
-                        {fmt(figures.value)}{' '}
-                        <span className={pnlColor(figures.pnlPercent)}>
-                            {figures.pnlPercent >= 0 ? '+' : ''}{figures.pnlPercent.toFixed(1)}%
-                        </span>
-                    </>
-                ) : (
-                    '\u2014'
-                )}
+        <div className={cn("grid gap-x-3 items-baseline text-xs pl-3 border-l border-border", gridCols)}>
+            <span className="text-faint truncate">{name}</span>
+            <span className="font-num text-faint text-right">{hasData ? fmt(figures.invested) : '\u2014'}</span>
+            <span className="font-num text-faint text-right">{hasData ? fmt(figures.value) : '\u2014'}</span>
+            <span className={cn("font-num text-right", hasData ? pnlColor(figures.pnlPercent) : "text-faint")}>
+                {hasData ? `${figures.pnlPercent >= 0 ? '+' : ''}${figures.pnlPercent.toFixed(1)}%` : '\u2014'}
             </span>
         </div>
     );
