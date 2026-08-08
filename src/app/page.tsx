@@ -94,12 +94,15 @@ export default async function OverviewPage() {
     }
 
     if (t212Account) {
-        const deposits = await db.t212CashFlow.findMany({
-            where: { accountId: t212Account.id, type: "DEPOSIT" },
+        // DEPOSIT și TRANSFER (bani intrați, ex. la conturi ISA) contează ca
+        // investiție; WITHDRAW se scade din total.
+        const cashFlows = await db.t212CashFlow.findMany({
+            where: { accountId: t212Account.id, type: { in: ["DEPOSIT", "WITHDRAW", "TRANSFER"] } },
         });
-        for (const dep of deposits) {
-            const d = new Date(dep.dateTime);
-            const investedUsd = dep.amount * gbpToUsd;
+        for (const cf of cashFlows) {
+            const d = new Date(cf.dateTime);
+            const signedAmount = cf.type === "WITHDRAW" ? -Math.abs(cf.amount) : cf.amount;
+            const investedUsd = signedAmount * gbpToUsd;
             const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             addTo(yearly, d.getFullYear(), { t212Invested: investedUsd });
             addTo(monthly, monthKey, { t212Invested: investedUsd });

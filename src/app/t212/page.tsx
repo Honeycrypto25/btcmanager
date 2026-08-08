@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, cn } from "@/components/ui/core";
 import { db } from "@/lib/db";
-import { TrendingUp, TrendingDown, PieChart, Link2, Clock } from "lucide-react";
+import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown } from "lucide-react";
 import Link from 'next/link';
 import { T212SyncButton } from "@/components/t212/T212SyncButton";
 
@@ -82,6 +82,12 @@ export default async function T212Page() {
     const fmt = (n: number) => `${currencySymbol}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
     const pnlPercent = snapshot.investedValue > 0 ? (snapshot.resultPpl / snapshot.investedValue) * 100 : 0;
+
+    const cashFlows = await db.t212CashFlow.findMany({
+        where: { accountId: account.id },
+        orderBy: { dateTime: "desc" },
+        take: 50,
+    });
 
     return (
         <DashboardLayout>
@@ -206,6 +212,40 @@ export default async function T212Page() {
                     </p>
                 </Card>
             </div>
+
+            {/* Cash transactions */}
+            <Card>
+                <div className="flex items-center gap-2 mb-4">
+                    <ArrowUpDown className="w-4 h-4 text-primary" />
+                    <h3 className="text-sm font-medium text-foreground">Deposits &amp; withdrawals</h3>
+                </div>
+                {cashFlows.length === 0 ? (
+                    <div className="py-6 text-center space-y-1">
+                        <p className="text-muted text-sm">No transactions recorded yet.</p>
+                        <p className="text-faint text-xs">
+                            These populate from Trading212&apos;s transaction history during sync — if you&apos;ve
+                            definitely deposited money and this stays empty after a sync, check the message above.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-border max-h-[360px] overflow-y-auto pr-1">
+                        {cashFlows.map((cf: any) => {
+                            const isOut = cf.type === 'WITHDRAW';
+                            return (
+                                <div key={cf.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-medium text-foreground capitalize">{cf.type.toLowerCase()}</p>
+                                        <p className="text-xs text-faint font-num">{new Date(cf.dateTime).toLocaleDateString()}</p>
+                                    </div>
+                                    <p className={cn("text-sm font-medium font-num shrink-0", isOut ? "text-red-400" : "text-accent")}>
+                                        {isOut ? '\u2212' : '+'}{fmt(Math.abs(cf.amount))}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
         </DashboardLayout>
     );
 }

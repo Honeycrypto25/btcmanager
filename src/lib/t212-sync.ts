@@ -94,14 +94,24 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             },
         });
 
-        // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview
+        // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview.
+        // Includem și TRANSFER (nu doar DEPOSIT/WITHDRAW) — la conturile ISA banii
+        // pot intra printr-un transfer de la alt broker, nu neapărat o "depunere" clasică.
         let cashFlowError: string | null = null;
         try {
             await sleep(3000);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
-            const cashOnly = transactions.filter(
-                (t) => t.type === "DEPOSIT" || t.type === "WITHDRAW"
-            );
+            const relevantTypes = new Set(["DEPOSIT", "WITHDRAW", "TRANSFER"]);
+            const cashOnly = transactions.filter((t) => relevantTypes.has(t.type));
+
+            if (transactions.length === 0) {
+                cashFlowError = "Trading212 returned zero transactions for this account.";
+            } else if (cashOnly.length === 0) {
+                // Am primit tranzacții, dar niciuna nu se potrivește cu tipurile
+                // așteptate — afișăm exact ce tipuri există, ca să putem ajusta filtrul.
+                const seenTypes = Array.from(new Set(transactions.map((t) => t.type))).join(", ");
+                cashFlowError = `Fetched ${transactions.length} transactions but none matched expected types. Types seen: ${seenTypes}`;
+            }
 
             for (const tx of cashOnly) {
                 if (tx.id === undefined || tx.id === null) continue;
