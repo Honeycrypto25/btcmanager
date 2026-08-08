@@ -17,6 +17,36 @@ interface PeriodAgg {
     t212Value: number;
 }
 
+interface AssetStats {
+    avgMonthlyInvested: number;
+    bestMonth: { label: string; pnlPercent: number } | null;
+    worstMonth: { label: string; pnlPercent: number } | null;
+    activeMonths: number;
+    transactionCount: number;
+}
+
+function computeAssetStats(monthlyRows: PeriodRow[], asset: 'btc' | 't212', transactionCount: number): AssetStats {
+    const active = monthlyRows.filter((r) => r[asset].invested !== 0);
+    const avgMonthlyInvested = active.length > 0
+        ? active.reduce((sum, r) => sum + r[asset].invested, 0) / active.length
+        : 0;
+
+    let best: PeriodRow | null = null;
+    let worst: PeriodRow | null = null;
+    for (const r of active) {
+        if (!best || r[asset].pnlPercent > best[asset].pnlPercent) best = r;
+        if (!worst || r[asset].pnlPercent < worst[asset].pnlPercent) worst = r;
+    }
+
+    return {
+        avgMonthlyInvested,
+        bestMonth: best ? { label: best.label, pnlPercent: best[asset].pnlPercent } : null,
+        worstMonth: worst ? { label: worst.label, pnlPercent: worst[asset].pnlPercent } : null,
+        activeMonths: active.length,
+        transactionCount,
+    };
+}
+
 function computeAsset(invested: number, value: number, pnlOverride?: number): AssetFigures {
     const pnl = pnlOverride !== undefined ? pnlOverride : value - invested;
     const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
@@ -45,6 +75,7 @@ export default async function OverviewPage() {
     let t212Connected = false;
     let t212Snapshot: any = null;
     let gbpToUsd = 1;
+    let t212BuyCount = 0;
 
     if (t212Account) {
         t212Connected = true;
@@ -110,6 +141,7 @@ export default async function OverviewPage() {
         const orders = await db.t212Order.findMany({
             where: { accountId: t212Account.id },
         });
+        t212BuyCount = orders.filter((o: any) => o.side === "BUY").length;
         for (const o of orders) {
             const d = new Date(o.filledAt);
             const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -158,6 +190,9 @@ export default async function OverviewPage() {
 
     const usdToGbp = await getExchangeRate("USD", "GBP");
 
+    const btcStats = computeAssetStats(monthlyRows, 'btc', allBtcTx.length);
+    const t212Stats = computeAssetStats(monthlyRows, 't212', t212BuyCount);
+
     const data: OverviewData = {
         totalInvested: combined.invested,
         totalValue: combined.value,
@@ -169,6 +204,8 @@ export default async function OverviewPage() {
         monthlyRows,
         t212NativeCurrency: t212Snapshot?.currency ?? null,
         t212FxRate: gbpToUsd,
+        btcStats,
+        t212Stats,
     };
 
     return (

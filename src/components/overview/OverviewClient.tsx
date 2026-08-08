@@ -30,6 +30,14 @@ export interface PeriodRow {
     total: AssetFigures;
 }
 
+export interface AssetStats {
+    avgMonthlyInvested: number;
+    bestMonth: { label: string; pnlPercent: number } | null;
+    worstMonth: { label: string; pnlPercent: number } | null;
+    activeMonths: number;
+    transactionCount: number;
+}
+
 export interface OverviewData {
     totalInvested: number;
     totalValue: number;
@@ -41,6 +49,8 @@ export interface OverviewData {
     monthlyRows: PeriodRow[];
     t212NativeCurrency: string | null;
     t212FxRate: number;
+    btcStats: AssetStats;
+    t212Stats: AssetStats;
 }
 
 type Currency = 'USD' | 'GBP';
@@ -73,6 +83,8 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             t212: { ...scaleFigures(data.t212, factor), connected: data.t212.connected, hasSnapshot: data.t212.hasSnapshot },
             yearlyRows: data.yearlyRows.map((r) => scaleRow(r, factor)),
             monthlyRows: data.monthlyRows.map((r) => scaleRow(r, factor)),
+            btcStats: { ...data.btcStats, avgMonthlyInvested: data.btcStats.avgMonthlyInvested * factor },
+            t212Stats: { ...data.t212Stats, avgMonthlyInvested: data.t212Stats.avgMonthlyInvested * factor },
         };
     }, [data, factor]);
 
@@ -186,6 +198,28 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                         </div>
                     </Card>
                 </Link>
+            </div>
+
+            {/* Per-asset stats */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <AssetStatsCard
+                    title="Bitcoin"
+                    icon={<Bitcoin className="w-4 h-4" />}
+                    stats={view.btcStats}
+                    fmt={fmt}
+                    pnlColor={pnlColor}
+                    txLabel="Purchases"
+                    connected
+                />
+                <AssetStatsCard
+                    title="Trading 212"
+                    icon={<BarChart3 className="w-4 h-4" />}
+                    stats={view.t212Stats}
+                    fmt={fmt}
+                    pnlColor={pnlColor}
+                    txLabel="Buy orders"
+                    connected={view.t212.connected}
+                />
             </div>
 
             {/* Growth chart */}
@@ -615,5 +649,95 @@ function AssetSubRow({
                 {hasData ? `${figures.pnlPercent >= 0 ? '+' : ''}${figures.pnlPercent.toFixed(1)}%` : '\u2014'}
             </span>
         </div>
+    );
+}
+
+function AssetStatsCard({
+    title,
+    icon,
+    stats,
+    fmt,
+    pnlColor,
+    txLabel,
+    connected,
+}: {
+    title: string;
+    icon: React.ReactNode;
+    stats: AssetStats;
+    fmt: (n: number) => string;
+    pnlColor: (n: number) => string;
+    txLabel: string;
+    connected: boolean;
+}) {
+    if (!connected) {
+        return (
+            <Card>
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-muted">{icon}</span>
+                    <h3 className="text-sm font-medium text-foreground">{title}</h3>
+                </div>
+                <p className="text-muted text-sm py-6 text-center">Not connected yet.</p>
+            </Card>
+        );
+    }
+
+    if (stats.activeMonths === 0) {
+        return (
+            <Card>
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-primary">{icon}</span>
+                    <h3 className="text-sm font-medium text-foreground">{title}</h3>
+                </div>
+                <p className="text-muted text-sm py-6 text-center">No investments recorded yet.</p>
+            </Card>
+        );
+    }
+
+    return (
+        <Card>
+            <div className="flex items-center gap-2 mb-4">
+                <span className="text-primary">{icon}</span>
+                <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1">Avg. monthly invested</p>
+                    <p className="text-base font-medium font-num text-foreground">{fmt(stats.avgMonthlyInvested)}</p>
+                </div>
+                <div>
+                    <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1">{txLabel}</p>
+                    <p className="text-base font-medium font-num text-foreground">{stats.transactionCount}</p>
+                </div>
+                <div>
+                    <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1">Best month</p>
+                    {stats.bestMonth ? (
+                        <p className="text-base font-medium font-num">
+                            <span className="text-foreground">{stats.bestMonth.label}</span>{' '}
+                            <span className={pnlColor(stats.bestMonth.pnlPercent)}>
+                                {stats.bestMonth.pnlPercent >= 0 ? '+' : ''}{stats.bestMonth.pnlPercent.toFixed(1)}%
+                            </span>
+                        </p>
+                    ) : (
+                        <p className="text-base text-faint">&mdash;</p>
+                    )}
+                </div>
+                <div>
+                    <p className="text-[10px] font-medium text-muted uppercase tracking-wider mb-1">Worst month</p>
+                    {stats.worstMonth ? (
+                        <p className="text-base font-medium font-num">
+                            <span className="text-foreground">{stats.worstMonth.label}</span>{' '}
+                            <span className={pnlColor(stats.worstMonth.pnlPercent)}>
+                                {stats.worstMonth.pnlPercent >= 0 ? '+' : ''}{stats.worstMonth.pnlPercent.toFixed(1)}%
+                            </span>
+                        </p>
+                    ) : (
+                        <p className="text-base text-faint">&mdash;</p>
+                    )}
+                </div>
+            </div>
+            <p className="text-[10px] text-faint mt-4 pt-3 border-t border-border">
+                Across {stats.activeMonths} active month{stats.activeMonths === 1 ? '' : 's'}.
+            </p>
+        </Card>
     );
 }
