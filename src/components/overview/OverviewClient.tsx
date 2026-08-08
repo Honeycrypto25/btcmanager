@@ -79,30 +79,6 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
     const fmt = (n: number) => `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 0 : 2 })}`;
     const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
 
-    // Serie cumulată, cronologică (cea mai veche lună întâi), pentru grafic:
-    // "invested" = câți bani am pus până în acea lună, "value" = cât valorează
-    // azi banii puși până atunci. Ultimul punct coincide mereu cu statisticile
-    // de sus (Total invested / Current value).
-    const chartData = useMemo(() => {
-        const chronological = [...view.monthlyRows].reverse();
-        let cumBtcInvested = 0, cumBtcValue = 0, cumT212Invested = 0, cumT212Value = 0;
-        return chronological.map((row) => {
-            cumBtcInvested += row.btc.invested;
-            cumBtcValue += row.btc.value;
-            cumT212Invested += row.t212.invested;
-            cumT212Value += row.t212.value;
-            return {
-                label: row.label,
-                btcInvested: cumBtcInvested,
-                btcValue: cumBtcValue,
-                t212Invested: cumT212Invested,
-                t212Value: cumT212Value,
-                totalInvested: cumBtcInvested + cumT212Invested,
-                totalValue: cumBtcValue + cumT212Value,
-            };
-        });
-    }, [view.monthlyRows]);
-
     return (
         <>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -213,7 +189,13 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             </div>
 
             {/* Growth chart */}
-            <InvestmentChart data={chartData} fmt={fmt} btcConnected={view.btc.invested > 0} t212Connected={view.t212.connected} />
+            <InvestmentChart
+                monthlyRows={view.monthlyRows}
+                yearlyRows={view.yearlyRows}
+                fmt={fmt}
+                btcConnected={view.btc.invested > 0}
+                t212Connected={view.t212.connected}
+            />
 
             {/* Yearly / Monthly invested breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -234,6 +216,8 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
 }
 
 type AssetScope = 'BTC' | 'T212' | 'BOTH';
+type ChartView = 'area' | 'lines';
+type Granularity = 'month' | 'year' | 'custom';
 
 interface ChartPoint {
     label: string;
@@ -245,18 +229,59 @@ interface ChartPoint {
     totalValue: number;
 }
 
+function buildCumulative(rowsChronological: PeriodRow[]): ChartPoint[] {
+    let cumBtcInvested = 0, cumBtcValue = 0, cumT212Invested = 0, cumT212Value = 0;
+    return rowsChronological.map((row) => {
+        cumBtcInvested += row.btc.invested;
+        cumBtcValue += row.btc.value;
+        cumT212Invested += row.t212.invested;
+        cumT212Value += row.t212.value;
+        return {
+            label: row.label,
+            btcInvested: cumBtcInvested,
+            btcValue: cumBtcValue,
+            t212Invested: cumT212Invested,
+            t212Value: cumT212Value,
+            totalInvested: cumBtcInvested + cumT212Invested,
+            totalValue: cumBtcValue + cumT212Value,
+        };
+    });
+}
+
 function InvestmentChart({
-    data,
+    monthlyRows,
+    yearlyRows,
     fmt,
     btcConnected,
     t212Connected,
 }: {
-    data: ChartPoint[];
+    monthlyRows: PeriodRow[]; // cele mai recente primele, ca la tabele
+    yearlyRows: PeriodRow[];
     fmt: (n: number) => string;
     btcConnected: boolean;
     t212Connected: boolean;
 }) {
     const [scope, setScope] = useState<AssetScope>('BOTH');
+    const [chartView, setChartView] = useState<ChartView>('area');
+    const [granularity, setGranularity] = useState<Granularity>('month');
+    const [customFrom, setCustomFrom] = useState(0);
+    const [customTo, setCustomTo] = useState(9999);
+
+    const chronologicalMonthly = useMemo(() => [...monthlyRows].reverse(), [monthlyRows]);
+    const chronologicalYearly = useMemo(() => [...yearlyRows].reverse(), [yearlyRows]);
+
+    const monthlyCumulative = useMemo(() => buildCumulative(chronologicalMonthly), [chronologicalMonthly]);
+    const yearlyCumulative = useMemo(() => buildCumulative(chronologicalYearly), [chronologicalYearly]);
+
+    const maxMonthIndex = Math.max(0, chronologicalMonthly.length - 1);
+    const fromIdx = Math.min(customFrom, maxMonthIndex);
+    const toIdx = Math.min(Math.max(customTo, fromIdx), maxMonthIndex);
+
+    const data = useMemo(() => {
+        if (granularity === 'year') return yearlyCumulative;
+        if (granularity === 'custom') return monthlyCumulative.slice(fromIdx, toIdx + 1);
+        return monthlyCumulative;
+    }, [granularity, monthlyCumulative, yearlyCumulative, fromIdx, toIdx]);
 
     const investedKey = scope === 'BTC' ? 'btcInvested' : scope === 'T212' ? 't212Invested' : 'totalInvested';
     const valueKey = scope === 'BTC' ? 'btcValue' : scope === 'T212' ? 't212Value' : 'totalValue';
@@ -264,7 +289,7 @@ function InvestmentChart({
     // Diferența valoare - investit: pozitivă = profit (verde), negativă =
     // pierdere (roșu). Gradientul e poziționat exact la zero, cu intensitate
     // crescândă spre extreme — difuz lângă linia de investit, puternic acolo
-    // unde diferența e cea mai mare.
+    // unde diferența e cea mai mare. Folosit doar în vizualizarea "Area".
     const chartData = useMemo(
         () => data.map((d) => ({ ...d, diff: (d as any)[valueKey] - (d as any)[investedKey] })),
         [data, valueKey, investedKey]
@@ -287,7 +312,7 @@ function InvestmentChart({
         if (!point) return null;
         const invested = point[investedKey] ?? 0;
         const value = point[valueKey] ?? 0;
-        const diff = point.diff ?? 0;
+        const diff = value - invested;
         return (
             <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg">
                 <p className="text-faint text-xs mb-1">{label}</p>
@@ -300,12 +325,16 @@ function InvestmentChart({
         );
     };
 
+    const noData = data.length === 0 || (scope === 'BTC' && !btcConnected) || (scope === 'T212' && !t212Connected);
+
     return (
         <Card>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                 <div>
                     <h3 className="text-sm font-medium text-foreground">Growth over time</h3>
-                    <p className="text-xs text-faint mt-0.5">Gap between invested and current value, by month</p>
+                    <p className="text-xs text-faint mt-0.5">
+                        {chartView === 'area' ? 'Gap between invested and current value' : 'Invested vs. current value'}
+                    </p>
                 </div>
                 <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                     {([
@@ -327,14 +356,80 @@ function InvestmentChart({
                 </div>
             </div>
 
-            {data.length === 0 || (scope === 'BTC' && !btcConnected) || (scope === 'T212' && !t212Connected) ? (
+            {/* Chart type + period controls */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-5 pb-4 border-b border-border">
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                    {([
+                        { key: 'area' as ChartView, label: 'Gap' },
+                        { key: 'lines' as ChartView, label: 'Lines' },
+                    ]).map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setChartView(opt.key)}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                chartView === opt.key ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                        {([
+                            { key: 'month' as Granularity, label: 'Month' },
+                            { key: 'year' as Granularity, label: 'Year' },
+                            { key: 'custom' as Granularity, label: 'Custom' },
+                        ]).map((opt) => (
+                            <button
+                                key={opt.key}
+                                onClick={() => setGranularity(opt.key)}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                    granularity === opt.key ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {granularity === 'custom' && chronologicalMonthly.length > 0 && (
+                        <div className="flex items-center gap-1.5 text-xs">
+                            <select
+                                value={fromIdx}
+                                onChange={(e) => setCustomFrom(Number(e.target.value))}
+                                className="bg-white/[0.03] border border-border rounded-md py-1.5 px-2 text-foreground focus:outline-none focus:border-primary"
+                            >
+                                {chronologicalMonthly.map((row, i) => (
+                                    <option key={row.label} value={i} disabled={i > toIdx}>{row.label}</option>
+                                ))}
+                            </select>
+                            <span className="text-faint">&rarr;</span>
+                            <select
+                                value={toIdx}
+                                onChange={(e) => setCustomTo(Number(e.target.value))}
+                                className="bg-white/[0.03] border border-border rounded-md py-1.5 px-2 text-foreground focus:outline-none focus:border-primary"
+                            >
+                                {chronologicalMonthly.map((row, i) => (
+                                    <option key={row.label} value={i} disabled={i < fromIdx}>{row.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {noData ? (
                 <div className="h-[240px] flex items-center justify-center text-muted text-sm">
                     {scope === 'T212' && !t212Connected ? 'Connect Trading212 in Admin to see this.' : 'Not enough data yet.'}
                 </div>
             ) : (
                 <div className="h-[240px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartData}>
+                        <ComposedChart data={chartView === 'area' ? chartData : data}>
                             <defs>
                                 <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="0%" stopColor="#52c98a" stopOpacity={0.85} />
@@ -366,37 +461,78 @@ function InvestmentChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
-                            <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" />
-                            <Area
-                                type="monotone"
-                                dataKey="diff"
-                                stroke="none"
-                                fill="url(#pnlGradient)"
-                                isAnimationActive={false}
-                            />
-                            <Line
-                                type="monotone"
-                                dataKey="diff"
-                                stroke="url(#pnlLine)"
-                                strokeWidth={1.75}
-                                dot={false}
-                                activeDot={{ r: 3, strokeWidth: 0, fill: '#fff' }}
-                                isAnimationActive={false}
-                            />
+
+                            {chartView === 'area' ? (
+                                <>
+                                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="diff"
+                                        stroke="none"
+                                        fill="url(#pnlGradient)"
+                                        isAnimationActive={false}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="diff"
+                                        stroke="url(#pnlLine)"
+                                        strokeWidth={1.75}
+                                        dot={false}
+                                        activeDot={{ r: 3, strokeWidth: 0, fill: '#fff' }}
+                                        isAnimationActive={false}
+                                    />
+                                </>
+                            ) : (
+                                <>
+                                    <Line
+                                        type="monotone"
+                                        dataKey={investedKey}
+                                        stroke="#d6a24c"
+                                        strokeWidth={1.5}
+                                        dot={false}
+                                        activeDot={{ r: 3, fill: '#d6a24c', strokeWidth: 0 }}
+                                        isAnimationActive={false}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey={valueKey}
+                                        stroke="#52c98a"
+                                        strokeWidth={1.5}
+                                        dot={false}
+                                        activeDot={{ r: 3, fill: '#52c98a', strokeWidth: 0 }}
+                                        isAnimationActive={false}
+                                    />
+                                </>
+                            )}
                         </ComposedChart>
                     </ResponsiveContainer>
                 </div>
             )}
 
             <div className="mt-4 flex items-center justify-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 bg-accent" />
-                    <span className="text-faint">Above invested</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 bg-red-400" />
-                    <span className="text-faint">Below invested</span>
-                </div>
+                {chartView === 'area' ? (
+                    <>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-0.5 bg-accent" />
+                            <span className="text-faint">Above invested</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-0.5 bg-red-400" />
+                            <span className="text-faint">Below invested</span>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-0.5 bg-primary" />
+                            <span className="text-faint">Invested</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-0.5 bg-accent" />
+                            <span className="text-faint">Current value</span>
+                        </div>
+                    </>
+                )}
             </div>
         </Card>
     );
