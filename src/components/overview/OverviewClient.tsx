@@ -222,6 +222,28 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                 />
             </div>
 
+            {/* Recent performance: last 3 / last 12 months vs preceding period */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <TrailingPeriodsCard
+                    title="Bitcoin"
+                    icon={<Bitcoin className="w-4 h-4" />}
+                    monthlyRows={view.monthlyRows}
+                    asset="btc"
+                    fmt={fmt}
+                    pnlColor={pnlColor}
+                    connected
+                />
+                <TrailingPeriodsCard
+                    title="Trading 212"
+                    icon={<BarChart3 className="w-4 h-4" />}
+                    monthlyRows={view.monthlyRows}
+                    asset="t212"
+                    fmt={fmt}
+                    pnlColor={pnlColor}
+                    connected={view.t212.connected}
+                />
+            </div>
+
             {/* Growth chart */}
             <InvestmentChart
                 monthlyRows={view.monthlyRows}
@@ -737,6 +759,121 @@ function AssetStatsCard({
             </div>
             <p className="text-[10px] text-faint mt-4 pt-3 border-t border-border">
                 Across {stats.activeMonths} active month{stats.activeMonths === 1 ? '' : 's'}.
+            </p>
+        </Card>
+    );
+}
+
+interface TrailingStats {
+    monthsAvailable: number;
+    avgMonthlyInvested: number;
+    /** null = nu există o perioadă anterioară completă cu care să comparăm */
+    avgChangePercent: number | null;
+    invested: number;
+    value: number;
+    returnPercent: number;
+}
+
+/**
+ * rowsNewestFirst = view.monthlyRows, deja sortat cel mai recent primul.
+ * "Precedenta perioadă" = fereastra de aceeași mărime, imediat înainte
+ * (ex: pentru "ultimele 3 luni", precedenta e lunile 4-6 în urmă).
+ */
+function computeTrailingStats(rowsNewestFirst: PeriodRow[], asset: 'btc' | 't212', windowSize: number): TrailingStats {
+    const current = rowsNewestFirst.slice(0, windowSize);
+    const preceding = rowsNewestFirst.slice(windowSize, windowSize * 2);
+
+    const sum = (rows: PeriodRow[], key: 'invested' | 'value') => rows.reduce((s, r) => s + r[asset][key], 0);
+
+    const invested = sum(current, 'invested');
+    const value = sum(current, 'value');
+    const avgMonthlyInvested = current.length > 0 ? invested / current.length : 0;
+
+    const precedingAvg = preceding.length > 0 ? sum(preceding, 'invested') / preceding.length : 0;
+    const avgChangePercent = preceding.length > 0 && precedingAvg !== 0
+        ? ((avgMonthlyInvested - precedingAvg) / Math.abs(precedingAvg)) * 100
+        : null;
+
+    const returnPercent = invested !== 0 ? ((value - invested) / invested) * 100 : 0;
+
+    return { monthsAvailable: current.length, avgMonthlyInvested, avgChangePercent, invested, value, returnPercent };
+}
+
+function TrailingPeriodsCard({
+    title,
+    icon,
+    monthlyRows,
+    asset,
+    fmt,
+    pnlColor,
+    connected,
+}: {
+    title: string;
+    icon: React.ReactNode;
+    monthlyRows: PeriodRow[];
+    asset: 'btc' | 't212';
+    fmt: (n: number) => string;
+    pnlColor: (n: number) => string;
+    connected: boolean;
+}) {
+    const periods = useMemo(() => ([
+        { label: 'Last 3 months', stats: computeTrailingStats(monthlyRows, asset, 3) },
+        { label: 'Last 12 months', stats: computeTrailingStats(monthlyRows, asset, 12) },
+    ]), [monthlyRows, asset]);
+
+    const hasAnyData = periods.some((p) => p.stats.monthsAvailable > 0 && p.stats.invested !== 0);
+    const gridCols = "grid-cols-[minmax(0,1fr)_minmax(60px,auto)_minmax(56px,auto)_minmax(56px,auto)_minmax(44px,auto)]";
+
+    if (!connected || !hasAnyData) {
+        return (
+            <Card>
+                <div className="flex items-center gap-2 mb-1">
+                    <span className={connected ? "text-primary" : "text-muted"}>{icon}</span>
+                    <h3 className="text-sm font-medium text-foreground">{title}</h3>
+                </div>
+                <p className="text-muted text-sm py-6 text-center">
+                    {connected ? 'No investments recorded yet.' : 'Not connected yet.'}
+                </p>
+            </Card>
+        );
+    }
+
+    return (
+        <Card>
+            <div className="flex items-center gap-2 mb-4">
+                <span className="text-primary">{icon}</span>
+                <h3 className="text-sm font-medium text-foreground">{title} &middot; recent performance</h3>
+            </div>
+
+            <div className={cn("grid gap-x-2 pb-1.5 border-b border-border", gridCols)}>
+                <span />
+                <span className="text-[10px] text-faint uppercase tracking-wider text-right">Avg/mo</span>
+                <span className="text-[10px] text-faint uppercase tracking-wider text-right">Invested</span>
+                <span className="text-[10px] text-faint uppercase tracking-wider text-right">Value</span>
+                <span className="text-[10px] text-faint uppercase tracking-wider text-right">Return</span>
+            </div>
+
+            {periods.map(({ label, stats }) => (
+                <div key={label} className={cn("grid gap-x-2 items-baseline py-2.5 border-b border-border last:border-0", gridCols)}>
+                    <span className="text-sm font-medium text-foreground truncate">{label}</span>
+                    <div className="text-right">
+                        <p className="text-sm font-medium font-num text-foreground">{fmt(stats.avgMonthlyInvested)}</p>
+                        {stats.avgChangePercent !== null && (
+                            <p className={cn("text-[10px] font-num", pnlColor(stats.avgChangePercent))}>
+                                {stats.avgChangePercent >= 0 ? '+' : ''}{stats.avgChangePercent.toFixed(0)}% vs prior
+                            </p>
+                        )}
+                    </div>
+                    <span className="text-sm font-medium font-num text-foreground text-right">{fmt(stats.invested)}</span>
+                    <span className="text-sm font-medium font-num text-foreground text-right">{fmt(stats.value)}</span>
+                    <span className={cn("text-xs font-num text-right", pnlColor(stats.returnPercent))}>
+                        {stats.invested !== 0 ? `${stats.returnPercent >= 0 ? '+' : ''}${stats.returnPercent.toFixed(1)}%` : '\u2014'}
+                    </span>
+                </div>
+            ))}
+
+            <p className="text-[10px] text-faint mt-3 leading-relaxed">
+                &quot;vs prior&quot; compares the average monthly investment to the equal-length period right before it.
             </p>
         </Card>
     );
