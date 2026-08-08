@@ -134,25 +134,32 @@ export default async function T212Page() {
                     ) : (
                         <div className="divide-y divide-border">
                             {positions.map((p: any) => {
-                                const value = (p.quantity ?? 0) * (p.currentPrice ?? 0);
                                 const isProfit = (p.ppl ?? 0) >= 0;
+                                const priceCurrency = p.currency ? ` ${p.currency}` : '';
                                 return (
                                     <div key={p.ticker} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium text-foreground truncate">{p.ticker}</p>
-                                            <p className="text-xs text-faint font-num">{p.quantity} &times; {fmt(p.currentPrice ?? 0)}</p>
+                                            <p className="text-xs text-faint font-num">
+                                                {p.quantity} &times; {(p.currentPrice ?? 0).toLocaleString()}{priceCurrency}
+                                            </p>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className="text-sm font-medium font-num text-foreground">{fmt(value)}</p>
-                                            <p className={cn("text-xs font-num", isProfit ? "text-accent" : "text-red-400")}>
-                                                {isProfit ? '+' : ''}{fmt(p.ppl ?? 0)}
+                                            <p className={cn("text-sm font-medium font-num", isProfit ? "text-accent" : "text-red-400")}>
+                                                {isProfit ? '+' : ''}{(p.ppl ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </p>
+                                            <p className="text-xs text-faint">P&amp;L</p>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
                     )}
+                    <p className="text-[10px] text-faint mt-4 leading-relaxed">
+                        Prices are shown in each instrument&apos;s own trading currency, which can differ from your
+                        account currency (e.g. London-listed instruments trade in pence, not pounds) — only the
+                        totals above are converted to your account currency. P&amp;L reflects Trading212&apos;s own figure per position.
+                    </p>
                 </Card>
 
                 {/* Pies */}

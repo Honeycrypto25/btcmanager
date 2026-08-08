@@ -8,6 +8,10 @@ import {
     T212ApiError,
 } from "@/lib/t212";
 
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getEnvironment(): string {
     return process.env.T212_ENVIRONMENT === "demo" ? "demo" : "live";
 }
@@ -45,11 +49,13 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
     const environment = getEnvironment();
 
     try {
-        const [cash, positions, pies] = await Promise.all([
-            getAccountCash(environment, creds.apiKey, creds.apiSecret),
-            getPortfolio(environment, creds.apiKey, creds.apiSecret),
-            getPies(environment, creds.apiKey, creds.apiSecret),
-        ]);
+        // Secvențial, nu Promise.all — Trading212 are limite stricte per-endpoint
+        // (ex: 1 cerere/5s pe unele rute); cererile paralele multiplică riscul de 429.
+        const cash = await getAccountCash(environment, creds.apiKey, creds.apiSecret);
+        await sleep(1500);
+        const positions = await getPortfolio(environment, creds.apiKey, creds.apiSecret);
+        await sleep(1500);
+        const pies = await getPies(environment, creds.apiKey, creds.apiSecret);
 
         const account = await ensureT212Account();
 
@@ -68,6 +74,7 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
 
         // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview
         try {
+            await sleep(1500);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
             const cashOnly = transactions.filter(
                 (t) => t.type === "DEPOSIT" || t.type === "WITHDRAWAL"

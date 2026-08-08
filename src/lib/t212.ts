@@ -21,11 +21,16 @@ function authHeader(apiKey: string, apiSecret: string): string {
     return `Basic ${encoded}`;
 }
 
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function t212Fetch(
     environment: string,
     path: string,
     apiKey: string,
-    apiSecret: string
+    apiSecret: string,
+    retriesLeft = 2
 ): Promise<any> {
     const base = BASE_URLS[environment] ?? BASE_URLS.live;
     const res = await fetch(`${base}${path}`, {
@@ -35,6 +40,15 @@ async function t212Fetch(
         },
         cache: 'no-store',
     });
+
+    if (res.status === 429 && retriesLeft > 0) {
+        // Trading212 are limite stricte per-endpoint — așteptăm și reîncercăm
+        // în loc să eșuăm imediat sincronizarea.
+        const retryAfterHeader = res.headers.get('retry-after');
+        const waitMs = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : 4000;
+        await sleep(Number.isFinite(waitMs) ? waitMs : 4000);
+        return t212Fetch(environment, path, apiKey, apiSecret, retriesLeft - 1);
+    }
 
     if (!res.ok) {
         const body = await res.text().catch(() => '');
@@ -61,6 +75,8 @@ export interface T212Position {
     currentPrice: number;
     ppl: number;
     initialFillDate?: string;
+    /** Moneda de tranzacționare a instrumentului — poate diferi de moneda contului (ex: GBX pentru instrumente listate la Londra) */
+    currency?: string;
 }
 
 export interface T212PieSummary {
@@ -131,6 +147,7 @@ export async function getPortfolio(
         currentPrice: p.currentPrice ?? 0,
         ppl: p.ppl ?? 0,
         initialFillDate: p.initialFillDate,
+        currency: p.currency ?? p.instrument?.currency ?? undefined,
     }));
 }
 
@@ -177,6 +194,7 @@ export async function getAllCashTransactions(
         if (data?.nextPagePath) {
             // nextPagePath vine deja ca path complet (ex: /history/transactions?cursor=...)
             path = data.nextPagePath.replace('/api/v0', '');
+            await sleep(1000);
         } else {
             path = null;
         }
