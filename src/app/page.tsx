@@ -14,6 +14,7 @@ interface PeriodAgg {
     btcInvested: number;
     btcAmount: number;
     t212Invested: number;
+    t212Value: number;
 }
 
 function computeAsset(invested: number, value: number, pnlOverride?: number): AssetFigures {
@@ -63,11 +64,6 @@ export default async function OverviewPage() {
         }
     }
     const t212 = computeAsset(t212InvestedUsd, t212CurrentValueUsd, t212PnlUsd);
-    // Raport câștig/investit la nivel de cont — folosit ca să estimăm valoarea
-    // curentă a banilor investiți în FIECARE perioadă (nu avem, per depunere
-    // individuală, ce anume s-a cumpărat cu ea, deci nu putem calcula exact ca
-    // la BTC — presupunem performanță uniformă pe toate depunerile).
-    const t212Ratio = t212InvestedUsd > 0 ? (t212InvestedUsd + t212PnlUsd) / t212InvestedUsd : 1;
 
     // --- Combined totals ---
     const totalInvested = btc.invested + t212.invested;
@@ -79,11 +75,12 @@ export default async function OverviewPage() {
     const monthly = new Map<string, PeriodAgg>(); // "YYYY-MM"
 
     const addTo = (map: Map<any, PeriodAgg>, key: any, patch: Partial<PeriodAgg>) => {
-        const existing = map.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0 };
+        const existing = map.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0, t212Value: 0 };
         map.set(key, {
             btcInvested: existing.btcInvested + (patch.btcInvested ?? 0),
             btcAmount: existing.btcAmount + (patch.btcAmount ?? 0),
             t212Invested: existing.t212Invested + (patch.t212Invested ?? 0),
+            t212Value: existing.t212Value + (patch.t212Value ?? 0),
         });
     };
 
@@ -96,33 +93,53 @@ export default async function OverviewPage() {
     }
 
     if (t212Account) {
+        // Preț curent per acțiune, dedus din pozițiile deja sincronizate
+        // (currentValue / quantity — deja convertit în moneda contului de T212
+        // însuși, nu ghicit de noi). Ne permite să calculăm valoarea curentă a
+        // FIECĂREI comenzi individual, la fel de precis ca la BTC — nu doar o
+        // estimare uniformă la nivel de cont.
+        const latestPositions = (t212Snapshot?.positions as any[]) ?? [];
+        const currentValuePerShare = new Map<string, number>();
+        for (const p of latestPositions) {
+            if (p.quantity > 0) currentValuePerShare.set(p.ticker, p.currentValue / p.quantity);
+        }
+
         // Folosim istoricul de ORDINE, nu tranzacțiile cash — la conturile cu
         // investiție automată recurentă, banii trec direct în ordine de
         // cumpărare, fără o "depunere" cash separată vizibilă.
-        //
-        // IMPORTANT: scădem VÂNZĂRILE din cumpărări. La o rebalansare (vinde
-        // X, cumpără Y), banii doar se mută între active — nu sunt bani noi
-        // din exterior. Dacă am aduna doar cumpărările, o rebalansare ar
-        // umfla artificial "investit" (aceiași bani numărați de două ori).
         const orders = await db.t212Order.findMany({
             where: { accountId: t212Account.id },
         });
         for (const o of orders) {
             const d = new Date(o.filledAt);
-            const signedTotal = o.side === "SELL" ? -o.total : o.total;
-            const investedUsd = signedTotal * gbpToUsd;
             const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            addTo(yearly, d.getFullYear(), { t212Invested: investedUsd });
-            addTo(monthly, monthKey, { t212Invested: investedUsd });
+
+            if (o.side === "BUY") {
+                const investedUsd = o.total * gbpToUsd;
+                const perShare = currentValuePerShare.get(o.ticker);
+                // Dacă instrumentul nu mai e deținut azi (a fost vândut complet),
+                // nu avem un preț curent — presupunem neutru (valoare = investit),
+                // mai bine decât o cifră ghicită.
+                const valueUsd = (perShare !== undefined ? o.quantity * perShare : o.total) * gbpToUsd;
+                addTo(yearly, d.getFullYear(), { t212Invested: investedUsd, t212Value: valueUsd });
+                addTo(monthly, monthKey, { t212Invested: investedUsd, t212Value: valueUsd });
+            } else {
+                // VÂNZARE (inclusiv rebalansare): banii ies din acel instrument.
+                // Scădem aceeași sumă din investit ȘI din valoare — profitul/
+                // pierderea realizată e deja arătată separat pe pagina T212, nu
+                // vrem s-o numărăm și aici, în creșterea nerealizată.
+                const amountUsd = o.total * gbpToUsd;
+                addTo(yearly, d.getFullYear(), { t212Invested: -amountUsd, t212Value: -amountUsd });
+                addTo(monthly, monthKey, { t212Invested: -amountUsd, t212Value: -amountUsd });
+            }
         }
     }
 
     const buildRow = (label: string, agg: PeriodAgg): PeriodRow => {
         const btcValue = agg.btcAmount * currentBtcPrice;
         const btcRow = computeAsset(agg.btcInvested, btcValue);
-        const t212Value = agg.t212Invested * t212Ratio;
-        const t212Row = computeAsset(agg.t212Invested, t212Value);
-        const totalRow = computeAsset(agg.btcInvested + agg.t212Invested, btcValue + t212Value);
+        const t212Row = computeAsset(agg.t212Invested, agg.t212Value);
+        const totalRow = computeAsset(agg.btcInvested + agg.t212Invested, btcValue + agg.t212Value);
         return { label, btc: btcRow, t212: t212Row, total: totalRow };
     };
 

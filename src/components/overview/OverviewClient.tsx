@@ -224,7 +224,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                     <>Trading212 amounts converted from {data.t212NativeCurrency} at the current exchange rate — historical entries use today&apos;s rate, not the rate on the deposit date. </>
                 )}
                 {data.t212.connected && (
-                    <>Trading212&apos;s current value per period is estimated from the account&apos;s overall performance (exact per-deposit tracking isn&apos;t available) &mdash; Bitcoin&apos;s is calculated exactly from each purchase.</>
+                    <>Trading212&apos;s current value per period is calculated from each order&apos;s ticker and today&apos;s price for that instrument &mdash; same approach as Bitcoin. Instruments fully sold since then fall back to a neutral (0%) assumption for that specific purchase, since we no longer have a current price for them.</>
                 )}
             </p>
         </>
