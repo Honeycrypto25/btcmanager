@@ -122,19 +122,23 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview.
         // Includem și TRANSFER (nu doar DEPOSIT/WITHDRAW) — la conturile ISA banii
         // pot intra printr-un transfer de la alt broker, nu neapărat o "depunere" clasică.
+        let txSyncInfo: string;
         try {
             await sleep(3000);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
             const relevantTypes = new Set(["DEPOSIT", "WITHDRAW", "TRANSFER"]);
             const cashOnly = transactions.filter((t) => relevantTypes.has(t.type));
+            const seenTypes = Array.from(new Set(transactions.map((t) => t.type)));
+
+            // Diagnostic ÎNTOTDEAUNA populat, indiferent de rezultat — ca să vedem
+            // exact ce a răspuns Trading212, nu doar când ceva pare "greșit".
+            const sample = transactions.slice(0, 3).map((t) => `${t.type}:${t.amount}`).join(", ");
+            txSyncInfo = `Fetched ${transactions.length} raw transactions. Types seen: [${seenTypes.join(", ") || "none"}]. ${cashOnly.length} matched DEPOSIT/WITHDRAW/TRANSFER.${sample ? ` Sample: ${sample}` : ""}`;
 
             if (transactions.length === 0) {
                 partialErrors.push("Transactions: Trading212 returned zero transactions for this account.");
             } else if (cashOnly.length === 0) {
-                // Am primit tranzacții, dar niciuna nu se potrivește cu tipurile
-                // așteptate — afișăm exact ce tipuri există, ca să putem ajusta filtrul.
-                const seenTypes = Array.from(new Set(transactions.map((t) => t.type))).join(", ");
-                partialErrors.push(`Transactions: fetched ${transactions.length} but none matched expected types. Types seen: ${seenTypes}`);
+                partialErrors.push(`Transactions: fetched ${transactions.length} but none matched expected types. Types seen: ${seenTypes.join(", ")}`);
             }
 
             for (const tx of cashOnly) {
@@ -162,7 +166,9 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             // Nu blocăm tot sync-ul dacă doar istoricul de tranzacții eșuează —
             // cash-ul și pozițiile curente sunt mai importante. Dar NU ascundem
             // eroarea complet — o arătăm în UI.
-            partialErrors.push(`Transactions: ${errMsg(txErr)}`);
+            const msg = errMsg(txErr);
+            txSyncInfo = `Fetch threw an error: ${msg}`;
+            partialErrors.push(`Transactions: ${msg}`);
             console.error("T212 cash flow sync failed:", txErr);
         }
 
@@ -171,6 +177,7 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             data: {
                 lastSyncedAt: new Date(),
                 lastSyncError: partialErrors.length > 0 ? partialErrors.join(" | ") : null,
+                lastTxSyncInfo: txSyncInfo,
             },
         });
 
@@ -207,6 +214,7 @@ export async function getT212ConnectionStatus() {
         currency: account?.currency ?? null,
         lastSyncedAt: account?.lastSyncedAt ?? null,
         lastSyncError: account?.lastSyncError ?? null,
+        lastTxSyncInfo: account?.lastTxSyncInfo ?? null,
     };
 }
 

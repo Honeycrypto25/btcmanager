@@ -111,6 +111,7 @@ model T212Account {
   currency      String? // primary account currency, from account/info
   lastSyncedAt  DateTime?
   lastSyncError String?   @db.Text
+  lastTxSyncInfo String?  @db.Text // diagnostic, populat la fiecare sync indiferent de rezultat: câte tranzacții s-au primit de la T212 și ce tipuri
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

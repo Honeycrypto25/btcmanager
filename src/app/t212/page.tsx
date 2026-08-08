@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -244,6 +246,11 @@ export default async function T212Page() {
                             );
                         })}
                     </div>
+                )}
+                {account.lastTxSyncInfo && (
+                    <p className="text-[10px] text-faint mt-4 pt-4 border-t border-border font-num leading-relaxed break-words">
+                        Last sync diagnostic: {account.lastTxSyncInfo}
+                    </p>
                 )}
             </Card>
         </DashboardLayout>
