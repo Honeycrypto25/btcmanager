@@ -118,6 +118,7 @@ model T212Account {
 
   snapshots T212Snapshot[]
   cashFlows T212CashFlow[]
+  orders    T212Order[]
 
   @@unique([environment])
 }
@@ -151,4 +152,27 @@ model T212CashFlow {
 
   @@unique([accountId, externalId])
   @@index([accountId, dateTime])
+}
+
+// Comenzi executate (cumpărări/vânzări) — sursa principală pentru "cât s-a
+// investit" la conturile cu investiție automată recurentă, unde banii nu
+// trec printr-o "depunere" separată vizibilă, ci direct în ordine de cumpărare.
+model T212Order {
+  id             String   @id @default(cuid())
+  accountId      String
+  externalId     String // id-ul ordinului la T212, pentru deduplicare
+  ticker         String
+  name           String
+  side           String // BUY | SELL
+  quantity       Float
+  price          Float
+  priceCurrency  String
+  total          Float // sumă totală, în moneda contului
+  filledAt       DateTime
+  realizedProfit Float?
+
+  account T212Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, externalId])
+  @@index([accountId, filledAt])
 }

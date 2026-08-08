@@ -1,6 +1,12 @@
 // Client pentru Trading212 Public API (beta).
 // Docs: https://docs.trading212.com/api
 // Autentificare: HTTP Basic, username = API Key, password = API Secret.
+//
+// Endpoint-urile pentru poziții și istoric ordine (/equity/positions,
+// /equity/history/orders) au fost confirmate printr-o implementare de
+// referință funcțională (nu doar din documentație) — inclusiv câmpul
+// walletImpact, care dă valoarea poziției deja convertită în moneda
+// contului (rezolvă problema GBX/pence de la instrumentele listate la Londra).
 
 const BASE_URLS: Record<string, string> = {
     live: 'https://live.trading212.com/api/v0',
@@ -70,13 +76,14 @@ export interface T212Cash {
 
 export interface T212Position {
     ticker: string;
+    name: string;
     quantity: number;
-    averagePrice: number;
     currentPrice: number;
-    ppl: number;
-    initialFillDate?: string;
-    /** Moneda de tranzacționare a instrumentului — poate diferi de moneda contului (ex: GBX pentru instrumente listate la Londra) */
-    currency?: string;
+    /** Moneda de tranzacționare a instrumentului (poate fi GBX = pence) */
+    priceCurrency: string;
+    /** Cost și valoare curentă — DEJA convertite în moneda contului, din walletImpact */
+    cost: number;
+    currentValue: number;
 }
 
 export interface T212PieSummary {
@@ -92,10 +99,24 @@ export interface T212PieSummary {
 
 export interface T212Transaction {
     id?: string | number;
-    type: string; // e.g. "DEPOSIT" | "WITHDRAWAL" | ...
+    type: string; // e.g. "DEPOSIT" | "WITHDRAW" | "TRANSFER"
     amount: number;
     dateTime: string;
     reference?: string;
+}
+
+export interface T212Order {
+    externalId: string;
+    ticker: string;
+    name: string;
+    side: 'BUY' | 'SELL';
+    quantity: number;
+    price: number;
+    priceCurrency: string;
+    /** Suma totală, deja în moneda contului */
+    total: number;
+    filledAt: string;
+    realizedProfit?: number;
 }
 
 /** Verifică validitatea unei perechi de credențiale — folosit la conectare */
@@ -133,22 +154,37 @@ export async function getAccountCash(
     };
 }
 
-export async function getPortfolio(
+/**
+ * Poziții curente, cu valoare/cost DEJA convertite în moneda contului
+ * (walletImpact.currentValue / totalCost) — nu mai trebuie să ghicim
+ * conversia GBX→GBP sau altă monedă locală a instrumentului.
+ */
+export async function getPositions(
     environment: string,
     apiKey: string,
-    apiSecret: string
+    apiSecret: string,
+    accountCurrency: string
 ): Promise<T212Position[]> {
-    const data = await t212Fetch(environment, '/equity/portfolio', apiKey, apiSecret);
+    const data = await t212Fetch(environment, '/equity/positions', apiKey, apiSecret);
     if (!Array.isArray(data)) return [];
-    return data.map((p: any) => ({
-        ticker: p.ticker,
-        quantity: p.quantity ?? 0,
-        averagePrice: p.averagePrice ?? 0,
-        currentPrice: p.currentPrice ?? 0,
-        ppl: p.ppl ?? 0,
-        initialFillDate: p.initialFillDate,
-        currency: p.currency ?? p.instrument?.currency ?? undefined,
-    }));
+
+    return data.map((position: any) => {
+        const instrument = position.instrument ?? {};
+        const impact = position.walletImpact ?? {};
+        const quantity = Number(position.quantity) || 0;
+        const averagePricePaid = Number(position.averagePricePaid) || 0;
+        const currentPrice = Number(position.currentPrice) || 0;
+
+        return {
+            ticker: String(instrument.ticker ?? position.ticker ?? 'UNKNOWN'),
+            name: String(instrument.name ?? instrument.shortName ?? instrument.ticker ?? 'Instrument'),
+            quantity,
+            currentPrice,
+            priceCurrency: String(instrument.currencyCode ?? instrument.currency ?? accountCurrency),
+            cost: Number(impact.totalCost ?? impact.cost) || averagePricePaid * quantity,
+            currentValue: Number(impact.currentValue ?? impact.value) || currentPrice * quantity,
+        };
+    });
 }
 
 /** Listă de pies — reflectă automat compoziția curentă (post-rebalansare) */
@@ -175,6 +211,11 @@ export async function getPieDetail(
 /**
  * Istoricul de tranzacții cash (depuneri/retrageri), paginat prin cursor.
  * Se oprește după maxPages pentru siguranță (evită bucle infinite dacă API-ul se comportă neașteptat).
+ *
+ * Notă: la conturile cu investiție automată recurentă, banii pot trece
+ * direct în ordine de cumpărare fără o "depunere" separată vizibilă aici —
+ * pentru acele conturi, getOrderHistory() e sursa relevantă pentru cât s-a
+ * investit efectiv, nu tranzacțiile cash.
  */
 export async function getAllCashTransactions(
     environment: string,
@@ -192,7 +233,73 @@ export async function getAllCashTransactions(
         results.push(...items);
 
         if (data?.nextPagePath) {
-            // nextPagePath vine deja ca path complet (ex: /history/transactions?cursor=...)
+            path = data.nextPagePath.replace('/api/v0', '');
+            await sleep(1000);
+        } else {
+            path = null;
+        }
+        pages++;
+    }
+
+    return results;
+}
+
+/**
+ * Istoricul de ordine executate (cumpărări/vânzări), paginat prin cursor.
+ * Fiecare item are forma { order: {...}, fill: {...} } — filtrăm doar cele
+ * cu status FILLED și o dată de execuție reală.
+ */
+export async function getAllOrders(
+    environment: string,
+    apiKey: string,
+    apiSecret: string,
+    accountCurrency: string,
+    maxPages = 20
+): Promise<T212Order[]> {
+    const results: T212Order[] = [];
+    let path: string | null = '/equity/history/orders?limit=50';
+    let pages = 0;
+
+    while (path && pages < maxPages) {
+        const data: any = await t212Fetch(environment, path, apiKey, apiSecret, 4);
+        const items = Array.isArray(data?.items) ? data.items : [];
+
+        for (const item of items) {
+            const order = item.order ?? {};
+            const fill = item.fill ?? {};
+            const status = String(order.status ?? '').toUpperCase();
+            if (status !== 'FILLED' || !fill.filledAt) continue;
+
+            const instrument = order.instrument ?? {};
+            const walletImpact = fill.walletImpact ?? {};
+            const ticker = String(order.ticker ?? instrument.ticker ?? '');
+            const price = Math.abs(Number(fill.price ?? order.limitPrice ?? order.stopPrice) || 0);
+            const priceCurrency = String(instrument.currency ?? accountCurrency);
+            const value = Math.abs(Number(walletImpact.netValue ?? order.filledValue ?? order.value) || 0);
+            let signedQuantity = Number(fill.quantity ?? order.filledQuantity ?? order.quantity) || 0;
+            if (!signedQuantity && price && value) signedQuantity = value / price;
+            const side = String(order.side ?? '').toLowerCase();
+            const isSell = signedQuantity < 0 || /sell/.test(side);
+
+            const externalId = String(order.id ?? item.id ?? `${ticker}-${fill.filledAt}`);
+
+            results.push({
+                externalId,
+                ticker,
+                name: String(instrument.name ?? ticker),
+                side: isSell ? 'SELL' : 'BUY',
+                quantity: Math.abs(signedQuantity),
+                price,
+                priceCurrency,
+                total: value || Math.abs(signedQuantity * price),
+                filledAt: String(fill.filledAt ?? order.createdAt ?? new Date().toISOString()),
+                realizedProfit: isSell && typeof walletImpact.realisedProfitLoss === 'number'
+                    ? Number(walletImpact.realisedProfitLoss)
+                    : undefined,
+            });
+        }
+
+        if (data?.nextPagePath) {
             path = data.nextPagePath.replace('/api/v0', '');
             await sleep(1000);
         } else {

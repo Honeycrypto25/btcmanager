@@ -2,9 +2,10 @@ import { db } from "@/lib/db";
 import {
     getAccountInfo,
     getAccountCash,
-    getPortfolio,
+    getPositions,
     getPies,
     getAllCashTransactions,
+    getAllOrders,
     testConnection,
     T212ApiError,
 } from "@/lib/t212";
@@ -37,16 +38,20 @@ async function ensureT212Account(currency?: string) {
 }
 
 /**
- * Sincronizează contul Trading212: preia cash, poziții, pies și tranzacții
- * de la API-ul lor (credențiale din T212_API_KEY / T212_API_SECRET, setate
- * direct în Vercel — nu sunt introduse niciodată prin UI sau stocate în DB),
- * salvează un snapshot nou și adaugă orice depunere/retragere nouă în
- * istoricul cash-flow (deduplicat după id-ul T212).
+ * Sincronizează contul Trading212: preia cash, poziții, pies, istoric de
+ * ordine și tranzacții cash de la API-ul lor (credențiale din
+ * T212_API_KEY / T212_API_SECRET, setate direct în Vercel — nu sunt
+ * introduse niciodată prin UI sau stocate în DB).
  *
  * Cash-ul e singurul apel considerat critic (fără el nu avem ce salva).
- * Poziții, pies și tranzacții sunt independente — dacă unul eșuează (ex: 429
- * pe un singur endpoint), restul tot se salvează, în loc să blocheze tot
- * sync-ul așa cum se întâmpla înainte.
+ * Poziții, pies, ordine și tranzacții sunt independente — dacă unul
+ * eșuează (ex: 429 pe un singur endpoint), restul tot se salvează.
+ *
+ * Istoricul de ORDINE (cumpărări/vânzări) e sursa principală pentru "cât
+ * s-a investit" — la conturile cu investiție automată recurentă, banii nu
+ * trec printr-o "depunere" cash separată, ci direct în ordine de
+ * cumpărare, deci tranzacțiile cash (DEPOSIT/WITHDRAW/TRANSFER) pot fi goale
+ * chiar dacă s-a investit constant.
  *
  * Citim mereu starea CURENTĂ (nu cantități presupuse fixe), deci orice
  * rebalansare automată a unui pie e reflectată automat, fără logică specială.
@@ -75,6 +80,7 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
             }
             await sleep(1500);
         }
+        const accountCurrency = account.currency ?? "GBP";
 
         // Cash-ul e esențial — dacă asta eșuează, nu avem ce salva, deci
         // sync-ul chiar eșuează (cade în catch-ul de mai jos).
@@ -83,11 +89,10 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
 
         const partialErrors: string[] = [];
 
-        // Poziții și pies — independente una de alta. Dacă una pică (ex: 429
-        // pe /equity/pies), nu mai blocăm cash-ul, snapshot-ul sau tranzacțiile.
-        let positions: Awaited<ReturnType<typeof getPortfolio>> = [];
+        // Poziții și pies — independente una de alta.
+        let positions: Awaited<ReturnType<typeof getPositions>> = [];
         try {
-            positions = await getPortfolio(environment, creds.apiKey, creds.apiSecret);
+            positions = await getPositions(environment, creds.apiKey, creds.apiSecret, accountCurrency);
         } catch (posErr: any) {
             partialErrors.push(`Positions: ${errMsg(posErr)}`);
         }
@@ -113,33 +118,68 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
                 investedValue: cash.invested,
                 freeCash: cash.free,
                 resultPpl,
-                currency: account.currency ?? "GBP",
+                currency: accountCurrency,
                 positions: positions as any,
                 pies: pies as any,
             },
         });
 
-        // Tranzacții cash — folosite pentru totalurile investite lunar/anual pe overview.
-        // Includem și TRANSFER (nu doar DEPOSIT/WITHDRAW) — la conturile ISA banii
-        // pot intra printr-un transfer de la alt broker, nu neapărat o "depunere" clasică.
+        // Istoric ORDINE (cumpărări/vânzări) — sursa principală pentru
+        // "cât s-a investit lunar/anual".
         let txSyncInfo: string;
+        try {
+            await sleep(3000);
+            const orders = await getAllOrders(environment, creds.apiKey, creds.apiSecret, accountCurrency);
+            const buys = orders.filter((o) => o.side === "BUY");
+            txSyncInfo = `Fetched ${orders.length} filled orders (${buys.length} buys).`;
+
+            if (orders.length === 0) {
+                partialErrors.push("Orders: Trading212 returned zero filled orders for this account.");
+            }
+
+            for (const o of orders) {
+                await db.t212Order.upsert({
+                    where: {
+                        accountId_externalId: {
+                            accountId: account.id,
+                            externalId: o.externalId,
+                        },
+                    },
+                    create: {
+                        accountId: account.id,
+                        externalId: o.externalId,
+                        ticker: o.ticker,
+                        name: o.name,
+                        side: o.side,
+                        quantity: o.quantity,
+                        price: o.price,
+                        priceCurrency: o.priceCurrency,
+                        total: o.total,
+                        filledAt: new Date(o.filledAt),
+                        realizedProfit: o.realizedProfit,
+                    },
+                    update: {
+                        total: o.total,
+                        realizedProfit: o.realizedProfit,
+                    },
+                });
+            }
+        } catch (orderErr: any) {
+            const msg = errMsg(orderErr);
+            txSyncInfo = `Order history fetch threw an error: ${msg}`;
+            partialErrors.push(`Orders: ${msg}`);
+            console.error("T212 order history sync failed:", orderErr);
+        }
+
+        // Tranzacții cash (depuneri/retrageri) — le păstrăm ca sursă secundară;
+        // pot fi goale la conturile cu investiție automată recurentă, unde banii
+        // trec direct în ordine de cumpărare, fără o "depunere" separată.
         try {
             await sleep(3000);
             const transactions = await getAllCashTransactions(environment, creds.apiKey, creds.apiSecret);
             const relevantTypes = new Set(["DEPOSIT", "WITHDRAW", "TRANSFER"]);
             const cashOnly = transactions.filter((t) => relevantTypes.has(t.type));
-            const seenTypes = Array.from(new Set(transactions.map((t) => t.type)));
-
-            // Diagnostic ÎNTOTDEAUNA populat, indiferent de rezultat — ca să vedem
-            // exact ce a răspuns Trading212, nu doar când ceva pare "greșit".
-            const sample = transactions.slice(0, 3).map((t) => `${t.type}:${t.amount}`).join(", ");
-            txSyncInfo = `Fetched ${transactions.length} raw transactions. Types seen: [${seenTypes.join(", ") || "none"}]. ${cashOnly.length} matched DEPOSIT/WITHDRAW/TRANSFER.${sample ? ` Sample: ${sample}` : ""}`;
-
-            if (transactions.length === 0) {
-                partialErrors.push("Transactions: Trading212 returned zero transactions for this account.");
-            } else if (cashOnly.length === 0) {
-                partialErrors.push(`Transactions: fetched ${transactions.length} but none matched expected types. Types seen: ${seenTypes.join(", ")}`);
-            }
+            txSyncInfo += ` Cash transactions: ${transactions.length} raw, ${cashOnly.length} matched.`;
 
             for (const tx of cashOnly) {
                 if (tx.id === undefined || tx.id === null) continue;
@@ -163,12 +203,8 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
                 });
             }
         } catch (txErr: any) {
-            // Nu blocăm tot sync-ul dacă doar istoricul de tranzacții eșuează —
-            // cash-ul și pozițiile curente sunt mai importante. Dar NU ascundem
-            // eroarea complet — o arătăm în UI.
             const msg = errMsg(txErr);
-            txSyncInfo = `Fetch threw an error: ${msg}`;
-            partialErrors.push(`Transactions: ${msg}`);
+            txSyncInfo += ` Cash transactions fetch failed: ${msg}`;
             console.error("T212 cash flow sync failed:", txErr);
         }
 

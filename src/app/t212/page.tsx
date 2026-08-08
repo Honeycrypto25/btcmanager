@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, cn } from "@/components/ui/core";
 import { db } from "@/lib/db";
-import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown } from "lucide-react";
+import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown, Repeat } from "lucide-react";
 import Link from 'next/link';
 import { T212SyncButton } from "@/components/t212/T212SyncButton";
 
@@ -85,10 +85,16 @@ export default async function T212Page() {
 
     const pnlPercent = snapshot.investedValue > 0 ? (snapshot.resultPpl / snapshot.investedValue) * 100 : 0;
 
+    const orders = await db.t212Order.findMany({
+        where: { accountId: account.id },
+        orderBy: { filledAt: "desc" },
+        take: 50,
+    });
+
     const cashFlows = await db.t212CashFlow.findMany({
         where: { accountId: account.id },
         orderBy: { dateTime: "desc" },
-        take: 50,
+        take: 20,
     });
 
     return (
@@ -149,21 +155,21 @@ export default async function T212Page() {
                     ) : (
                         <div className="divide-y divide-border">
                             {positions.map((p: any) => {
-                                const isProfit = (p.ppl ?? 0) >= 0;
-                                const priceCurrency = p.currency ? ` ${p.currency}` : '';
+                                const cost = p.cost ?? 0;
+                                const currentValue = p.currentValue ?? 0;
+                                const pnl = currentValue - cost;
+                                const isProfit = pnl >= 0;
                                 return (
                                     <div key={p.ticker} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
                                         <div className="min-w-0">
-                                            <p className="text-sm font-medium text-foreground truncate">{p.ticker}</p>
-                                            <p className="text-xs text-faint font-num">
-                                                {p.quantity} &times; {(p.currentPrice ?? 0).toLocaleString()}{priceCurrency}
-                                            </p>
+                                            <p className="text-sm font-medium text-foreground truncate">{p.name ?? p.ticker}</p>
+                                            <p className="text-xs text-faint font-num">{p.quantity} &times; {p.ticker}</p>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className={cn("text-sm font-medium font-num", isProfit ? "text-accent" : "text-red-400")}>
-                                                {isProfit ? '+' : ''}{(p.ppl ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            <p className="text-sm font-medium font-num text-foreground">{fmt(currentValue)}</p>
+                                            <p className={cn("text-xs font-num", isProfit ? "text-accent" : "text-red-400")}>
+                                                {isProfit ? '+' : ''}{fmt(pnl)}
                                             </p>
-                                            <p className="text-xs text-faint">P&amp;L</p>
                                         </div>
                                     </div>
                                 );
@@ -171,9 +177,8 @@ export default async function T212Page() {
                         </div>
                     )}
                     <p className="text-[10px] text-faint mt-4 leading-relaxed">
-                        Prices are shown in each instrument&apos;s own trading currency, which can differ from your
-                        account currency (e.g. London-listed instruments trade in pence, not pounds) — only the
-                        totals above are converted to your account currency. P&amp;L reflects Trading212&apos;s own figure per position.
+                        Value and P&amp;L are converted to your account currency by Trading212 itself, so London-listed
+                        instruments priced in pence are handled correctly.
                     </p>
                 </Card>
 
@@ -215,22 +220,59 @@ export default async function T212Page() {
                 </Card>
             </div>
 
-            {/* Cash transactions */}
+            {/* Orders (buy/sell history) */}
+            <Card>
+                <div className="flex items-center gap-2 mb-4">
+                    <Repeat className="w-4 h-4 text-primary" />
+                    <h3 className="text-sm font-medium text-foreground">Buy &amp; sell orders</h3>
+                </div>
+                {orders.length === 0 ? (
+                    <p className="text-muted text-sm py-6 text-center">No filled orders recorded yet.</p>
+                ) : (
+                    <div className="divide-y divide-border max-h-[400px] overflow-y-auto pr-1">
+                        {orders.map((o: any) => {
+                            const isSell = o.side === 'SELL';
+                            return (
+                                <div key={o.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-medium text-foreground truncate">
+                                            {isSell ? 'Sell' : 'Buy'} &middot; {o.name || o.ticker}
+                                        </p>
+                                        <p className="text-xs text-faint font-num">
+                                            {new Date(o.filledAt).toLocaleDateString()} &middot; {o.quantity} {o.ticker}
+                                        </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <p className={cn("text-sm font-medium font-num", isSell ? "text-red-400" : "text-foreground")}>
+                                            {isSell ? '\u2212' : ''}{fmt(o.total)}
+                                        </p>
+                                        {o.realizedProfit !== null && o.realizedProfit !== undefined && (
+                                            <p className={cn("text-xs font-num", o.realizedProfit >= 0 ? "text-accent" : "text-red-400")}>
+                                                {o.realizedProfit >= 0 ? '+' : ''}{fmt(o.realizedProfit)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
+
+            {/* Cash transactions (deposits/withdrawals) — secondary, may be empty for
+                accounts funded via recurring auto-invest rather than manual deposits. */}
             <Card>
                 <div className="flex items-center gap-2 mb-4">
                     <ArrowUpDown className="w-4 h-4 text-primary" />
                     <h3 className="text-sm font-medium text-foreground">Deposits &amp; withdrawals</h3>
                 </div>
                 {cashFlows.length === 0 ? (
-                    <div className="py-6 text-center space-y-1">
-                        <p className="text-muted text-sm">No transactions recorded yet.</p>
-                        <p className="text-faint text-xs">
-                            These populate from Trading212&apos;s transaction history during sync — if you&apos;ve
-                            definitely deposited money and this stays empty after a sync, check the message above.
-                        </p>
-                    </div>
+                    <p className="text-muted text-sm py-6 text-center">
+                        No deposit/withdrawal transactions recorded — this is expected if the account is funded via
+                        recurring auto-invest, where money goes straight into buy orders above.
+                    </p>
                 ) : (
-                    <div className="divide-y divide-border max-h-[360px] overflow-y-auto pr-1">
+                    <div className="divide-y divide-border max-h-[300px] overflow-y-auto pr-1">
                         {cashFlows.map((cf: any) => {
                             const isOut = cf.type === 'WITHDRAW';
                             return (

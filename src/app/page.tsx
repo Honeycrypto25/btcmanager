@@ -96,15 +96,15 @@ export default async function OverviewPage() {
     }
 
     if (t212Account) {
-        // DEPOSIT și TRANSFER (bani intrați, ex. la conturi ISA) contează ca
-        // investiție; WITHDRAW se scade din total.
-        const cashFlows = await db.t212CashFlow.findMany({
-            where: { accountId: t212Account.id, type: { in: ["DEPOSIT", "WITHDRAW", "TRANSFER"] } },
+        // Folosim istoricul de ORDINE (cumpărări), nu tranzacțiile cash — la
+        // conturile cu investiție automată recurentă, banii trec direct în
+        // ordine de cumpărare, fără o "depunere" cash separată vizibilă.
+        const buyOrders = await db.t212Order.findMany({
+            where: { accountId: t212Account.id, side: "BUY" },
         });
-        for (const cf of cashFlows) {
-            const d = new Date(cf.dateTime);
-            const signedAmount = cf.type === "WITHDRAW" ? -Math.abs(cf.amount) : cf.amount;
-            const investedUsd = signedAmount * gbpToUsd;
+        for (const o of buyOrders) {
+            const d = new Date(o.filledAt);
+            const investedUsd = o.total * gbpToUsd;
             const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
             addTo(yearly, d.getFullYear(), { t212Invested: investedUsd });
             addTo(monthly, monthKey, { t212Invested: investedUsd });
