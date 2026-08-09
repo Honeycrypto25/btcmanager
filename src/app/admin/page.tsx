@@ -16,7 +16,9 @@ import {
     ChevronRight,
     RefreshCw,
     Link2,
-    BarChart3
+    BarChart3,
+    Mail,
+    Send
 } from "lucide-react";
 import axios from 'axios';
 
@@ -28,8 +30,14 @@ interface T212Status {
     lastSyncError?: string | null;
 }
 
+interface ReportsStatus {
+    configured: boolean;
+    hasApiKey: boolean;
+    recipient: string | null;
+}
+
 export default function AdminPage() {
-    const [activeTab, setActiveTab] = useState<'security' | 'integrations' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'integrations' | 'reports' | 'features'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -46,6 +54,13 @@ export default function AdminPage() {
     const [t212Loading, setT212Loading] = useState(true);
     const [t212Syncing, setT212Syncing] = useState(false);
     const [t212Error, setT212Error] = useState<string | null>(null);
+
+    // Reports State
+    const [reportsStatus, setReportsStatus] = useState<ReportsStatus>({ configured: false, hasApiKey: false, recipient: null });
+    const [reportsLoading, setReportsLoading] = useState(true);
+    const [sendingReport, setSendingReport] = useState<'weekly' | 'monthly' | null>(null);
+    const [reportError, setReportError] = useState<string | null>(null);
+    const [reportSuccess, setReportSuccess] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         try {
@@ -69,10 +84,36 @@ export default function AdminPage() {
         }
     };
 
+    const fetchReportsStatus = async () => {
+        try {
+            const { data } = await axios.get('/api/reports/send');
+            setReportsStatus(data);
+        } catch (err) {
+            console.error('Failed to fetch reports status');
+        } finally {
+            setReportsLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchStatus();
         fetchT212Status();
+        fetchReportsStatus();
     }, []);
+
+    const handleSendReport = async (type: 'weekly' | 'monthly') => {
+        setSendingReport(type);
+        setReportError(null);
+        setReportSuccess(null);
+        try {
+            await axios.post('/api/reports/send', { type });
+            setReportSuccess(`${type === 'weekly' ? 'Weekly' : 'Monthly'} report sent to ${reportsStatus.recipient}.`);
+        } catch (err: any) {
+            setReportError(err.response?.data?.error || 'Failed to send report');
+        } finally {
+            setSendingReport(null);
+        }
+    };
 
     const handleSyncNow = async () => {
         setT212Syncing(true);
@@ -132,6 +173,7 @@ export default function AdminPage() {
                 {[
                     { id: 'security', name: 'Security & Auth', icon: ShieldCheck },
                     { id: 'integrations', name: 'Integrations', icon: Link2 },
+                    { id: 'reports', name: 'Reports', icon: Mail },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -289,10 +331,99 @@ export default function AdminPage() {
                 </div>
             )}
 
+            {activeTab === 'reports' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <Card className="p-6 md:p-8 space-y-6">
+                        <div className="flex items-center gap-4">
+                            <div className={cn(
+                                "w-12 h-12 rounded-xl flex items-center justify-center border shrink-0",
+                                reportsStatus.configured
+                                    ? "bg-accent/10 border-accent/20 text-accent"
+                                    : "bg-white/[0.04] border-border text-muted"
+                            )}>
+                                <Mail className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Email reports</h3>
+                                <p className="text-muted text-sm">
+                                    A weekly summary every Monday morning, and a monthly recap on the 1st of each month.
+                                </p>
+                            </div>
+                        </div>
+
+                        {reportsLoading ? (
+                            <div className="flex justify-center py-6">
+                                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                            </div>
+                        ) : !reportsStatus.configured ? (
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-orange-400 bg-orange-500/5 px-3 py-1.5 rounded-lg border border-orange-500/10 text-xs font-medium uppercase w-fit">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    Not configured
+                                </div>
+                                <p className="text-sm text-muted leading-relaxed max-w-lg">
+                                    Add these as environment variables in Vercel, then redeploy:{' '}
+                                    <code className="text-primary">RESEND_API_KEY</code> (from your Resend account),{' '}
+                                    <code className="text-primary">REPORT_EMAIL_TO</code> (where reports get sent), and optionally{' '}
+                                    <code className="text-primary">REPORT_EMAIL_FROM</code> (must be on a domain verified in Resend —
+                                    defaults to <code>reports@evama.net</code>).
+                                </p>
+                                {reportsStatus.hasApiKey && (
+                                    <p className="text-xs text-faint">Resend API key is set — just missing REPORT_EMAIL_TO.</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="flex items-center gap-2 text-accent bg-accent/5 px-3 py-1.5 rounded-lg border border-accent/10 text-xs font-medium uppercase">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        Configured
+                                    </div>
+                                    <span className="text-xs text-faint">Sends to: {reportsStatus.recipient}</span>
+                                </div>
+
+                                {reportSuccess && (
+                                    <div className="bg-accent/10 border border-accent/20 text-accent text-sm p-3 rounded-lg">
+                                        {reportSuccess}
+                                    </div>
+                                )}
+                                {reportError && (
+                                    <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                        {reportError}
+                                    </div>
+                                )}
+
+                                <div className="flex flex-wrap gap-3">
+                                    <Button variant="outline" size="md" onClick={() => handleSendReport('weekly')} disabled={sendingReport !== null}>
+                                        {sendingReport === 'weekly' ? (
+                                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        ) : (
+                                            <Send className="w-4 h-4 mr-2" />
+                                        )}
+                                        Send test weekly report
+                                    </Button>
+                                    <Button variant="outline" size="md" onClick={() => handleSendReport('monthly')} disabled={sendingReport !== null}>
+                                        {sendingReport === 'monthly' ? (
+                                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        ) : (
+                                            <Send className="w-4 h-4 mr-2" />
+                                        )}
+                                        Send test monthly report
+                                    </Button>
+                                </div>
+                                <p className="text-[10px] text-faint leading-relaxed">
+                                    Scheduled sends run automatically — Mondays at ~7am UTC (weekly) and the 1st of the month at
+                                    ~7am UTC (monthly). These buttons just send an on-demand copy so you can preview the design.
+                                </p>
+                            </div>
+                        )}
+                    </Card>
+                </div>
+            )}
+
             {activeTab === 'features' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     {[
-                        { title: 'Automated Reports', desc: 'Schedule weekly PDF reports of your portfolio performance sent directly to your email.' },
                         { title: 'Price Alerts', desc: 'Set custom price triggers and receive instant mobile notifications.' },
                         { title: 'Multi-Asset Support', desc: 'Track Ethereum, Solana, and other top assets in one unified premium dashboard.' },
                         { title: 'Tax Integration', desc: 'Generate FIFO/LIFO tax reports for your crypto transactions with one click.' }
