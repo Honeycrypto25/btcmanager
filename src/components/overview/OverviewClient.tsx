@@ -6,6 +6,8 @@ import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight } from "lucide
 import Link from 'next/link';
 import {
     ComposedChart,
+    BarChart,
+    Bar,
     Area,
     Line,
     XAxis,
@@ -252,6 +254,9 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                 btcConnected={view.btc.invested > 0}
                 t212Connected={view.t212.connected}
             />
+
+            {/* Monthly bars: invested + current value, per asset */}
+            <MonthlyBarsChart monthlyRows={view.monthlyRows} fmt={fmt} />
 
             {/* Yearly / Monthly invested breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -875,6 +880,101 @@ function TrailingPeriodsCard({
             <p className="text-[10px] text-faint mt-3 leading-relaxed">
                 &quot;vs prior&quot; compares the average monthly investment to the equal-length period right before it.
             </p>
+        </Card>
+    );
+}
+
+function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt: (n: number) => string }) {
+    const chronological = useMemo(() => {
+        return [...monthlyRows].reverse().map((row) => ({
+            label: row.label,
+            btcInvested: row.btc.invested,
+            btcValue: row.btc.value,
+            t212Invested: row.t212.invested,
+            t212Value: row.t212.value,
+        }));
+    }, [monthlyRows]);
+
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload || !payload.length) return null;
+        const point = payload[0]?.payload;
+        if (!point) return null;
+        return (
+            <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-0.5">
+                <p className="text-faint text-xs mb-1">{label}</p>
+                <p className="text-xs font-num"><span className="text-primary">BTC invested:</span> {fmt(point.btcInvested)}</p>
+                <p className="text-xs font-num"><span className="text-primary">BTC value:</span> {fmt(point.btcValue)}</p>
+                <p className="text-xs font-num"><span className="text-[#7c93b8]">T212 invested:</span> {fmt(point.t212Invested)}</p>
+                <p className="text-xs font-num"><span className="text-[#7c93b8]">T212 value:</span> {fmt(point.t212Value)}</p>
+            </div>
+        );
+    };
+
+    if (chronological.length === 0) {
+        return (
+            <Card>
+                <h3 className="text-sm font-medium text-foreground mb-1">Monthly invested vs. value</h3>
+                <div className="h-[260px] flex items-center justify-center text-muted text-sm">Not enough data yet.</div>
+            </Card>
+        );
+    }
+
+    // Lățime minimă per lună, ca barele să rămână lizibile — derulare
+    // orizontală dacă sunt multe luni, în loc să se înghesuie ilizibil.
+    const minWidth = Math.max(600, chronological.length * 90);
+
+    return (
+        <Card>
+            <h3 className="text-sm font-medium text-foreground mb-0.5">Monthly invested vs. value</h3>
+            <p className="text-xs text-faint mb-5">How much went in each month, and what it&apos;s worth today &mdash; per asset</p>
+
+            <div className="overflow-x-auto pb-1">
+                <div className="h-[280px]" style={{ minWidth }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chronological} barGap={2} barCategoryGap="20%">
+                            <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis
+                                dataKey="label"
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickLine={false}
+                            />
+                            <YAxis
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickFormatter={(val) => fmt(val)}
+                                width={56}
+                                tickLine={false}
+                                axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                            <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.4} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={0.95} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.4} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={0.95} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c', opacity: 0.4 }} />
+                    <span className="text-faint">BTC invested</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c' }} />
+                    <span className="text-faint">BTC value</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8', opacity: 0.4 }} />
+                    <span className="text-faint">T212 invested</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8' }} />
+                    <span className="text-faint">T212 value</span>
+                </div>
+            </div>
         </Card>
     );
 }
