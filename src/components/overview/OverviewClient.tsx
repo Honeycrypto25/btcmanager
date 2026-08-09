@@ -256,7 +256,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             />
 
             {/* Monthly bars: invested + current value, per asset */}
-            <MonthlyBarsChart monthlyRows={view.monthlyRows} fmt={fmt} />
+            <MonthlyBarsChart monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
 
             {/* Yearly / Monthly invested breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -884,16 +884,56 @@ function TrailingPeriodsCard({
     );
 }
 
-function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt: (n: number) => string }) {
+function MonthlyBarsChart({
+    monthlyRows,
+    yearlyRows,
+    fmt,
+}: {
+    monthlyRows: PeriodRow[];
+    yearlyRows: PeriodRow[];
+    fmt: (n: number) => string;
+}) {
+    const [granularity, setGranularity] = useState<'month' | 'year'>('month');
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
     const chronological = useMemo(() => {
-        return [...monthlyRows].reverse().map((row) => ({
+        const rows = granularity === 'year' ? yearlyRows : monthlyRows;
+        return [...rows].reverse().map((row) => ({
             label: row.label,
             btcInvested: row.btc.invested,
             btcValue: row.btc.value,
             t212Invested: row.t212.invested,
             t212Value: row.t212.value,
         }));
-    }, [monthlyRows]);
+    }, [monthlyRows, yearlyRows, granularity]);
+
+    // Derulăm implicit la cele mai recente perioade (dreapta) — pentru
+    // istoric mai vechi, se poate derula înapoi (stânga) din bara de scroll.
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+        }
+    }, [chronological]);
+
+    // Total și randament — pe tot ce e încărcat în grafic (toate perioadele
+    // din granularitatea curentă), nu doar fereastra vizibilă.
+    const totals = useMemo(() => {
+        const btcInvested = chronological.reduce((s, r) => s + r.btcInvested, 0);
+        const btcValue = chronological.reduce((s, r) => s + r.btcValue, 0);
+        const t212Invested = chronological.reduce((s, r) => s + r.t212Invested, 0);
+        const t212Value = chronological.reduce((s, r) => s + r.t212Value, 0);
+        const invested = btcInvested + t212Invested;
+        const value = btcValue + t212Value;
+        return {
+            invested,
+            value,
+            pnlPercent: invested !== 0 ? ((value - invested) / invested) * 100 : 0,
+            btcPercent: btcInvested !== 0 ? ((btcValue - btcInvested) / btcInvested) * 100 : 0,
+            t212Percent: t212Invested !== 0 ? ((t212Value - t212Invested) / t212Invested) * 100 : 0,
+        };
+    }, [chronological]);
+
+    const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
 
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (!active || !payload || !payload.length) return null;
@@ -927,22 +967,64 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
     if (chronological.length === 0) {
         return (
             <Card>
-                <h3 className="text-sm font-medium text-foreground mb-1">Monthly invested vs. value</h3>
+                <h3 className="text-sm font-medium text-foreground mb-1">Invested vs. value</h3>
                 <div className="h-[260px] flex items-center justify-center text-muted text-sm">Not enough data yet.</div>
             </Card>
         );
     }
 
-    // Lățime minimă per lună, ca barele să rămână lizibile — derulare
-    // orizontală dacă sunt multe luni, în loc să se înghesuie ilizibil.
-    const minWidth = Math.max(600, chronological.length * 90);
+    // Lățime per perioadă, ca barele să rămână lizibile — arătăm implicit
+    // ultimele ~12 (derulat la dreapta), restul e accesibil prin derulare.
+    const perPeriodWidth = 90;
+    const minWidth = Math.max(500, chronological.length * perPeriodWidth);
 
     return (
         <Card>
-            <h3 className="text-sm font-medium text-foreground mb-0.5">Monthly invested vs. value</h3>
-            <p className="text-xs text-faint mb-5">How much went in each month, and what it&apos;s worth today &mdash; per asset</p>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-1">
+                <div>
+                    <h3 className="text-sm font-medium text-foreground">Invested vs. value</h3>
+                    <p className="text-xs text-faint mt-0.5">
+                        What went in each {granularity}, and what it&apos;s worth today &mdash; per asset
+                    </p>
+                </div>
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                    {([
+                        { key: 'month' as const, label: 'Month' },
+                        { key: 'year' as const, label: 'Year' },
+                    ]).map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setGranularity(opt.key)}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                granularity === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
-            <div className="overflow-x-auto pb-1">
+            {/* Total summary */}
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 py-4 mb-4 border-b border-border font-num">
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Invested</span>
+                    <span className="text-sm font-medium text-foreground">{fmt(totals.invested)}</span>
+                </div>
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Value</span>
+                    <span className="text-sm font-medium text-foreground">{fmt(totals.value)}</span>
+                </div>
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Return</span>
+                    <span className={cn("text-sm font-medium", pnlColor(totals.pnlPercent))}>
+                        {totals.pnlPercent >= 0 ? '+' : ''}{totals.pnlPercent.toFixed(1)}%
+                    </span>
+                </div>
+            </div>
+
+            <div ref={scrollRef} className="overflow-x-auto pb-1">
                 <div className="h-[280px]" style={{ minWidth }}>
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chronological} barGap={2} barCategoryGap="20%">
@@ -970,6 +1052,11 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
                     </ResponsiveContainer>
                 </div>
             </div>
+            {chronological.length > 12 && (
+                <p className="text-[10px] text-faint text-center mt-1">
+                    Showing recent {granularity}s &mdash; scroll left for earlier history
+                </p>
+            )}
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
                 <div className="flex items-center gap-1.5">
@@ -979,6 +1066,9 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
                 <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c' }} />
                     <span className="text-faint">BTC value</span>
+                    <span className={cn("font-num font-medium", pnlColor(totals.btcPercent))}>
+                        {totals.btcPercent >= 0 ? '+' : ''}{totals.btcPercent.toFixed(1)}%
+                    </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #7c93b8' }} />
@@ -987,6 +1077,9 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
                 <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8' }} />
                     <span className="text-faint">T212 value</span>
+                    <span className={cn("font-num font-medium", pnlColor(totals.t212Percent))}>
+                        {totals.t212Percent >= 0 ? '+' : ''}{totals.t212Percent.toFixed(1)}%
+                    </span>
                 </div>
             </div>
         </Card>
