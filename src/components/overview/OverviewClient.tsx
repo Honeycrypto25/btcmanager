@@ -899,13 +899,27 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
         if (!active || !payload || !payload.length) return null;
         const point = payload[0]?.payload;
         if (!point) return null;
+
+        const Row = ({ color, name, value, filled }: { color: string; name: string; value: number; filled: boolean }) => (
+            <div className="flex items-center gap-2 justify-between">
+                <span className="flex items-center gap-1.5">
+                    <span
+                        className="w-2 h-2 rounded-sm shrink-0"
+                        style={filled ? { backgroundColor: color } : { border: `1.5px solid ${color}`, backgroundColor: 'transparent' }}
+                    />
+                    <span className={cn("text-xs", filled ? "text-foreground" : "text-faint")}>{name}</span>
+                </span>
+                <span className={cn("text-xs font-num", filled ? "text-foreground font-medium" : "text-faint")}>{fmt(value)}</span>
+            </div>
+        );
+
         return (
-            <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-0.5">
-                <p className="text-faint text-xs mb-1">{label}</p>
-                <p className="text-xs font-num"><span className="text-primary">BTC invested:</span> {fmt(point.btcInvested)}</p>
-                <p className="text-xs font-num"><span className="text-primary">BTC value:</span> {fmt(point.btcValue)}</p>
-                <p className="text-xs font-num"><span className="text-[#7c93b8]">T212 invested:</span> {fmt(point.t212Invested)}</p>
-                <p className="text-xs font-num"><span className="text-[#7c93b8]">T212 value:</span> {fmt(point.t212Value)}</p>
+            <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-1 min-w-[170px]">
+                <p className="text-faint text-xs mb-1.5">{label}</p>
+                <Row color="#d6a24c" name="BTC invested" value={point.btcInvested} filled={false} />
+                <Row color="#d6a24c" name="BTC value" value={point.btcValue} filled />
+                <Row color="#7c93b8" name="T212 invested" value={point.t212Invested} filled={false} />
+                <Row color="#7c93b8" name="T212 value" value={point.t212Value} filled />
             </div>
         );
     };
@@ -948,10 +962,10 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                            <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.4} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={0.95} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.4} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={0.95} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.12} stroke="#d6a24c" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.12} stroke="#7c93b8" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -959,7 +973,7 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
                 <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c', opacity: 0.4 }} />
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #d6a24c' }} />
                     <span className="text-faint">BTC invested</span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -967,7 +981,7 @@ function MonthlyBarsChart({ monthlyRows, fmt }: { monthlyRows: PeriodRow[]; fmt:
                     <span className="text-faint">BTC value</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8', opacity: 0.4 }} />
+                    <div className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #7c93b8' }} />
                     <span className="text-faint">T212 invested</span>
                 </div>
                 <div className="flex items-center gap-1.5">
