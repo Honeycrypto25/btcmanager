@@ -250,6 +250,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
 
             {/* Growth chart */}
             <InvestmentChart
+                weeklyRows={view.weeklyRows}
                 monthlyRows={view.monthlyRows}
                 yearlyRows={view.yearlyRows}
                 fmt={fmt}
@@ -258,7 +259,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             />
 
             {/* Monthly bars: invested + current value, per asset */}
-            <MonthlyBarsChart monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
+            <MonthlyBarsChart weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
 
             {/* Invested breakdown, with Week/Month/Year toggle */}
             <PeriodBreakdown weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} pnlColor={pnlColor} />
@@ -277,7 +278,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
 
 type AssetScope = 'BTC' | 'T212' | 'BOTH';
 type ChartView = 'area' | 'lines';
-type Granularity = 'month' | 'year' | 'custom';
+type Granularity = 'week' | 'month' | 'year' | 'custom';
 
 interface ChartPoint {
     label: string;
@@ -309,13 +310,15 @@ function buildCumulative(rowsChronological: PeriodRow[]): ChartPoint[] {
 }
 
 function InvestmentChart({
+    weeklyRows,
     monthlyRows,
     yearlyRows,
     fmt,
     btcConnected,
     t212Connected,
 }: {
-    monthlyRows: PeriodRow[]; // cele mai recente primele, ca la tabele
+    weeklyRows: PeriodRow[]; // cele mai recente primele, ca la tabele
+    monthlyRows: PeriodRow[];
     yearlyRows: PeriodRow[];
     fmt: (n: number) => string;
     btcConnected: boolean;
@@ -326,10 +329,13 @@ function InvestmentChart({
     const [granularity, setGranularity] = useState<Granularity>('month');
     const [customFrom, setCustomFrom] = useState(0);
     const [customTo, setCustomTo] = useState(9999);
+    const scrollRef = React.useRef<HTMLDivElement>(null);
 
+    const chronologicalWeekly = useMemo(() => [...weeklyRows].reverse(), [weeklyRows]);
     const chronologicalMonthly = useMemo(() => [...monthlyRows].reverse(), [monthlyRows]);
     const chronologicalYearly = useMemo(() => [...yearlyRows].reverse(), [yearlyRows]);
 
+    const weeklyCumulative = useMemo(() => buildCumulative(chronologicalWeekly), [chronologicalWeekly]);
     const monthlyCumulative = useMemo(() => buildCumulative(chronologicalMonthly), [chronologicalMonthly]);
     const yearlyCumulative = useMemo(() => buildCumulative(chronologicalYearly), [chronologicalYearly]);
 
@@ -338,10 +344,20 @@ function InvestmentChart({
     const toIdx = Math.min(Math.max(customTo, fromIdx), maxMonthIndex);
 
     const data = useMemo(() => {
+        if (granularity === 'week') return weeklyCumulative;
         if (granularity === 'year') return yearlyCumulative;
         if (granularity === 'custom') return monthlyCumulative.slice(fromIdx, toIdx + 1);
         return monthlyCumulative;
-    }, [granularity, monthlyCumulative, yearlyCumulative, fromIdx, toIdx]);
+    }, [granularity, weeklyCumulative, monthlyCumulative, yearlyCumulative, fromIdx, toIdx]);
+
+    // Derulăm implicit la cele mai recente (dreapta) — cu ani de istoric
+    // săptămânal/lunar, ar fi prea multe puncte ca să încapă comprimate în
+    // lățimea cardului fără să devină ilizibile.
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+        }
+    }, [data]);
 
     const investedKey = scope === 'BTC' ? 'btcInvested' : scope === 'T212' ? 't212Invested' : 'totalInvested';
     const valueKey = scope === 'BTC' ? 'btcValue' : scope === 'T212' ? 't212Value' : 'totalValue';
@@ -439,6 +455,7 @@ function InvestmentChart({
                 <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                         {([
+                            { key: 'week' as Granularity, label: 'Week' },
                             { key: 'month' as Granularity, label: 'Month' },
                             { key: 'year' as Granularity, label: 'Year' },
                             { key: 'custom' as Granularity, label: 'Custom' },
@@ -487,7 +504,8 @@ function InvestmentChart({
                     {scope === 'T212' && !t212Connected ? 'Connect Trading212 in Admin to see this.' : 'Not enough data yet.'}
                 </div>
             ) : (
-                <div className="h-[240px] w-full">
+                <div ref={scrollRef} className="overflow-x-auto pb-1">
+                    <div className="h-[240px]" style={{ minWidth: Math.max(500, data.length * 60) }}>
                     <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={chartView === 'area' ? chartData : data}>
                             <defs>
@@ -566,6 +584,7 @@ function InvestmentChart({
                             )}
                         </ComposedChart>
                     </ResponsiveContainer>
+                    </div>
                 </div>
             )}
 
@@ -902,19 +921,21 @@ function TrailingPeriodsCard({
 }
 
 function MonthlyBarsChart({
+    weeklyRows,
     monthlyRows,
     yearlyRows,
     fmt,
 }: {
+    weeklyRows: PeriodRow[];
     monthlyRows: PeriodRow[];
     yearlyRows: PeriodRow[];
     fmt: (n: number) => string;
 }) {
-    const [granularity, setGranularity] = useState<'month' | 'year'>('month');
+    const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
     const scrollRef = React.useRef<HTMLDivElement>(null);
 
     const chronological = useMemo(() => {
-        const rows = granularity === 'year' ? yearlyRows : monthlyRows;
+        const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
         return [...rows].reverse().map((row) => ({
             label: row.label,
             btcInvested: row.btc.invested,
@@ -922,7 +943,7 @@ function MonthlyBarsChart({
             t212Invested: row.t212.invested,
             t212Value: row.t212.value,
         }));
-    }, [monthlyRows, yearlyRows, granularity]);
+    }, [weeklyRows, monthlyRows, yearlyRows, granularity]);
 
     // Derulăm implicit la cele mai recente perioade (dreapta) — pentru
     // istoric mai vechi, se poate derula înapoi (stânga) din bara de scroll.
@@ -1017,6 +1038,7 @@ function MonthlyBarsChart({
                 </div>
                 <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                     {([
+                        { key: 'week' as const, label: 'Week' },
                         { key: 'month' as const, label: 'Month' },
                         { key: 'year' as const, label: 'Year' },
                     ]).map((opt) => (

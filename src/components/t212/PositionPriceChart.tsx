@@ -74,6 +74,13 @@ export function PositionPriceChart({ position, orders }: { position: Position; o
         );
     };
 
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+        }
+    }, [chartData.length]);
+
     return (
         <Card>
             <div className="flex items-center justify-between mb-4">
@@ -85,7 +92,8 @@ export function PositionPriceChart({ position, orders }: { position: Position; o
                     Not enough purchase history yet to chart price evolution.
                 </p>
             ) : (
-                <div className="h-[260px] w-full">
+                <div ref={scrollRef} className="overflow-x-auto pb-1">
+                <div className="h-[260px]" style={{ minWidth: Math.max(500, chartData.length * 70) }}>
                     <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={chartData} margin={{ left: -12 }}>
                             <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
@@ -118,6 +126,7 @@ export function PositionPriceChart({ position, orders }: { position: Position; o
                             <Line type="monotone" dataKey="price" stroke="#7c93b8" strokeWidth={1.5} dot={{ r: 3, fill: '#7c93b8', strokeWidth: 0 }} isAnimationActive={false} />
                         </ComposedChart>
                     </ResponsiveContainer>
+                </div>
                 </div>
             )}
 
