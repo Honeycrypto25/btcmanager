@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import { getOverviewData, getRecentWindowStats } from "@/lib/overview-data";
+import { getOverviewData, getCalendarWeekStats, getCalendarMonthStats } from "@/lib/overview-data";
 import { buildReportHtml } from "@/lib/email/report-template";
 
 function getResendClient(): Resend | null {
@@ -25,12 +25,11 @@ function monthLabel(date: Date): string {
     return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-function weekRangeLabel(): string {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 7);
+function rangeLabel(start: Date, end: Date): string {
+    // end e exclusiv (începutul următoarei perioade) — afișăm ultima zi reală inclusă.
+    const lastDay = new Date(end.getTime() - 1);
     const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    return `${fmt(start)} \u2013 ${fmt(end)}, ${end.getFullYear()}`;
+    return `${fmt(start)} \u2013 ${fmt(lastDay)}, ${lastDay.getFullYear()}`;
 }
 
 export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -41,11 +40,13 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
 
     try {
         const { data } = await getOverviewData();
-        const windowStats = await getRecentWindowStats(7);
+        // Săptămâna calendaristică ÎNCHEIATĂ cel mai recent (luni-duminică),
+        // nu ultimele 7 zile de la momentul rulării.
+        const { start, end, ...windowStats } = await getCalendarWeekStats(1);
 
         const html = buildReportHtml({
             periodType: "weekly",
-            periodLabel: weekRangeLabel(),
+            periodLabel: rangeLabel(start, end),
             data,
             windowStats,
             dashboardUrl: getDashboardUrl(),
@@ -73,27 +74,15 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
 
     try {
         const { data } = await getOverviewData();
-
-        // Raportul lunar se trimite pe 1 — recapitulează luna tocmai încheiată,
-        // adică primul rând din monthlyRows (cel mai recent).
-        const lastMonthRow = data.monthlyRows[0];
-        const lastMonthDate = new Date();
-        lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-
-        const windowStats = lastMonthRow
-            ? {
-                  btcInvested: lastMonthRow.btc.invested,
-                  btcValue: lastMonthRow.btc.value,
-                  t212Invested: lastMonthRow.t212.invested,
-                  t212Value: lastMonthRow.t212.value,
-                  invested: lastMonthRow.total.invested,
-                  value: lastMonthRow.total.value,
-              }
-            : { btcInvested: 0, btcValue: 0, t212Invested: 0, t212Value: 0, invested: 0, value: 0 };
+        // Luna calendaristică ÎNCHEIATĂ cel mai recent, cu limite explicite —
+        // nu "primul rând din monthlyRows" (fragil dacă sync-ul de dimineață
+        // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
+        // raportul, tot pe ziua 1, să ruleze).
+        const { start, ...windowStats } = await getCalendarMonthStats(1);
 
         const html = buildReportHtml({
             periodType: "monthly",
-            periodLabel: monthLabel(lastMonthDate),
+            periodLabel: monthLabel(start),
             data,
             windowStats,
             dashboardUrl: getDashboardUrl(),

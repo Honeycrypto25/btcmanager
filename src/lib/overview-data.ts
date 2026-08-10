@@ -181,22 +181,58 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
 }
 
 /**
- * Statistici pentru o fereastră recentă (ex: ultimele 7 zile) — folosit pentru
- * raportul săptămânal, unde nu avem o agregare pe săptămâni deja construită
- * (doar lunar/anual).
+ * Statistici pentru săptămâna calendaristică ÎNCHEIATĂ cel mai recent
+ * (luni–duminică), NU ultimele 7 zile de la momentul rulării. Diferența
+ * contează: dacă raportul rulează luni dimineață, "ultimele 7 zile" ar
+ * include câteva ore din ziua curentă și s-ar termina la o oră arbitrară,
+ * nu la finalul zilei de duminică — cu limite explicite, "săptămâna
+ * trecută" înseamnă mereu exact luni 00:00 – duminică 23:59:59.
  */
-export async function getRecentWindowStats(days: number) {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
+export async function getCalendarWeekStats(weeksAgo: number = 1) {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=duminică, 1=luni, ...
+    const daysSinceMonday = (dayOfWeek + 6) % 7;
 
+    const thisMonday = new Date(now);
+    thisMonday.setHours(0, 0, 0, 0);
+    thisMonday.setDate(thisMonday.getDate() - daysSinceMonday);
+
+    const start = new Date(thisMonday);
+    start.setDate(start.getDate() - 7 * weeksAgo);
+    const end = new Date(thisMonday);
+    end.setDate(end.getDate() - 7 * (weeksAgo - 1));
+
+    return { ...(await getWindowStats(start, end)), start, end };
+}
+
+/**
+ * Statistici pentru luna calendaristică ÎNCHEIATĂ cel mai recent — cu
+ * limite explicite (prima zi a lunii trecute 00:00 până în prima zi a
+ * lunii curente 00:00), NU "primul rând din monthlyRows". Cea din urmă
+ * e fragilă: dacă sync-ul zilnic (04:00) prinde deja o tranzacție din
+ * ziua 1 a lunii noi înainte ca raportul (07:00, tot pe ziua 1) să ruleze,
+ * "cel mai recent rând" ar deveni luna nou-începută, nu luna încheiată.
+ */
+export async function getCalendarMonthStats(monthsAgo: number = 1) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 1);
+
+    return { ...(await getWindowStats(start, end)), start, end };
+}
+
+async function getWindowStats(start: Date, end: Date) {
     const currentBtcPrice = await getCurrentBtcPrice();
     const wallets = await db.bitcoinWallet.findMany({ include: { transactions: true } });
-    const recentBtcTx = wallets
+    const windowBtcTx = wallets
         .flatMap((w: any) => w.transactions)
-        .filter((t: any) => new Date(t.timestamp) >= since);
+        .filter((t: any) => {
+            const d = new Date(t.timestamp);
+            return d >= start && d < end;
+        });
 
-    const btcAmount = recentBtcTx.reduce((s: number, t: any) => s + t.amount, 0);
-    const btcInvested = recentBtcTx.reduce((s: number, t: any) => s + t.amount * t.priceAtTime, 0);
+    const btcAmount = windowBtcTx.reduce((s: number, t: any) => s + t.amount, 0);
+    const btcInvested = windowBtcTx.reduce((s: number, t: any) => s + t.amount * t.priceAtTime, 0);
     const btcValue = btcAmount * currentBtcPrice;
 
     let t212Invested = 0;
@@ -215,10 +251,10 @@ export async function getRecentWindowStats(days: number) {
             if (p.quantity > 0) priceMap.set(p.ticker, p.currentValue / p.quantity);
         }
 
-        const recentOrders = await db.t212Order.findMany({
-            where: { accountId: t212Account.id, filledAt: { gte: since } },
+        const windowOrders = await db.t212Order.findMany({
+            where: { accountId: t212Account.id, filledAt: { gte: start, lt: end } },
         });
-        for (const o of recentOrders) {
+        for (const o of windowOrders) {
             if (o.side === "BUY") {
                 t212Invested += o.total * gbpToUsd;
                 const perShare = priceMap.get(o.ticker);
