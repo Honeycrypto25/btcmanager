@@ -943,7 +943,7 @@ function MonthlyBarsChart({
         const totalInvested = point.btcInvested + point.t212Invested;
         const totalValue = point.btcValue + point.t212Value;
 
-        const Row = ({ color, name, value, filled }: { color: string; name: string; value: number; filled: boolean }) => (
+        const Row = ({ color, name, value, filled, valueColorClass }: { color: string; name: string; value: number; filled: boolean; valueColorClass?: string }) => (
             <div className="flex items-center gap-2 justify-between">
                 <span className="flex items-center gap-1.5">
                     <span
@@ -952,7 +952,7 @@ function MonthlyBarsChart({
                     />
                     <span className={cn("text-xs", filled ? "text-foreground" : "text-faint")}>{name}</span>
                 </span>
-                <span className={cn("text-xs font-num", filled ? "text-foreground font-medium" : "text-faint")}>{fmt(value)}</span>
+                <span className={cn("text-xs font-num", filled ? cn(valueColorClass ?? "text-foreground", "font-medium") : "text-faint")}>{fmt(value)}</span>
             </div>
         );
 
@@ -960,16 +960,16 @@ function MonthlyBarsChart({
             <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-1 min-w-[170px]">
                 <p className="text-faint text-xs mb-1.5">{label}</p>
                 <Row color="#d6a24c" name="BTC invested" value={point.btcInvested} filled={false} />
-                <Row color="#d6a24c" name="BTC value" value={point.btcValue} filled />
+                <Row color="#d6a24c" name="BTC value" value={point.btcValue} filled valueColorClass={point.btcInvested !== 0 ? pnlColor(point.btcValue - point.btcInvested) : undefined} />
                 <Row color="#7c93b8" name="T212 invested" value={point.t212Invested} filled={false} />
-                <Row color="#7c93b8" name="T212 value" value={point.t212Value} filled />
+                <Row color="#7c93b8" name="T212 value" value={point.t212Value} filled valueColorClass={point.t212Invested !== 0 ? pnlColor(point.t212Value - point.t212Invested) : undefined} />
                 <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-border">
                     <span className="text-xs text-muted">Total invested</span>
                     <span className="text-xs font-num text-muted">{fmt(totalInvested)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-foreground font-medium">Total value</span>
-                    <span className="text-xs font-num text-foreground font-medium">{fmt(totalValue)}</span>
+                    <span className={cn("text-xs font-num font-medium", pnlColor(totalValue - totalInvested))}>{fmt(totalValue)}</span>
                 </div>
             </div>
         );
