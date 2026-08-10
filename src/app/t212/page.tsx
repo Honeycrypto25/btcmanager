@@ -159,7 +159,7 @@ export default async function T212Page() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Positions */}
-                <PositionsList positions={positions} orders={allOrders} currencySymbol={currencySymbol} />
+                <PositionsList positions={positions} currencySymbol={currencySymbol} />
 
                 {/* Pies */}
                 <Card>
