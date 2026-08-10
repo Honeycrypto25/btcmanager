@@ -209,6 +209,34 @@ export async function getPieDetail(
 }
 
 /**
+ * Lista de pies, ÎMBOGĂȚITĂ cu detaliul fiecăruia — lista simplă
+ * (/equity/pies) nu conține defalcarea financiară (investit/valoare),
+ * doar id și cash; detaliul (/equity/pies/{id}) e cel care are datele
+ * reale. Eșecul pe un singur pie nu blochează restul (cade pe rezumatul
+ * simplu pentru acela).
+ */
+export async function getPiesWithDetails(
+    environment: string,
+    apiKey: string,
+    apiSecret: string
+): Promise<T212PieSummary[]> {
+    const list = await getPies(environment, apiKey, apiSecret);
+    const enriched: T212PieSummary[] = [];
+
+    for (const pie of list) {
+        try {
+            const detail = await getPieDetail(environment, apiKey, apiSecret, pie.id);
+            enriched.push({ ...pie, ...detail, id: pie.id });
+        } catch {
+            enriched.push(pie);
+        }
+        await sleep(500);
+    }
+
+    return enriched;
+}
+
+/**
  * Istoricul de tranzacții cash (depuneri/retrageri), paginat prin cursor.
  * Se oprește după maxPages pentru siguranță (evită bucle infinite dacă API-ul se comportă neașteptat).
  *

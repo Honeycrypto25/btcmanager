@@ -167,32 +167,47 @@ export default async function T212Page() {
                         <PieChart className="w-4 h-4 text-primary" />
                         <h3 className="text-sm font-medium text-foreground">Pies</h3>
                     </div>
-                    {pies.length === 0 ? (
-                        <p className="text-muted text-sm py-6 text-center">No pies found on this account.</p>
-                    ) : (
-                        <div className="divide-y divide-border">
-                            {pies.map((pie: any) => {
-                                const val = pie.result?.value ?? 0;
-                                const invested = pie.result?.investedValue ?? 0;
-                                const result = pie.result?.result ?? 0;
-                                const isProfit = result >= 0;
-                                return (
-                                    <div key={pie.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-foreground truncate">{pie.name ?? `Pie #${pie.id}`}</p>
-                                            <p className="text-xs text-faint font-num">Invested {fmt(invested)}</p>
+                    {(() => {
+                        const enrichedPies = pies.map((pie: any) => ({
+                            pie,
+                            val: pie.result?.value ?? pie.value ?? pie.totalResult?.value ?? 0,
+                            invested: pie.result?.investedValue ?? pie.investedValue ?? pie.totalResult?.investedValue ?? 0,
+                        }));
+                        const nonEmptyPies = enrichedPies.filter((p: any) => p.val !== 0 || p.invested !== 0);
+
+                        if (pies.length === 0) {
+                            return <p className="text-muted text-sm py-6 text-center">No pies found on this account.</p>;
+                        }
+                        if (nonEmptyPies.length === 0) {
+                            return (
+                                <p className="text-muted text-sm py-6 text-center">
+                                    {pies.length} pie{pies.length === 1 ? '' : 's'} found, but all show £0 &mdash; likely empty/unused.
+                                </p>
+                            );
+                        }
+                        return (
+                            <div className="divide-y divide-border">
+                                {nonEmptyPies.map(({ pie, val, invested }: any) => {
+                                    const result = pie.result?.result ?? pie.result?.priceAvgResult ?? (val - invested);
+                                    const isProfit = result >= 0;
+                                    return (
+                                        <div key={pie.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-foreground truncate">{pie.name ?? `Pie #${pie.id}`}</p>
+                                                <p className="text-xs text-faint font-num">Invested {fmt(invested)}</p>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <p className="text-sm font-medium font-num text-foreground">{fmt(val)}</p>
+                                                <p className={cn("text-xs font-num", isProfit ? "text-accent" : "text-red-400")}>
+                                                    {isProfit ? '+' : ''}{fmt(result)}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-sm font-medium font-num text-foreground">{fmt(val)}</p>
-                                            <p className={cn("text-xs font-num", isProfit ? "text-accent" : "text-red-400")}>
-                                                {isProfit ? '+' : ''}{fmt(result)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                    );
+                                })}
+                            </div>
+                        );
+                    })()}
                     <p className="text-[10px] text-faint mt-4 leading-relaxed">
                         Pie values reflect Trading212&apos;s current allocation, including any automatic rebalancing.
                     </p>

@@ -3,7 +3,7 @@ import {
     getAccountInfo,
     getAccountCash,
     getPositions,
-    getPies,
+    getPiesWithDetails,
     getAllCashTransactions,
     getAllOrders,
     testConnection,
@@ -98,9 +98,9 @@ export async function syncT212Account(): Promise<{ ok: true } | { ok: false; err
         }
         await sleep(1500);
 
-        let pies: Awaited<ReturnType<typeof getPies>> = [];
+        let pies: Awaited<ReturnType<typeof getPiesWithDetails>> = [];
         try {
-            pies = await getPies(environment, creds.apiKey, creds.apiSecret);
+            pies = await getPiesWithDetails(environment, creds.apiKey, creds.apiSecret);
         } catch (piesErr: any) {
             partialErrors.push(`Pies: ${errMsg(piesErr)}`);
         }
