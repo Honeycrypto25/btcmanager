@@ -940,6 +940,9 @@ function MonthlyBarsChart({
         const point = payload[0]?.payload;
         if (!point) return null;
 
+        const totalInvested = point.btcInvested + point.t212Invested;
+        const totalValue = point.btcValue + point.t212Value;
+
         const Row = ({ color, name, value, filled }: { color: string; name: string; value: number; filled: boolean }) => (
             <div className="flex items-center gap-2 justify-between">
                 <span className="flex items-center gap-1.5">
@@ -960,6 +963,14 @@ function MonthlyBarsChart({
                 <Row color="#d6a24c" name="BTC value" value={point.btcValue} filled />
                 <Row color="#7c93b8" name="T212 invested" value={point.t212Invested} filled={false} />
                 <Row color="#7c93b8" name="T212 value" value={point.t212Value} filled />
+                <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-border">
+                    <span className="text-xs text-muted">Total invested</span>
+                    <span className="text-xs font-num text-muted">{fmt(totalInvested)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-foreground font-medium">Total value</span>
+                    <span className="text-xs font-num text-foreground font-medium">{fmt(totalValue)}</span>
+                </div>
             </div>
         );
     };
