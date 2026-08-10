@@ -932,6 +932,7 @@ function MonthlyBarsChart({
     fmt: (n: number) => string;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
+    const [isolated, setIsolated] = useState<'all' | 'BTC' | 'T212'>('all');
     const scrollRef = React.useRef<HTMLDivElement>(null);
 
     const chronological = useMemo(() => {
@@ -1094,10 +1095,18 @@ function MonthlyBarsChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                            <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.12} stroke="#d6a24c" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.12} stroke="#7c93b8" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            {isolated !== 'T212' && (
+                                <>
+                                    <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.12} stroke="#d6a24c" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                    <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                </>
+                            )}
+                            {isolated !== 'BTC' && (
+                                <>
+                                    <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.12} stroke="#7c93b8" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                    <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                </>
+                            )}
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -1108,30 +1117,55 @@ function MonthlyBarsChart({
                 </p>
             )}
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #d6a24c' }} />
-                    <span className="text-faint">BTC invested</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c' }} />
-                    <span className="text-faint">BTC value</span>
-                    <span className={cn("font-num font-medium", pnlColor(totals.btcPercent))}>
-                        {totals.btcPercent >= 0 ? '+' : ''}{totals.btcPercent.toFixed(1)}%
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs">
+                <button
+                    type="button"
+                    onClick={() => setIsolated(isolated === 'BTC' ? 'all' : 'BTC')}
+                    className={cn(
+                        "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
+                        isolated === 'BTC' ? "border-primary/40 bg-primary/5" : "border-transparent hover:bg-white/[0.03]",
+                        isolated === 'T212' && "opacity-40"
+                    )}
+                >
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #d6a24c' }} />
+                        <span className="text-faint">BTC invested</span>
                     </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #7c93b8' }} />
-                    <span className="text-faint">T212 invested</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8' }} />
-                    <span className="text-faint">T212 value</span>
-                    <span className={cn("font-num font-medium", pnlColor(totals.t212Percent))}>
-                        {totals.t212Percent >= 0 ? '+' : ''}{totals.t212Percent.toFixed(1)}%
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#d6a24c' }} />
+                        <span className="text-faint">value</span>
+                        <span className={cn("font-num font-medium", pnlColor(totals.btcPercent))}>
+                            {totals.btcPercent >= 0 ? '+' : ''}{totals.btcPercent.toFixed(1)}%
+                        </span>
                     </span>
-                </div>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setIsolated(isolated === 'T212' ? 'all' : 'T212')}
+                    className={cn(
+                        "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
+                        isolated === 'T212' ? "border-[#7c93b8]/40 bg-[#7c93b8]/5" : "border-transparent hover:bg-white/[0.03]",
+                        isolated === 'BTC' && "opacity-40"
+                    )}
+                >
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #7c93b8' }} />
+                        <span className="text-faint">T212 invested</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#7c93b8' }} />
+                        <span className="text-faint">value</span>
+                        <span className={cn("font-num font-medium", pnlColor(totals.t212Percent))}>
+                            {totals.t212Percent >= 0 ? '+' : ''}{totals.t212Percent.toFixed(1)}%
+                        </span>
+                    </span>
+                </button>
             </div>
+            {isolated !== 'all' && (
+                <p className="text-[10px] text-faint text-center mt-2">
+                    Showing {isolated} only &mdash; click it again to show both
+                </p>
+            )}
         </Card>
     );
 }
