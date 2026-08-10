@@ -85,7 +85,8 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
     const totalValue = btc.value + t212.value;
     const combined = computeAsset(totalInvested, totalValue, btc.pnl + t212.pnl);
 
-    // --- Yearly / monthly breakdown ---
+    // --- Weekly / monthly / yearly breakdown ---
+    const weekly = new Map<string, PeriodAgg & { label: string }>();
     const yearly = new Map<number, PeriodAgg>();
     const monthly = new Map<string, PeriodAgg>();
 
@@ -99,12 +100,27 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
         });
     };
 
+    const addToWeek = (d: Date, patch: Partial<PeriodAgg>) => {
+        const monday = mondayOf(d);
+        const key = monday.toISOString().slice(0, 10);
+        const label = monday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const existing = weekly.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0, t212Value: 0, label };
+        weekly.set(key, {
+            btcInvested: existing.btcInvested + (patch.btcInvested ?? 0),
+            btcAmount: existing.btcAmount + (patch.btcAmount ?? 0),
+            t212Invested: existing.t212Invested + (patch.t212Invested ?? 0),
+            t212Value: existing.t212Value + (patch.t212Value ?? 0),
+            label,
+        });
+    };
+
     for (const tx of allBtcTx) {
         const d = new Date(tx.timestamp);
         const invested = tx.amount * tx.priceAtTime;
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         addTo(yearly, d.getFullYear(), { btcInvested: invested, btcAmount: tx.amount });
         addTo(monthly, monthKey, { btcInvested: invested, btcAmount: tx.amount });
+        addToWeek(d, { btcInvested: invested, btcAmount: tx.amount });
     }
 
     if (t212Account) {
@@ -128,10 +144,12 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
                 const valueUsd = (perShare !== undefined ? o.quantity * perShare : o.total) * gbpToUsd;
                 addTo(yearly, d.getFullYear(), { t212Invested: investedUsd, t212Value: valueUsd });
                 addTo(monthly, monthKey, { t212Invested: investedUsd, t212Value: valueUsd });
+                addToWeek(d, { t212Invested: investedUsd, t212Value: valueUsd });
             } else {
                 const amountUsd = o.total * gbpToUsd;
                 addTo(yearly, d.getFullYear(), { t212Invested: -amountUsd, t212Value: -amountUsd });
                 addTo(monthly, monthKey, { t212Invested: -amountUsd, t212Value: -amountUsd });
+                addToWeek(d, { t212Invested: -amountUsd, t212Value: -amountUsd });
             }
         }
     }
@@ -157,6 +175,10 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
             return buildRow(`${monthNames[monthIdx]} ${y}`, agg);
         });
 
+    const weeklyRows: PeriodRow[] = Array.from(weekly.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([, agg]) => buildRow(agg.label, agg));
+
     const usdToGbp = await getExchangeRate("USD", "GBP");
 
     const btcStats = computeAssetStats(monthlyRows, 'btc', allBtcTx.length);
@@ -169,6 +191,7 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
         pnlPercent: combined.pnlPercent,
         btc: { ...btc, amount: totalBtcAmount },
         t212: { ...t212, connected: t212Connected, hasSnapshot: !!t212Snapshot },
+        weeklyRows,
         yearlyRows,
         monthlyRows,
         t212NativeCurrency: t212Snapshot?.currency ?? null,
@@ -178,6 +201,16 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
     };
 
     return { data, usdToGbp };
+}
+
+/** Luni a săptămânii care conține data dată, la miezul nopții — folosit ca cheie de sortare/grupare */
+function mondayOf(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = (day + 6) % 7; // zile de la ultima luni
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - diff);
+    return d;
 }
 
 /**

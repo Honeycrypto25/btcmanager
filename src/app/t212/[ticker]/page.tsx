@@ -5,24 +5,27 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, cn } from "@/components/ui/core";
+import { cn } from "@/components/ui/core";
 import { db } from "@/lib/db";
 import { ArrowLeft } from "lucide-react";
 import Link from 'next/link';
 import { PositionPriceChart } from "@/components/t212/PositionPriceChart";
-
-interface PeriodRow {
-    label: string;
-    invested: number;
-    value: number;
-    pnl: number;
-    pnlPercent: number;
-}
+import { PeriodBreakdownToggle, type PeriodRow } from "@/components/t212/PeriodBreakdownToggle";
 
 function computeAsset(invested: number, value: number) {
     const pnl = value - invested;
     const pnlPercent = invested !== 0 ? (pnl / invested) * 100 : 0;
     return { pnl, pnlPercent };
+}
+
+/** Luni a săptămânii care conține data dată, la miezul nopții — folosit ca cheie de sortare/grupare */
+function mondayOf(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = (day + 6) % 7; // zile de la ultima luni
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - diff);
+    return d;
 }
 
 export default async function PositionDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
@@ -52,17 +55,18 @@ export default async function PositionDetailPage({ params }: { params: Promise<{
     const currencySymbol = snapshot.currency === 'USD' ? '$' : snapshot.currency === 'EUR' ? '\u20ac' : snapshot.currency === 'GBP' ? '\u00a3' : `${snapshot.currency} `;
     const fmt = (n: number) => `${currencySymbol}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-    // Investit/valoare pe lună și an, pentru ACEST instrument — în moneda
-    // contului (order.total e deja convertit de T212, nu în pence/etc).
+    // Investit/valoare pe săptămână, lună și an, pentru ACEST instrument — în
+    // moneda contului (order.total e deja convertit de T212, nu în pence/etc).
     // Valoarea curentă per comandă folosește prețul curent per acțiune
     // (currentValue/quantity), la fel ca la restul aplicației.
     const currentValuePerShare = position.quantity > 0 ? position.currentValue / position.quantity : 0;
 
+    const weekly = new Map<string, { invested: number; value: number; label: string }>();
     const yearly = new Map<number, { invested: number; value: number }>();
     const monthly = new Map<string, { invested: number; value: number }>();
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    const addTo = (map: Map<any, { invested: number; value: number }>, key: any, invested: number, value: number) => {
+    const addTo = <K,>(map: Map<K, { invested: number; value: number }>, key: K, invested: number, value: number) => {
         const existing = map.get(key) ?? { invested: 0, value: 0 };
         map.set(key, { invested: existing.invested + invested, value: existing.value + value });
     };
@@ -70,15 +74,20 @@ export default async function PositionDetailPage({ params }: { params: Promise<{
     for (const o of orders) {
         const d = new Date(o.filledAt);
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const monday = mondayOf(d);
+        const weekKey = monday.toISOString().slice(0, 10);
+        const weekLabel = monday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-        if (o.side === "BUY") {
-            const value = currentValuePerShare > 0 ? o.quantity * currentValuePerShare : o.total;
-            addTo(yearly, d.getFullYear(), o.total, value);
-            addTo(monthly, monthKey, o.total, value);
-        } else {
-            addTo(yearly, d.getFullYear(), -o.total, -o.total);
-            addTo(monthly, monthKey, -o.total, -o.total);
-        }
+        const investedDelta = o.side === "BUY" ? o.total : -o.total;
+        const valueDelta = o.side === "BUY"
+            ? (currentValuePerShare > 0 ? o.quantity * currentValuePerShare : o.total)
+            : -o.total;
+
+        addTo(yearly, d.getFullYear(), investedDelta, valueDelta);
+        addTo(monthly, monthKey, investedDelta, valueDelta);
+
+        const existingWeek = weekly.get(weekKey) ?? { invested: 0, value: 0, label: weekLabel };
+        weekly.set(weekKey, { invested: existingWeek.invested + investedDelta, value: existingWeek.value + valueDelta, label: weekLabel });
     }
 
     const buildRow = (label: string, agg: { invested: number; value: number }): PeriodRow => {
@@ -96,6 +105,10 @@ export default async function PositionDetailPage({ params }: { params: Promise<{
             const [y, m] = key.split('-');
             return buildRow(`${monthNames[parseInt(m, 10) - 1]} ${y}`, agg);
         });
+
+    const weeklyRows = Array.from(weekly.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([, agg]) => buildRow(agg.label, agg));
 
     const totalPnl = position.currentValue - position.cost;
     const totalPnlPercent = position.cost !== 0 ? (totalPnl / position.cost) * 100 : 0;
@@ -124,42 +137,13 @@ export default async function PositionDetailPage({ params }: { params: Promise<{
 
             <PositionPriceChart position={position} orders={orders as any} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <PeriodTable title="Invested by year" rows={yearlyRows} fmt={fmt} />
-                <PeriodTable title="Invested by month" rows={monthlyRows} fmt={fmt} scrollable />
-            </div>
+            <PeriodBreakdownToggle
+                title="Invested"
+                weeklyRows={weeklyRows}
+                monthlyRows={monthlyRows}
+                yearlyRows={yearlyRows}
+                currencySymbol={currencySymbol}
+            />
         </DashboardLayout>
-    );
-}
-
-function PeriodTable({ title, rows, fmt, scrollable }: { title: string; rows: PeriodRow[]; fmt: (n: number) => string; scrollable?: boolean }) {
-    return (
-        <Card>
-            <h3 className="text-sm font-medium text-foreground mb-3">{title}</h3>
-            {rows.length === 0 ? (
-                <p className="text-muted text-sm py-6 text-center">No activity recorded yet.</p>
-            ) : (
-                <>
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(60px,auto)_minmax(60px,auto)_minmax(48px,auto)] gap-x-2 pb-1.5 border-b border-border">
-                        <span />
-                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">Invested</span>
-                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">Value</span>
-                        <span className="text-[10px] text-faint uppercase tracking-wider text-right">P&amp;L</span>
-                    </div>
-                    <div className={cn(scrollable && "max-h-[360px] overflow-y-auto pr-1")}>
-                        {rows.map((row) => (
-                            <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_minmax(60px,auto)_minmax(60px,auto)_minmax(48px,auto)] gap-x-2 items-baseline py-2.5 border-b border-border last:border-0">
-                                <span className="text-sm font-medium text-foreground truncate">{row.label}</span>
-                                <span className="text-sm font-num text-foreground text-right">{row.invested !== 0 ? fmt(row.invested) : '\u2014'}</span>
-                                <span className="text-sm font-num text-foreground text-right">{fmt(row.value)}</span>
-                                <span className={cn("text-xs font-num text-right", row.invested !== 0 ? (row.pnlPercent >= 0 ? "text-accent" : "text-red-400") : "text-faint")}>
-                                    {row.invested !== 0 ? `${row.pnlPercent >= 0 ? '+' : ''}${row.pnlPercent.toFixed(1)}%` : '\u2014'}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </>
-            )}
-        </Card>
     );
 }

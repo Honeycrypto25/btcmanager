@@ -47,6 +47,7 @@ export interface OverviewData {
     pnlPercent: number;
     btc: AssetFigures & { amount: number };
     t212: AssetFigures & { connected: boolean; hasSnapshot: boolean };
+    weeklyRows: PeriodRow[];
     yearlyRows: PeriodRow[];
     monthlyRows: PeriodRow[];
     t212NativeCurrency: string | null;
@@ -83,6 +84,7 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             ),
             btc: { ...scaleFigures(data.btc, factor), amount: data.btc.amount },
             t212: { ...scaleFigures(data.t212, factor), connected: data.t212.connected, hasSnapshot: data.t212.hasSnapshot },
+            weeklyRows: data.weeklyRows.map((r) => scaleRow(r, factor)),
             yearlyRows: data.yearlyRows.map((r) => scaleRow(r, factor)),
             monthlyRows: data.monthlyRows.map((r) => scaleRow(r, factor)),
             btcStats: { ...data.btcStats, avgMonthlyInvested: data.btcStats.avgMonthlyInvested * factor },
@@ -258,11 +260,8 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
             {/* Monthly bars: invested + current value, per asset */}
             <MonthlyBarsChart monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
 
-            {/* Yearly / Monthly invested breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <PeriodBreakdown title="Invested by year" rows={view.yearlyRows} fmt={fmt} pnlColor={pnlColor} scrollable={false} />
-                <PeriodBreakdown title="Invested by month" rows={view.monthlyRows} fmt={fmt} pnlColor={pnlColor} scrollable />
-            </div>
+            {/* Invested breakdown, with Week/Month/Year toggle */}
+            <PeriodBreakdown weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} pnlColor={pnlColor} />
 
             <p className="text-[10px] text-faint text-center leading-relaxed">
                 {data.t212.connected && data.t212NativeCurrency && data.t212NativeCurrency !== 'USD' && (
@@ -600,23 +599,41 @@ function InvestmentChart({
 }
 
 function PeriodBreakdown({
-    title,
-    rows,
+    weeklyRows,
+    monthlyRows,
+    yearlyRows,
     fmt,
     pnlColor,
-    scrollable,
 }: {
-    title: string;
-    rows: PeriodRow[];
+    weeklyRows: PeriodRow[];
+    monthlyRows: PeriodRow[];
+    yearlyRows: PeriodRow[];
     fmt: (n: number) => string;
     pnlColor: (n: number) => string;
-    scrollable: boolean;
 }) {
+    const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
+    const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
     const gridCols = "grid-cols-[minmax(0,1fr)_minmax(56px,auto)_minmax(56px,auto)_minmax(40px,auto)]";
 
     return (
         <Card>
-            <h3 className="text-sm font-medium text-foreground mb-2">{title}</h3>
+            <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-foreground">Invested by {granularity}</h3>
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                    {(['week', 'month', 'year'] as const).map((g) => (
+                        <button
+                            key={g}
+                            onClick={() => setGranularity(g)}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors",
+                                granularity === g ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {g}
+                        </button>
+                    ))}
+                </div>
+            </div>
             {rows.length === 0 ? (
                 <p className="text-muted text-sm py-6 text-center">No investments recorded yet.</p>
             ) : (
@@ -627,7 +644,7 @@ function PeriodBreakdown({
                         <span className="text-[10px] text-faint uppercase tracking-wider text-right">Value</span>
                         <span className="text-[10px] text-faint uppercase tracking-wider text-right">P&amp;L</span>
                     </div>
-                    <div className={cn(scrollable && "max-h-[420px] overflow-y-auto pr-1")}>
+                    <div className="max-h-[420px] overflow-y-auto pr-1">
                         {rows.map((row) => (
                             <div key={row.label} className="py-2.5 border-b border-border last:border-0">
                                 <div className={cn("grid gap-x-3 items-baseline", gridCols)}>
