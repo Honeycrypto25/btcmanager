@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown, Repeat } from "lucide-react";
 import Link from 'next/link';
 import { T212SyncButton } from "@/components/t212/T212SyncButton";
+import { PositionsList } from "@/components/t212/PositionsList";
 
 export default async function T212Page() {
     const session = await getServerSession(authOptions);
@@ -85,11 +86,11 @@ export default async function T212Page() {
 
     const pnlPercent = snapshot.investedValue > 0 ? (snapshot.resultPpl / snapshot.investedValue) * 100 : 0;
 
-    const orders = await db.t212Order.findMany({
+    const allOrders = await db.t212Order.findMany({
         where: { accountId: account.id },
         orderBy: { filledAt: "desc" },
-        take: 50,
     });
+    const orders = allOrders.slice(0, 50);
 
     const cashFlows = await db.t212CashFlow.findMany({
         where: { accountId: account.id },
@@ -100,7 +101,8 @@ export default async function T212Page() {
     // Statistici din vânzări realizate — inclusiv rebalansări de pie (vinde X,
     // cumpără Y). Randamentul e calculat față de costul mediu al acțiunilor
     // vândute (cost = valoare vânzare - profit realizat), la fel ca în T212.
-    const sellOrders = orders.filter((o: any) => o.side === 'SELL');
+    // Calculat din SETUL COMPLET de comenzi, nu doar cele 50 afișate în listă.
+    const sellOrders = allOrders.filter((o: any) => o.side === 'SELL');
     const realizedProfit = sellOrders.reduce((acc: number, o: any) => acc + (o.realizedProfit ?? 0), 0);
     const soldValue = sellOrders.reduce((acc: number, o: any) => acc + o.total, 0);
     const soldCostBasis = soldValue - realizedProfit;
@@ -157,39 +159,7 @@ export default async function T212Page() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Positions */}
-                <Card>
-                    <h3 className="text-sm font-medium text-foreground mb-4">Open positions</h3>
-                    {positions.length === 0 ? (
-                        <p className="text-muted text-sm py-6 text-center">No open positions.</p>
-                    ) : (
-                        <div className="divide-y divide-border">
-                            {positions.map((p: any) => {
-                                const cost = p.cost ?? 0;
-                                const currentValue = p.currentValue ?? 0;
-                                const pnl = currentValue - cost;
-                                const isProfit = pnl >= 0;
-                                return (
-                                    <div key={p.ticker} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-foreground truncate">{p.name ?? p.ticker}</p>
-                                            <p className="text-xs text-faint font-num">{p.quantity} &times; {p.ticker}</p>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-sm font-medium font-num text-foreground">{fmt(currentValue)}</p>
-                                            <p className={cn("text-xs font-num", isProfit ? "text-accent" : "text-red-400")}>
-                                                {isProfit ? '+' : ''}{fmt(pnl)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                    <p className="text-[10px] text-faint mt-4 leading-relaxed">
-                        Value and P&amp;L are converted to your account currency by Trading212 itself, so London-listed
-                        instruments priced in pence are handled correctly.
-                    </p>
-                </Card>
+                <PositionsList positions={positions} orders={allOrders} currencySymbol={currencySymbol} />
 
                 {/* Pies */}
                 <Card>
