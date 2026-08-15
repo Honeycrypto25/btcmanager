@@ -42,10 +42,11 @@ export const ROADMAP: RoadmapItem[] = [
     { phase: "Phase 2", section: "Receipts", title: "Reguli merchant → categorie", doneOnSeed: true },
 
     // --- Phase 3 ---
-    { phase: "Phase 3", section: "Bank", title: "Import CSV extras bancar (format-agnostic)" },
-    { phase: "Phase 3", section: "Bank", title: "Deduplicare tranzacții (hash rând)" },
-    { phase: "Phase 3", section: "Bank", title: "Istoric batch-uri de import" },
-    { phase: "Phase 3", section: "Bank", title: "Matching chitanță ↔ tranzacție bancară (retroactiv)" },
+    { phase: "Phase 3", section: "Bank", title: "Import CSV extras bancar (format-agnostic, mapare coloane manuală)", doneOnSeed: true },
+    { phase: "Phase 3", section: "Bank", title: "Deduplicare tranzacții (hash rând per utilizator)", doneOnSeed: true },
+    { phase: "Phase 3", section: "Bank", title: "Istoric batch-uri de import", doneOnSeed: true },
+    { phase: "Phase 3", section: "Bank", title: "Matching chitanță ↔ tranzacție bancară (retroactiv, ambele direcții)", doneOnSeed: true },
+    { phase: "Phase 3", section: "Bank", title: "UI confirmare/respingere potriviri sugerate", doneOnSeed: true },
 
     // --- Phase 4 ---
     { phase: "Phase 4", section: "Tax", title: "Calculator taxe (Income Tax + Class 4 NI) — estimativ" },

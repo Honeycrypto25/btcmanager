@@ -20,7 +20,8 @@ import {
     Receipt,
     FileText,
     ListChecks,
-    ScanLine
+    ScanLine,
+    Landmark
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -55,6 +56,7 @@ const navEntries: NavEntry[] = [
             { name: 'Income', href: '/self-employed/income', icon: TrendingUp },
             { name: 'Expenses', href: '/self-employed/expenses', icon: Receipt },
             { name: 'Receipts', href: '/self-employed/receipts', icon: ScanLine },
+            { name: 'Bank', href: '/self-employed/bank', icon: Landmark },
             { name: 'Reports', href: '/self-employed/reports', icon: FileText },
         ],
     },

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { deleteReceiptObject, getReceiptObjectBuffer, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
 import { generateHeicPreview, isHeicMimeType } from "@/lib/receipts/preview";
+import { matchReceiptAgainstTransactions } from "@/app/actions/bank";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -61,6 +62,13 @@ export async function updateReceiptDetails(id: string, input: ReceiptDetailsInpu
             status: existing.status === "needs_review" && input.merchant && input.amount ? "unmatched" : existing.status,
         },
     });
+
+    // Receipts are often added before the matching bank transaction has been
+    // imported yet — now that this receipt has amount+date, see if an
+    // already-imported transaction matches it.
+    if (receipt.amount !== null && receipt.receiptDate !== null && receipt.status !== "matched") {
+        await matchReceiptAgainstTransactions(id);
+    }
 
     revalidatePath("/self-employed/receipts");
     revalidatePath(`/self-employed/receipts/${id}`);
