@@ -6,8 +6,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isR2Configured } from "@/lib/r2/client";
-import { buildReceiptOriginalKey, uploadReceiptObject } from "@/lib/r2/receipts";
+import { buildReceiptOriginalKey, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
+import { generateHeicPreview, isHeicMimeType } from "@/lib/receipts/preview";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "application/pdf"]);
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
@@ -54,6 +55,20 @@ export async function POST(req: NextRequest) {
         const buffer = Buffer.from(await file.arrayBuffer());
         await uploadReceiptObject(key, buffer, file.type);
 
+        // HEIC/HEIF (default iPhone camera format) can't be rendered by an
+        // <img> tag in any mainstream browser. Generate a WebP preview so the
+        // receipt is actually viewable — the original HEIC is never touched.
+        let previewObjectKey: string | null = null;
+        let previewFileSize: number | null = null;
+        if (isHeicMimeType(file.type)) {
+            const previewBuffer = await generateHeicPreview(buffer);
+            if (previewBuffer) {
+                previewObjectKey = buildReceiptPreviewKey({ userId, taxYear, date: now, receiptId });
+                await uploadReceiptObject(previewObjectKey, previewBuffer, "image/webp");
+                previewFileSize = previewBuffer.length;
+            }
+        }
+
         const receipt = await db.receipt.create({
             data: {
                 id: receiptId,
@@ -64,6 +79,8 @@ export async function POST(req: NextRequest) {
                 originalObjectKey: key,
                 originalMimeType: file.type,
                 originalFileSize: file.size,
+                previewObjectKey,
+                previewFileSize,
                 retentionUntil: getDefaultRetentionUntil(taxYear),
             },
         });

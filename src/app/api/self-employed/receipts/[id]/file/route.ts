@@ -19,8 +19,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Default to the browser-viewable preview when one exists (e.g. HEIC
+    // originals aren't renderable by <img> in any mainstream browser).
+    // Pass ?variant=original to force the raw original file instead.
     const variant = new URL(req.url).searchParams.get("variant");
-    const key = variant === "preview" && receipt.previewObjectKey ? receipt.previewObjectKey : receipt.originalObjectKey;
+    const key = variant !== "original" && receipt.previewObjectKey ? receipt.previewObjectKey : receipt.originalObjectKey;
 
     try {
         const url = await getSignedReceiptUrl(key);

@@ -31,7 +31,8 @@ export const ROADMAP: RoadmapItem[] = [
     // --- Phase 2 ---
     { phase: "Phase 2", section: "Receipts", title: "Upload chitanțe (cameră telefon + fișier)", doneOnSeed: true },
     { phase: "Phase 2", section: "Receipts", title: "Stocare Cloudflare R2 (original privat, URL semnat)", doneOnSeed: true },
-    { phase: "Phase 2", section: "Receipts", title: "Generează preview .webp pentru chitanțe (optimizare, fără a suprascrie originalul)" },
+    { phase: "Phase 2", section: "Receipts", title: "Generează preview .webp pentru chitanțe HEIC (fix: iPhone nu se afișa în browser)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Generează preview .webp și pentru JPEG/PNG (optimizare dimensiune, opțional)" },
     { phase: "Phase 2", section: "Receipts", title: "Metadate chitanțe în Neon (fără imagini în DB)", doneOnSeed: true },
     { phase: "Phase 2", section: "Receipts", title: "Arhitectură OCR (câmpuri DB + buton UI, fără provider live)", doneOnSeed: true },
     { phase: "Phase 2", section: "Receipts", title: "Activează OCR live (Google Cloud Vision)", description: "Necesită proiect Google Cloud cu Vision API activat + cheie service account. Până atunci, butonul „Rulează OCR” arată un mesaj clar și utilizatorul completează manual." },

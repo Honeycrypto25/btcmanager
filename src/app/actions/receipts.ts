@@ -4,8 +4,9 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { deleteReceiptObject } from "@/lib/r2/receipts";
+import { deleteReceiptObject, getReceiptObjectBuffer, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
+import { generateHeicPreview, isHeicMimeType } from "@/lib/receipts/preview";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -88,6 +89,42 @@ export async function listReceipts(filter?: { taxYear?: string; status?: string 
         where: { userId, ...(filter?.taxYear ? { taxYear: filter.taxYear } : {}), ...(filter?.status ? { status: filter.status } : {}) },
         orderBy: { createdAt: "desc" },
     });
+}
+
+/** Backfills a WebP preview for a receipt uploaded before HEIC preview
+ * generation existed (or whose conversion failed the first time). */
+export async function backfillReceiptPreview(id: string): Promise<{ ok: boolean; message: string }> {
+    const userId = await requireUserId();
+    const receipt = await db.receipt.findUnique({ where: { id } });
+    if (!receipt || receipt.userId !== userId) throw new Error("Not found");
+
+    if (!isHeicMimeType(receipt.originalMimeType)) {
+        return { ok: false, message: "Acest fișier nu este HEIC — nu are nevoie de preview." };
+    }
+    if (receipt.previewObjectKey) {
+        return { ok: true, message: "Preview-ul există deja." };
+    }
+
+    const originalBuffer = await getReceiptObjectBuffer(receipt.originalObjectKey);
+    const previewBuffer = await generateHeicPreview(originalBuffer);
+    if (!previewBuffer) {
+        return { ok: false, message: "Conversia a eșuat. Poți vedea în continuare fișierul original mai jos." };
+    }
+
+    const previewKey = buildReceiptPreviewKey({
+        userId,
+        taxYear: receipt.taxYear || getUkTaxYear(receipt.createdAt),
+        date: receipt.receiptDate || receipt.createdAt,
+        receiptId: receipt.id,
+    });
+    await uploadReceiptObject(previewKey, previewBuffer, "image/webp");
+    await db.receipt.update({
+        where: { id },
+        data: { previewObjectKey: previewKey, previewFileSize: previewBuffer.length },
+    });
+
+    revalidatePath(`/self-employed/receipts/${id}`);
+    return { ok: true, message: "Preview generat cu succes." };
 }
 
 export async function getReceipt(id: string) {

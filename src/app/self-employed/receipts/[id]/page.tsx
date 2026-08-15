@@ -36,6 +36,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         status: receipt.status,
         aiProcessed: receipt.aiProcessed,
         ocrRawText: receipt.ocrRawText,
+        originalMimeType: receipt.originalMimeType,
+        hasPreview: !!receipt.previewObjectKey,
     };
 
     return (

@@ -3,13 +3,14 @@
 import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui/core";
-import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2 } from "lucide-react";
+import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink } from "lucide-react";
 import {
     updateReceiptDetails,
     deleteReceipt,
     saveMerchantRule,
     runOcrOnReceipt,
     analyzeReceiptWithAI,
+    backfillReceiptPreview,
     type ReceiptDetailsInput,
 } from "@/app/actions/receipts";
 
@@ -27,12 +28,15 @@ interface ReceiptData {
     status: string;
     aiProcessed: boolean;
     ocrRawText: string | null;
+    originalMimeType: string;
+    hasPreview: boolean;
 }
 
 export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptData; categories: string[] }) {
     const router = useRouter();
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [imageError, setImageError] = useState(false);
+    const [originalUrl, setOriginalUrl] = useState<string | null>(null);
     const [form, setForm] = useState<ReceiptDetailsInput>({
         merchant: receipt.merchant || "",
         receiptDate: receipt.receiptDate ? receipt.receiptDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
@@ -58,6 +62,13 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
                 else setImageError(true);
             })
             .catch(() => setImageError(true));
+
+        fetch(`/api/self-employed/receipts/${receipt.id}/file?variant=original`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.url) setOriginalUrl(data.url);
+            })
+            .catch(() => {});
     }, [receipt.id]);
 
     function save() {
@@ -81,6 +92,26 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
         startTransition(async () => {
             await deleteReceipt(receipt.id);
             router.push("/self-employed/receipts");
+        });
+    }
+
+    function reloadImage() {
+        setImageError(false);
+        setImageUrl(null);
+        fetch(`/api/self-employed/receipts/${receipt.id}/file`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.url) setImageUrl(data.url);
+                else setImageError(true);
+            })
+            .catch(() => setImageError(true));
+    }
+
+    function generatePreview() {
+        startTransition(async () => {
+            const result = await backfillReceiptPreview(receipt.id);
+            setAssistMessage(result.message);
+            if (result.ok) reloadImage();
         });
     }
 
@@ -108,22 +139,44 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="p-3 flex items-center justify-center min-h-[320px] bg-black/20">
-                    {imageUrl ? (
+                <Card className="p-3 flex flex-col items-center justify-center min-h-[320px] bg-black/20 gap-3">
+                    {imageUrl && !imageError ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={imageUrl} alt="Chitanță" className="max-h-[520px] w-auto rounded-lg object-contain" />
-                    ) : imageError ? (
+                        <img
+                            src={imageUrl}
+                            alt="Chitanță"
+                            className="max-h-[520px] w-auto rounded-lg object-contain"
+                            onError={() => setImageError(true)}
+                        />
+                    ) : imageError || (imageUrl === null && !originalUrl) ? (
                         <div className="text-center text-faint">
                             <ImageOff className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                            <p className="text-sm">Imaginea nu a putut fi încărcată.</p>
+                            <p className="text-sm">Previzualizarea nu este disponibilă în browser pentru acest format.</p>
                         </div>
                     ) : (
                         <Loader2 className="w-6 h-6 text-muted animate-spin" />
                     )}
+                    {originalUrl && (
+                        <a
+                            href={originalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-primary transition-colors"
+                        >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Vezi / descarcă fișierul original
+                        </a>
+                    )}
                 </Card>
 
                 <Card className="p-5 sm:p-6 space-y-4">
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        {(receipt.originalMimeType === "image/heic" || receipt.originalMimeType === "image/heif") && !receipt.hasPreview && (
+                            <Button variant="outline" size="sm" onClick={generatePreview} disabled={isPending}>
+                                <ImageOff className="w-3.5 h-3.5 mr-2" />
+                                Generează preview
+                            </Button>
+                        )}
                         <Button variant="outline" size="sm" onClick={runOcr} disabled={isPending}>
                             <ScanText className="w-3.5 h-3.5 mr-2" />
                             Rulează OCR

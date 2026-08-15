@@ -1,5 +1,6 @@
 import "server-only";
 import { GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import type { Readable } from "stream";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getR2Client, getR2BucketName } from "./client";
 
@@ -68,6 +69,18 @@ export async function getSignedReceiptUrl(key: string, expiresInSeconds: number 
     const client = getR2Client();
     const command = new GetObjectCommand({ Bucket: getR2BucketName(), Key: key });
     return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+}
+
+/** Downloads an object's full contents — used for backfilling a preview from an already-uploaded original. */
+export async function getReceiptObjectBuffer(key: string): Promise<Buffer> {
+    const client = getR2Client();
+    const result = await client.send(new GetObjectCommand({ Bucket: getR2BucketName(), Key: key }));
+    const stream = result.Body as Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
 }
 
 export async function deleteReceiptObject(key: string): Promise<void> {
