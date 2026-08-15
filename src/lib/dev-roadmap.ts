@@ -26,6 +26,7 @@ export const ROADMAP: RoadmapItem[] = [
     { phase: "Phase 1", section: "Expenses", title: "Evidență cheltuieli (CRUD, categorii, an fiscal UK)", doneOnSeed: true },
     { phase: "Phase 1", section: "Reports", title: "Raport de bază: venit vs cheltuieli pe lună", doneOnSeed: true },
     { phase: "Phase 1", section: "Dashboard", title: "Card-uri self-employed pe dashboard-ul principal (venit/cheltuieli YTD)" },
+    { phase: "Phase 1", section: "Foundation", title: "Verifică auth/2FA după migrarea middleware.ts → proxy.ts (edge → Node.js runtime)", description: "Confirmă în producție că login-ul, redirect-ul /auth/totp și cookie-ul 2FA se comportă identic pe noul runtime Node.js al proxy.ts față de vechiul middleware.ts pe edge." },
 
     // --- Phase 2 ---
     { phase: "Phase 2", section: "Receipts", title: "Upload chitanțe (cameră telefon + fișier)" },
