@@ -112,8 +112,8 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                     Medie venit lunar (luni active): <span className="text-foreground font-medium">{formatGBP(summary.averageMonthlyIncome)}</span>
                 </p>
                 <p className="text-xs text-faint mt-2">
-                    Această pagină acoperă Phase 1 (Income, Expenses, rapoarte de bază). Chitanțe, import extras bancar și calculator de taxe
-                    urmează în fazele următoare — vezi pagina Tasks pentru progres.
+                    Chitanțe și import extras bancar (cu potrivire automată) sunt deja disponibile. Calculator de taxe și modulele
+                    Vehicule / Documente / Investiții urmează în fazele următoare — vezi pagina Tasks pentru progres.
                 </p>
             </Card>
         </div>
