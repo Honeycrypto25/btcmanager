@@ -43,6 +43,21 @@ export function listRecentUkTaxYears(count: number = 5): string[] {
     return years;
 }
 
+/**
+ * Default document retention deadline for self-employed accounting records.
+ * HMRC guidance: keep self-assessment records for at least 5 years after the
+ * 31 January online-filing deadline for that tax year — i.e. roughly 6 years
+ * after the tax year itself ends. This is a sensible default, not tax
+ * advice; treat `retentionUntil` as editable per document if a longer/shorter
+ * period is ever needed.
+ */
+export function getDefaultRetentionUntil(taxYear: string): Date {
+    const { end } = getUkTaxYearRange(taxYear);
+    const retentionUntil = new Date(end);
+    retentionUntil.setFullYear(retentionUntil.getFullYear() + 6);
+    return retentionUntil;
+}
+
 /** How many days into the current UK tax year "now" is (1-based), and the total length — useful for projections. */
 export function getUkTaxYearProgress(date: Date = new Date()): { dayOfYear: number; totalDays: number } {
     const taxYear = getUkTaxYear(date);

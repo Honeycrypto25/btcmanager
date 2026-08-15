@@ -37,6 +37,8 @@ model User {
   // --- Personal finance & life dashboard (Phase 1+) ---
   selfEmployedIncomes  SelfEmployedIncome[]
   selfEmployedExpenses SelfEmployedExpense[]
+  receipts             Receipt[]
+  merchantRules        MerchantRule[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -264,4 +266,78 @@ enum DevTaskStatus {
   PLANNED
   IN_PROGRESS
   DONE
+}
+
+// --- Receipts (Phase 2) ---
+// The image itself always lives in Cloudflare R2 — only metadata + object
+// keys are stored here. OCR fields are populated later (Phase 2 continued);
+// for now they stay null and the UI collects details manually.
+
+model Receipt {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  merchant      String?
+  receiptDate   DateTime?
+  receiptTime   String?
+  amount        Decimal? @db.Decimal(12, 2)
+  vatAmount     Decimal? @db.Decimal(12, 2)
+  currency      String   @default("GBP")
+  category      String?
+  description   String?  @db.Text
+  paymentMethod String?
+  taxYear       String?
+
+  // Reserved — Vehicles table doesn't exist until Phase 5, so no FK yet.
+  vehicleId     String?
+
+  // --- Cloudflare R2 storage (private objects, accessed via signed URLs) ---
+  originalObjectKey String
+  previewObjectKey  String?
+  originalMimeType  String
+  originalFileSize  Int
+  previewFileSize   Int?
+
+  // --- OCR / AI (architecture only for now — populated once OCR is enabled) ---
+  ocrRawText    String?  @db.Text
+  ocrConfidence Float?
+  aiProcessed   Boolean  @default(false)
+
+  // Reserved — bank_transactions table doesn't exist until Phase 3.
+  matchedTransactionId String?
+  matchConfidence       Float?
+
+  status String @default("unmatched") // unmatched | matched | needs_review
+
+  retentionUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, status])
+  @@index([userId, receiptDate])
+  @@index([userId, merchant])
+}
+
+// --- Merchant normalization rules ---
+// Simple rule-based mapping (not ML): when the user corrects a merchant's
+// category once, we remember it so future receipts from the same merchant
+// prefill the same category automatically.
+
+model MerchantRule {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  matchText          String   // substring matched against merchant, case-insensitive
+  merchantNormalized String   // canonical display name, e.g. "Shell"
+  category           String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, matchText])
+  @@index([userId])
 }

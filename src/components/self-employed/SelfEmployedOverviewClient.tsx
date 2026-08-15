@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/core";
-import { Wallet, Receipt, TrendingUp, FileText, ArrowRight } from "lucide-react";
+import { Wallet, Receipt, TrendingUp, FileText, ArrowRight, ScanLine } from "lucide-react";
 import { TaxYearSelector } from "./TaxYearSelector";
 
 interface SummaryProps {
@@ -68,7 +68,7 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                 </Card>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Link href="/self-employed/income">
                     <Card hover className="p-5 flex items-center justify-between group cursor-pointer">
                         <div>
@@ -85,6 +85,15 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                             <p className="text-xs text-muted mt-0.5">Adaugă și gestionează cheltuieli</p>
                         </div>
                         <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary transition-colors" />
+                    </Card>
+                </Link>
+                <Link href="/self-employed/receipts">
+                    <Card hover className="p-5 flex items-center justify-between group cursor-pointer">
+                        <div>
+                            <p className="font-medium text-foreground">Chitanțe</p>
+                            <p className="text-xs text-muted mt-0.5">Fotografiază sau încarcă chitanțe</p>
+                        </div>
+                        <ScanLine className="w-4 h-4 text-faint group-hover:text-primary transition-colors" />
                     </Card>
                 </Link>
                 <Link href="/self-employed/reports">

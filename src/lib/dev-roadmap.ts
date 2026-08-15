@@ -29,13 +29,16 @@ export const ROADMAP: RoadmapItem[] = [
     { phase: "Phase 1", section: "Foundation", title: "Verifică auth/2FA după migrarea middleware.ts → proxy.ts (edge → Node.js runtime)", description: "Confirmă în producție că login-ul, redirect-ul /auth/totp și cookie-ul 2FA se comportă identic pe noul runtime Node.js al proxy.ts față de vechiul middleware.ts pe edge." },
 
     // --- Phase 2 ---
-    { phase: "Phase 2", section: "Receipts", title: "Upload chitanțe (cameră telefon + fișier)" },
-    { phase: "Phase 2", section: "Receipts", title: "Stocare Cloudflare R2 (original + preview)" },
-    { phase: "Phase 2", section: "Receipts", title: "Metadate chitanțe în Neon (fără imagini în DB)" },
-    { phase: "Phase 2", section: "Receipts", title: "Arhitectură OCR (Google Cloud Vision)" },
-    { phase: "Phase 2", section: "Receipts", title: "Editare manuală date extrase din chitanță" },
-    { phase: "Phase 2", section: "Receipts", title: "Buton opțional \"Analyze with AI\"" },
-    { phase: "Phase 2", section: "Receipts", title: "Reguli merchant → categorie" },
+    { phase: "Phase 2", section: "Receipts", title: "Upload chitanțe (cameră telefon + fișier)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Stocare Cloudflare R2 (original privat, URL semnat)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Generează preview .webp pentru chitanțe (optimizare, fără a suprascrie originalul)" },
+    { phase: "Phase 2", section: "Receipts", title: "Metadate chitanțe în Neon (fără imagini în DB)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Arhitectură OCR (câmpuri DB + buton UI, fără provider live)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Activează OCR live (Google Cloud Vision)", description: "Necesită proiect Google Cloud cu Vision API activat + cheie service account. Până atunci, butonul „Rulează OCR” arată un mesaj clar și utilizatorul completează manual." },
+    { phase: "Phase 2", section: "Receipts", title: "Editare manuală date extrase din chitanță", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Buton opțional \"Analyze with AI\" (arhitectură, fără provider live)", doneOnSeed: true },
+    { phase: "Phase 2", section: "Receipts", title: "Activează Analyze with AI live", description: "Necesită o cheie API (ex. Anthropic/OpenAI) configurată doar server-side." },
+    { phase: "Phase 2", section: "Receipts", title: "Reguli merchant → categorie", doneOnSeed: true },
 
     // --- Phase 3 ---
     { phase: "Phase 3", section: "Bank", title: "Import CSV extras bancar (format-agnostic)" },
