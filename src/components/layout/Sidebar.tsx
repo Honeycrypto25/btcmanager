@@ -22,7 +22,10 @@ import {
     ListChecks,
     ScanLine,
     Landmark,
-    Calculator
+    Calculator,
+    Car,
+    Folder,
+    BellRing
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -60,6 +63,14 @@ const navEntries: NavEntry[] = [
             { name: 'Bank', href: '/self-employed/bank', icon: Landmark },
             { name: 'Tax', href: '/self-employed/tax', icon: Calculator },
             { name: 'Reports', href: '/self-employed/reports', icon: FileText },
+        ],
+    },
+    {
+        section: 'Vehicule & Documente',
+        items: [
+            { name: 'Vehicule', href: '/vehicles', icon: Car },
+            { name: 'Documente', href: '/documents', icon: Folder },
+            { name: 'Reminders', href: '/reminders', icon: BellRing },
         ],
     },
     { name: 'Tasks', href: '/tasks', icon: ListChecks },

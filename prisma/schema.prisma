@@ -42,6 +42,11 @@ model User {
   bankAccounts         BankAccount[]
   bankImportBatches    BankImportBatch[]
   bankTransactions     BankTransaction[]
+  vehicles             Vehicle[]
+  fuelEntries          FuelEntry[]
+  maintenanceRecords   MaintenanceRecord[]
+  documents            Document[]
+  reminders            Reminder[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -423,4 +428,154 @@ model BankTransaction {
   @@index([userId, transactionDate])
   @@index([userId, matchStatus])
   @@index([receiptId])
+}
+
+// --- Vehicles / Fuel / Maintenance / Documents / Reminders (Phase 5) ---
+// Additive only — no changes to any model above. All rows are scoped by
+// userId directly (not only reachable via vehicleId), matching the same
+// ownership-check pattern used everywhere else in the app.
+
+model Vehicle {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name               String // user-facing label, e.g. "Skoda Octavia"
+  make               String?
+  model              String?
+  year               Int?
+  registrationNumber String?
+  fuelType           String? // petrol | diesel | electric | hybrid | other
+  currentMileage     Int?
+  isActive           Boolean @default(true)
+  notes              String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fuelEntries        FuelEntry[]
+  maintenanceRecords MaintenanceRecord[]
+  documents          Document[]
+  reminders          Reminder[]
+
+  @@index([userId])
+}
+
+model FuelEntry {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  date         DateTime
+  mileage      Int? // odometer reading at this fill-up
+  quantity     Decimal  @db.Decimal(8, 2) // litres (or gallons, see unit)
+  unit         String   @default("litres")
+  cost         Decimal  @db.Decimal(10, 2)
+  pricePerUnit Decimal? @db.Decimal(8, 3)
+  // MPG/cost-per-mile can only be computed between consecutive FULL
+  // tank fill-ups — a partial fill-up breaks the distance/quantity math.
+  isFullTank   Boolean  @default(true)
+  station      String?
+  notes        String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, vehicleId])
+  @@index([vehicleId, date])
+}
+
+model MaintenanceRecord {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  type     String // e.g. "MOT", "Service", "Tyres", "Brakes"
+  date     DateTime
+  mileage  Int?
+  cost     Decimal? @db.Decimal(10, 2)
+  provider String?
+  notes    String?  @db.Text
+
+  // Used to compute the green/amber/red status shown in the UI.
+  nextDueDate    DateTime?
+  nextDueMileage Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, vehicleId])
+  @@index([vehicleId, date])
+}
+
+// Generic document vault — not limited to vehicle documents (spec covers
+// MOT/insurance certificates, but this is intentionally general-purpose).
+// Same private-object-in-R2 + metadata-in-Neon pattern as Receipt.
+
+model Document {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category String // e.g. "Insurance", "MOT", "Warranty", "ID", "Other"
+  title    String
+  notes    String? @db.Text
+
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // --- Cloudflare R2 storage (private object, accessed via signed URL) ---
+  objectKey        String
+  originalMimeType String
+  fileSize         Int
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  // Manual deletion only for now (see Reminder for expiry notifications).
+  // An automated retention/deletion lifecycle is tracked as a Later task —
+  // deliberately NOT implemented yet, to avoid any risk of destructive
+  // auto-deletion before that lifecycle has explicit user-visible logging.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reminders Reminder[]
+
+  @@index([userId, category])
+  @@index([userId, expiryDate])
+  @@index([vehicleId])
+}
+
+model Reminder {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title   String
+  type    String? // e.g. "MOT", "Insurance", "Service", "Other"
+  dueDate DateTime
+  notes   String? @db.Text
+
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  isDismissed Boolean   @default(false)
+  dismissedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, dueDate])
+  @@index([userId, isDismissed])
+  @@index([vehicleId])
 }
