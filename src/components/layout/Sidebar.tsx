@@ -15,7 +15,11 @@ import {
     LineChart,
     X,
     Globe,
-    BarChart3
+    BarChart3,
+    Briefcase,
+    Receipt,
+    FileText,
+    ListChecks
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -43,6 +47,16 @@ const navEntries: NavEntry[] = [
             { name: 'Dashboard', href: '/t212', icon: BarChart3 },
         ],
     },
+    {
+        section: 'Self Employed',
+        items: [
+            { name: 'Overview', href: '/self-employed', icon: Briefcase },
+            { name: 'Income', href: '/self-employed/income', icon: TrendingUp },
+            { name: 'Expenses', href: '/self-employed/expenses', icon: Receipt },
+            { name: 'Reports', href: '/self-employed/reports', icon: FileText },
+        ],
+    },
+    { name: 'Tasks', href: '/tasks', icon: ListChecks },
     { name: 'Admin', href: '/admin', icon: Lock },
 ];
 

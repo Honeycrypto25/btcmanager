@@ -33,7 +33,11 @@ model User {
   
   accounts      Account[]
   sessions      Session[]
-  
+
+  // --- Personal finance & life dashboard (Phase 1+) ---
+  selfEmployedIncomes  SelfEmployedIncome[]
+  selfEmployedExpenses SelfEmployedExpense[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -175,4 +179,89 @@ model T212Order {
 
   @@unique([accountId, externalId])
   @@index([accountId, filledAt])
+}
+
+// --- Self Employed: Income ---
+// Part of the broader "Personal Finance & Life Dashboard" expansion.
+// Additive only — does not touch BitcoinWallet/T212* models above.
+
+model SelfEmployedIncome {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date          DateTime
+  description   String
+  client        String?
+  amount        Decimal  @db.Decimal(12, 2)
+  paymentMethod String?
+  taxYear       String   // UK tax year, e.g. "2026-27"
+  notes         String?  @db.Text
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, date])
+}
+
+// --- Self Employed: Expenses ---
+
+model SelfEmployedExpense {
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date                   DateTime
+  merchant               String
+  description            String?
+  amount                 Decimal  @db.Decimal(12, 2)
+  vatAmount              Decimal? @db.Decimal(12, 2)
+  category               String
+  paymentMethod          String?
+
+  // Reserved for later phases (receipts / bank matching) — no FK yet on
+  // purpose, since those tables don't exist until Phase 2/3.
+  receiptId              String?
+  bankTransactionId      String?
+
+  businessUsePercentage  Int      @default(100)
+  allowableExpenseStatus String   @default("allowable")
+  taxYear                String
+
+  notes                  String?  @db.Text
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, category])
+  @@index([userId, date])
+}
+
+// --- Internal build roadmap / task tracker ---
+// Powers the in-app "Tasks" menu: shows what's planned per phase, lets us
+// check items off as they're built, and doubles as a development history log.
+
+model DevTask {
+  id          String        @id @default(cuid())
+  phase       String        // e.g. "Phase 1"
+  section     String        // e.g. "Self Employed", "Income", "Navigation"
+  title       String
+  description String?       @db.Text
+  status      DevTaskStatus @default(PLANNED)
+  order       Int           @default(0)
+  completedAt DateTime?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([phase])
+  @@index([status])
+}
+
+enum DevTaskStatus {
+  PLANNED
+  IN_PROGRESS
+  DONE
 }
