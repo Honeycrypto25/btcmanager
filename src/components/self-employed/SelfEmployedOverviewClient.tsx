@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/core";
-import { Wallet, Receipt, TrendingUp, FileText, ArrowRight, ScanLine } from "lucide-react";
+import { Wallet, Receipt, TrendingUp, FileText, ArrowRight, ScanLine, Calculator } from "lucide-react";
 import { TaxYearSelector } from "./TaxYearSelector";
 
 interface SummaryProps {
@@ -68,7 +68,7 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                 </Card>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <Link href="/self-employed/income">
                     <Card hover className="p-5 flex items-center justify-between group cursor-pointer">
                         <div>
@@ -96,6 +96,15 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                         <ScanLine className="w-4 h-4 text-faint group-hover:text-primary transition-colors" />
                     </Card>
                 </Link>
+                <Link href="/self-employed/tax">
+                    <Card hover className="p-5 flex items-center justify-between group cursor-pointer">
+                        <div>
+                            <p className="font-medium text-foreground">Taxe</p>
+                            <p className="text-xs text-muted mt-0.5">Estimare Income Tax + NI</p>
+                        </div>
+                        <Calculator className="w-4 h-4 text-faint group-hover:text-primary transition-colors" />
+                    </Card>
+                </Link>
                 <Link href="/self-employed/reports">
                     <Card hover className="p-5 flex items-center justify-between group cursor-pointer">
                         <div>
@@ -112,7 +121,7 @@ export function SelfEmployedOverviewClient({ summary, taxYears }: { summary: Sum
                     Medie venit lunar (luni active): <span className="text-foreground font-medium">{formatGBP(summary.averageMonthlyIncome)}</span>
                 </p>
                 <p className="text-xs text-faint mt-2">
-                    Chitanțe și import extras bancar (cu potrivire automată) sunt deja disponibile. Calculator de taxe și modulele
+                    Chitanțe, import extras bancar (cu potrivire automată) și calculator de taxe sunt deja disponibile. Modulele
                     Vehicule / Documente / Investiții urmează în fazele următoare — vezi pagina Tasks pentru progres.
                 </p>
             </Card>

@@ -70,4 +70,5 @@ export const ROADMAP: RoadmapItem[] = [
     // --- Later / cross-cutting ---
     { phase: "Later", section: "Bank", title: "Export contabil (CSV/ZIP per an fiscal)" },
     { phase: "Later", section: "Reports", title: "Rapoarte avansate (trend, top merchants, comparații)" },
+    { phase: "Later", section: "Bank", title: "Conversie tranzacție bancară → venit/cheltuială", description: "Buton pe fiecare tranzacție din tab-ul Tranzacții pentru a o marca drept venit sau cheltuială de afaceri (sau a o ignora, dacă e personală) — creează automat rândul corespunzător în Income/Expenses, în loc de introducere manuală separată." },
 ];
