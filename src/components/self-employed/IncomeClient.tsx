@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 import { format } from "date-fns";
-import { Card, Button, cn } from "@/components/ui/core";
+import { Card, Button } from "@/components/ui/core";
 import { Plus, Trash2, Pencil, X, TrendingUp } from "lucide-react";
 import { createIncome, updateIncome, deleteIncome, type IncomeInput } from "@/app/actions/self-employed";
 

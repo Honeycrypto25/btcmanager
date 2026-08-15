@@ -5,7 +5,8 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { listExpenses, EXPENSE_CATEGORIES } from "@/app/actions/self-employed";
+import { listExpenses } from "@/app/actions/self-employed";
+import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { ExpensesClient } from "@/components/self-employed/ExpensesClient";
 
 export default async function ExpensesPage() {

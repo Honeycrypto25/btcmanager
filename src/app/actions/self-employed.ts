@@ -6,26 +6,6 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
 
-/** Default expense categories — extendable; not a DB enum on purpose so new
- * categories can be added later without a migration. */
-export const EXPENSE_CATEGORIES = [
-    "Fuel",
-    "Vehicle Maintenance",
-    "Vehicle Insurance",
-    "Parking",
-    "Licences",
-    "Accountancy",
-    "Advertising",
-    "Software",
-    "Phone",
-    "Office",
-    "Equipment",
-    "Travel",
-    "Bank Fees",
-    "Professional Fees",
-    "Other",
-] as const;
-
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
     const userId = (session?.user as any)?.id as string | undefined;
