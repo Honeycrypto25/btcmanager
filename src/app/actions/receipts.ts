@@ -286,11 +286,44 @@ export async function analyzeReceiptWithAI(_id: string): Promise<{ ok: false; me
 // purchases, like fuel bought with cash and linked to a vehicle above).
 // Without this, such receipts had no way into the Expenses ledger at all.
 
-export async function convertReceiptToExpense(id: string) {
+export interface ConvertedExpenseResult {
+    id: string;
+    date: string;
+    merchant: string;
+    amount: number;
+    vatAmount: number | null;
+    category: string;
+    alreadyConverted: boolean;
+}
+
+export async function convertReceiptToExpense(id: string): Promise<ConvertedExpenseResult> {
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
-    if (receipt.convertedExpenseId) throw new Error("Chitanța este deja convertită într-o cheltuială.");
+
+    // Idempotent: if this receipt was already converted (e.g. a double
+    // click, or a stale client retrying after the first click already
+    // succeeded), just return the existing expense instead of throwing --
+    // an uncaught throw here was surfacing to the user as a generic
+    // "Server Components render" error instead of a helpful message.
+    if (receipt.convertedExpenseId) {
+        const existing = await db.selfEmployedExpense.findUnique({ where: { id: receipt.convertedExpenseId } });
+        if (existing) {
+            return {
+                id: existing.id,
+                date: existing.date.toISOString(),
+                merchant: existing.merchant,
+                amount: Number(existing.amount),
+                vatAmount: existing.vatAmount !== null ? Number(existing.vatAmount) : null,
+                category: existing.category,
+                alreadyConverted: true,
+            };
+        }
+        // The expense was deleted out from under us (e.g. manually from
+        // Expenses) -- clear the stale marker and fall through to re-create it.
+        await db.receipt.update({ where: { id }, data: { convertedExpenseId: null } });
+    }
+
     if (receipt.amount === null) throw new Error("Chitanța nu are o sumă completată — adaugă suma înainte de a converti.");
     if (!receipt.receiptDate) throw new Error("Chitanța nu are o dată completată — adaugă data înainte de a converti.");
 
@@ -317,7 +350,16 @@ export async function convertReceiptToExpense(id: string) {
     revalidatePath(`/self-employed/receipts/${id}`);
     revalidatePath("/self-employed/expenses");
     revalidatePath("/self-employed");
-    return expense;
+
+    return {
+        id: expense.id,
+        date: expense.date.toISOString(),
+        merchant: expense.merchant,
+        amount: Number(expense.amount),
+        vatAmount: expense.vatAmount !== null ? Number(expense.vatAmount) : null,
+        category: expense.category,
+        alreadyConverted: false,
+    };
 }
 
 /** Undoes a conversion -- deletes the Expense row it created and clears
