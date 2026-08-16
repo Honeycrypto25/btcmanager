@@ -15,7 +15,20 @@ import {
     LineChart,
     X,
     Globe,
-    BarChart3
+    BarChart3,
+    Briefcase,
+    Receipt,
+    FileText,
+    ListChecks,
+    ScanLine,
+    Landmark,
+    Calculator,
+    Car,
+    Folder,
+    BellRing,
+    PiggyBank,
+    Target,
+    Layers
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -43,6 +56,35 @@ const navEntries: NavEntry[] = [
             { name: 'Dashboard', href: '/t212', icon: BarChart3 },
         ],
     },
+    {
+        section: 'Investiții',
+        items: [
+            { name: 'Overview unificat', href: '/investments', icon: Layers },
+            { name: 'Vanguard', href: '/vanguard', icon: PiggyBank },
+            { name: 'Goals', href: '/goals', icon: Target },
+        ],
+    },
+    {
+        section: 'Self Employed',
+        items: [
+            { name: 'Overview', href: '/self-employed', icon: Briefcase },
+            { name: 'Income', href: '/self-employed/income', icon: TrendingUp },
+            { name: 'Expenses', href: '/self-employed/expenses', icon: Receipt },
+            { name: 'Receipts', href: '/self-employed/receipts', icon: ScanLine },
+            { name: 'Bank', href: '/self-employed/bank', icon: Landmark },
+            { name: 'Tax', href: '/self-employed/tax', icon: Calculator },
+            { name: 'Reports', href: '/self-employed/reports', icon: FileText },
+        ],
+    },
+    {
+        section: 'Vehicule & Documente',
+        items: [
+            { name: 'Vehicule', href: '/vehicles', icon: Car },
+            { name: 'Documente', href: '/documents', icon: Folder },
+            { name: 'Reminders', href: '/reminders', icon: BellRing },
+        ],
+    },
+    { name: 'Tasks', href: '/tasks', icon: ListChecks },
     { name: 'Admin', href: '/admin', icon: Lock },
 ];
 

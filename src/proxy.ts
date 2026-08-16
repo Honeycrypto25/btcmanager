@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { verify2faCookie, COOKIE_NAME } from "@/lib/cookie-sign";
 
 export default withAuth(
-    async function middleware(req) {
+    async function proxy(req) {
         const token = req.nextauth.token;
         const isAuth = !!token;
         const isAuthPage = req.nextUrl.pathname.startsWith("/auth");

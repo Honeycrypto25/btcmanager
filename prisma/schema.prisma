@@ -33,7 +33,24 @@ model User {
   
   accounts      Account[]
   sessions      Session[]
-  
+
+  // --- Personal finance & life dashboard (Phase 1+) ---
+  selfEmployedIncomes  SelfEmployedIncome[]
+  selfEmployedExpenses SelfEmployedExpense[]
+  receipts             Receipt[]
+  merchantRules        MerchantRule[]
+  bankAccounts         BankAccount[]
+  bankImportBatches    BankImportBatch[]
+  bankTransactions     BankTransaction[]
+  vehicles             Vehicle[]
+  fuelEntries          FuelEntry[]
+  maintenanceRecords   MaintenanceRecord[]
+  documents            Document[]
+  reminders            Reminder[]
+  vanguardAccounts     VanguardAccount[]
+  vanguardHoldings     VanguardHolding[]
+  financialGoals       FinancialGoal[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -175,4 +192,484 @@ model T212Order {
 
   @@unique([accountId, externalId])
   @@index([accountId, filledAt])
+}
+
+// --- Self Employed: Income ---
+// Part of the broader "Personal Finance & Life Dashboard" expansion.
+// Additive only — does not touch BitcoinWallet/T212* models above.
+
+model SelfEmployedIncome {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date          DateTime
+  description   String
+  client        String?
+  amount        Decimal  @db.Decimal(12, 2)
+  paymentMethod String?
+  taxYear       String   // UK tax year, e.g. "2026-27"
+  notes         String?  @db.Text
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, date])
+}
+
+// --- Self Employed: Expenses ---
+
+model SelfEmployedExpense {
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date                   DateTime
+  merchant               String
+  description            String?
+  amount                 Decimal  @db.Decimal(12, 2)
+  vatAmount              Decimal? @db.Decimal(12, 2)
+  category               String
+  paymentMethod          String?
+
+  // Reserved for later phases (receipts / bank matching) — no FK yet on
+  // purpose, since those tables don't exist until Phase 2/3.
+  receiptId              String?
+  bankTransactionId      String?
+
+  businessUsePercentage  Int      @default(100)
+  allowableExpenseStatus String   @default("allowable")
+  taxYear                String
+
+  notes                  String?  @db.Text
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, category])
+  @@index([userId, date])
+}
+
+// --- Internal build roadmap / task tracker ---
+// Powers the in-app "Tasks" menu: shows what's planned per phase, lets us
+// check items off as they're built, and doubles as a development history log.
+
+model DevTask {
+  id          String        @id @default(cuid())
+  phase       String        // e.g. "Phase 1"
+  section     String        // e.g. "Self Employed", "Income", "Navigation"
+  title       String
+  description String?       @db.Text
+  status      DevTaskStatus @default(PLANNED)
+  order       Int           @default(0)
+  completedAt DateTime?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([phase])
+  @@index([status])
+}
+
+enum DevTaskStatus {
+  PLANNED
+  IN_PROGRESS
+  DONE
+}
+
+// --- Receipts (Phase 2) ---
+// The image itself always lives in Cloudflare R2 — only metadata + object
+// keys are stored here. OCR fields are populated later (Phase 2 continued);
+// for now they stay null and the UI collects details manually.
+
+model Receipt {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  merchant      String?
+  receiptDate   DateTime?
+  receiptTime   String?
+  amount        Decimal? @db.Decimal(12, 2)
+  vatAmount     Decimal? @db.Decimal(12, 2)
+  currency      String   @default("GBP")
+  category      String?
+  description   String?  @db.Text
+  paymentMethod String?
+  taxYear       String?
+
+  // Links this receipt to a vehicle — mainly for fuel receipts paid in cash,
+  // which never appear in a bank statement and so can't be tracked via
+  // BankTransaction. When set, the receipt can optionally carry the odometer
+  // reading + litres so it feeds into the same MPG/cost-per-mile calculation
+  // as the vehicle's own fuel journal (lib/vehicles/stats.ts), not a
+  // separate/parallel one.
+  vehicleId     String?
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // Fuel-specific — only meaningful when vehicleId is set and this receipt
+  // represents a fuel purchase. All optional: a receipt can be linked to a
+  // vehicle for record-keeping without necessarily feeding the MPG math.
+  vehicleMileage     Int?
+  fuelQuantityLitres Decimal? @db.Decimal(8, 3)
+  isFullTank         Boolean?
+
+  // --- Cloudflare R2 storage (private objects, accessed via signed URLs) ---
+  originalObjectKey String
+  previewObjectKey  String?
+  originalMimeType  String
+  originalFileSize  Int
+  previewFileSize   Int?
+
+  // --- OCR / AI (architecture only for now — populated once OCR is enabled) ---
+  ocrRawText    String?  @db.Text
+  ocrConfidence Float?
+  aiProcessed   Boolean  @default(false)
+
+  // Reserved — bank_transactions table doesn't exist until Phase 3.
+  matchedTransactionId String?
+  matchConfidence       Float?
+
+  status String @default("unmatched") // unmatched | matched | needs_review
+
+  retentionUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, taxYear])
+  @@index([userId, status])
+  @@index([userId, receiptDate])
+  @@index([userId, merchant])
+}
+
+// --- Merchant normalization rules ---
+// Simple rule-based mapping (not ML): when the user corrects a merchant's
+// category once, we remember it so future receipts from the same merchant
+// prefill the same category automatically.
+
+model MerchantRule {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  matchText          String   // substring matched against merchant, case-insensitive
+  merchantNormalized String   // canonical display name, e.g. "Shell"
+  category           String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, matchText])
+  @@index([userId])
+}
+
+// --- Bank transactions (Phase 3) ---
+// V1 is manual CSV import — format-agnostic via a user-configured column
+// mapping stored per batch, not hardcoded to one bank's export layout.
+
+model BankAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String
+  currency  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  importBatches BankImportBatch[]
+  transactions  BankTransaction[]
+
+  @@index([userId])
+}
+
+model BankImportBatch {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  filename       String
+  columnMapping  Json   // records which CSV header was mapped to which field, for audit/debugging
+  rowCount       Int
+  importedCount  Int
+  duplicateCount Int
+
+  createdAt DateTime @default(now())
+
+  transactions BankTransaction[]
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model BankTransaction {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId String?
+  account   BankAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  transactionDate    DateTime
+  description        String
+  merchantNormalized String?
+  amount             Decimal  @db.Decimal(12, 2)
+  debitCredit        String   // DEBIT | CREDIT
+  balance            Decimal? @db.Decimal(12, 2)
+  category           String?
+
+  // Matching against receipts (see lib/bank/matching.ts). Not a hard FK on
+  // purpose — a rejected/undone match shouldn't cascade-delete anything.
+  receiptId      String?
+  matchConfidence Float?
+  matchStatus     String  @default("unmatched") // unmatched | possible_match | matched
+
+  // Conversion into Income/Expenses — set once the user marks a transaction
+  // as business income, a business expense, or explicitly personal/ignored.
+  // Not a hard FK on purpose, mirroring the receipt-matching fields above.
+  convertedType     String? // income | expense | ignored
+  convertedRecordId String?
+
+  taxYear       String
+  importBatchId String
+  importBatch   BankImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+
+  // Stable hash of (date, description, amount) for this user — prevents
+  // importing the same row twice across separate CSV uploads.
+  originalRowHash String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, originalRowHash])
+  @@index([userId, taxYear])
+  @@index([userId, transactionDate])
+  @@index([userId, matchStatus])
+  @@index([receiptId])
+}
+
+// --- Vehicles / Fuel / Maintenance / Documents / Reminders (Phase 5) ---
+// Additive only — no changes to any model above. All rows are scoped by
+// userId directly (not only reachable via vehicleId), matching the same
+// ownership-check pattern used everywhere else in the app.
+
+model Vehicle {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name               String // user-facing label, e.g. "Skoda Octavia"
+  make               String?
+  model              String?
+  year               Int?
+  registrationNumber String?
+  fuelType           String? // petrol | diesel | electric | hybrid | other
+  currentMileage     Int?
+  isActive           Boolean @default(true)
+  notes              String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fuelEntries        FuelEntry[]
+  maintenanceRecords MaintenanceRecord[]
+  documents          Document[]
+  reminders          Reminder[]
+  receipts           Receipt[]
+
+  @@index([userId])
+}
+
+model FuelEntry {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  date         DateTime
+  mileage      Int? // odometer reading at this fill-up
+  quantity     Decimal  @db.Decimal(8, 2) // litres (or gallons, see unit)
+  unit         String   @default("litres")
+  cost         Decimal  @db.Decimal(10, 2)
+  pricePerUnit Decimal? @db.Decimal(8, 3)
+  // MPG/cost-per-mile can only be computed between consecutive FULL
+  // tank fill-ups — a partial fill-up breaks the distance/quantity math.
+  isFullTank   Boolean  @default(true)
+  station      String?
+  notes        String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, vehicleId])
+  @@index([vehicleId, date])
+}
+
+model MaintenanceRecord {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  type     String // e.g. "MOT", "Service", "Tyres", "Brakes"
+  date     DateTime
+  mileage  Int?
+  cost     Decimal? @db.Decimal(10, 2)
+  provider String?
+  notes    String?  @db.Text
+
+  // Used to compute the green/amber/red status shown in the UI.
+  nextDueDate    DateTime?
+  nextDueMileage Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, vehicleId])
+  @@index([vehicleId, date])
+}
+
+// Generic document vault — not limited to vehicle documents (spec covers
+// MOT/insurance certificates, but this is intentionally general-purpose).
+// Same private-object-in-R2 + metadata-in-Neon pattern as Receipt.
+
+model Document {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category String // e.g. "Insurance", "MOT", "Warranty", "ID", "Other"
+  title    String
+  notes    String? @db.Text
+
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // --- Cloudflare R2 storage (private object, accessed via signed URL) ---
+  objectKey        String
+  originalMimeType String
+  fileSize         Int
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  // Safe lifecycle: an optional user-set (or user-confirmed) date after
+  // which a document is flagged as "past retention" in the UI. Purely
+  // informational — deletion is, and stays, a manual action only. No
+  // automated/scheduled deletion exists or is planned; this field just
+  // makes stale documents visible so the user can decide.
+  retentionUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reminders Reminder[]
+
+  @@index([userId, category])
+  @@index([userId, expiryDate])
+  @@index([vehicleId])
+}
+
+model Reminder {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title   String
+  type    String? // e.g. "MOT", "Insurance", "Service", "Other"
+  dueDate DateTime
+  notes   String? @db.Text
+
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  isDismissed Boolean   @default(false)
+  dismissedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, dueDate])
+  @@index([userId, isDismissed])
+  @@index([vehicleId])
+}
+
+// --- Vanguard / Goals (Phase 6) ---
+// Additive only. Vanguard has no public API for retail investors, so this
+// is manual entry (or future statement import) — not a live sync like T212.
+// Investments Overview (see /investments) reads BTC + T212 totals from the
+// EXISTING lib/overview-data.ts (unmodified) and shows Vanguard alongside
+// as separate figures, per spec: never combine incomparable metrics.
+
+model VanguardAccount {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String // e.g. "Stocks & Shares ISA"
+  accountType String? // ISA | GIA | SIPP | JISA | Other
+  currency    String  @default("GBP")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holdings VanguardHolding[]
+
+  @@index([userId])
+}
+
+model VanguardHolding {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   VanguardAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  fundName String
+  ticker   String?
+  units    Decimal? @db.Decimal(14, 4)
+
+  // Manually entered/updated — no live pricing feed for Vanguard funds.
+  costBasis      Decimal  @db.Decimal(12, 2) // total invested in this holding
+  currentValue   Decimal  @db.Decimal(12, 2)
+  valueUpdatedAt DateTime @default(now())
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, accountId])
+}
+
+model FinancialGoal {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String
+  category      String? // Savings | Investment | Debt payoff | Emergency fund | Other
+  targetAmount  Decimal   @db.Decimal(12, 2)
+  currentAmount Decimal   @default(0) @db.Decimal(12, 2)
+  currency      String    @default("GBP")
+  targetDate    DateTime?
+  notes         String?   @db.Text
+  isAchieved    Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
