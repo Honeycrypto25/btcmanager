@@ -537,7 +537,7 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="date" {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => v.toFixed(2)} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => Number(v).toFixed(2)} />
                                 <Line type="monotone" dataKey="consumption" name={consumptionUnitLabel} stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -556,7 +556,7 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="date" {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatGBP(v)} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatGBP(Number(v))} />
                                 <Line type="monotone" dataKey="costPerDistance" name={`Cost${costUnitLabel}`} stroke="#d6a24c" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -575,7 +575,7 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="date" {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `£${v.toFixed(3)}/L`} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(3)}/L`} />
                                 <Line type="monotone" dataKey="price" name="Preț/litru" stroke="#7aa8d6" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -637,7 +637,7 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                     <XAxis dataKey="label" {...chartAxisProps} />
                                     <YAxis {...chartAxisProps} />
-                                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `${v.toFixed(0)} ${distanceLabel}`} />
+                                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(0)} ${distanceLabel}`} />
                                     <Bar dataKey="distance" name={`Distanță (${distanceLabel})`} fill="#7aa8d6" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
