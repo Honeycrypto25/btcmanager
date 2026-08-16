@@ -133,6 +133,19 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
             const result = await runOcrOnReceipt(receipt.id);
             setAssistMessage(result.message);
             if (result.text) setOcrText(result.text);
+            if (result.parsed) {
+                const parsed = result.parsed;
+                setForm((prev) => ({
+                    ...prev,
+                    merchant: parsed.merchant ?? prev.merchant,
+                    receiptDate: parsed.receiptDate ?? prev.receiptDate,
+                    receiptTime: parsed.receiptTime ?? prev.receiptTime,
+                    amount: parsed.amount ?? prev.amount,
+                    vatAmount: parsed.vatAmount ?? prev.vatAmount,
+                    currency: parsed.currency ?? prev.currency,
+                    paymentMethod: parsed.paymentMethod ?? prev.paymentMethod,
+                }));
+            }
         });
     }
 

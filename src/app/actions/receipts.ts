@@ -9,6 +9,7 @@ import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
 import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType } from "@/lib/receipts/preview";
 import { matchReceiptAgainstTransactions } from "@/app/actions/bank";
 import { isVisionConfigured, runTextDetection } from "@/lib/ocr/google-vision";
+import { parseReceiptOcrText, type ParsedReceiptFields } from "@/lib/receipts/parse-ocr-text";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -230,7 +231,7 @@ export async function deleteMerchantRule(id: string) {
 // GOOGLE_VISION_PRIVATE_KEY are configured — see lib/ocr/google-vision.ts)
 // / AI (still architecture-only — see runAnalyzeReceiptWithAI stub below) ---
 
-export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; message: string; text?: string }> {
+export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; message: string; text?: string; parsed?: ParsedReceiptFields }> {
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
@@ -257,13 +258,20 @@ export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; messag
         return { ok: false, message: "OCR nu a găsit text în imagine (sau cererea către Google a eșuat) — adaugă datele manual." };
     }
 
+    const parsed = parseReceiptOcrText(text);
+    const filledCount = Object.keys(parsed).length;
+
     await db.receipt.update({ where: { id }, data: { ocrRawText: text } });
     revalidatePath(`/self-employed/receipts/${id}`);
 
     return {
         ok: true,
-        message: `OCR completat — ${text.length} caractere extrase. Citește textul de mai jos și completează câmpurile din formular.`,
+        message:
+            filledCount > 0
+                ? `OCR completat — am completat automat ${filledCount} câmp${filledCount > 1 ? "uri" : ""} din text. Verifică și corectează dacă e nevoie, apoi salvează.`
+                : `OCR completat — ${text.length} caractere extrase, dar nu am putut identifica automat câmpurile. Citește textul de mai jos și completează manual.`,
         text,
+        parsed,
     };
 }
 
