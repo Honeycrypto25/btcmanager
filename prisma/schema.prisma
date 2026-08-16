@@ -47,6 +47,9 @@ model User {
   maintenanceRecords   MaintenanceRecord[]
   documents            Document[]
   reminders            Reminder[]
+  vanguardAccounts     VanguardAccount[]
+  vanguardHoldings     VanguardHolding[]
+  financialGoals       FinancialGoal[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -578,4 +581,73 @@ model Reminder {
   @@index([userId, dueDate])
   @@index([userId, isDismissed])
   @@index([vehicleId])
+}
+
+// --- Vanguard / Goals (Phase 6) ---
+// Additive only. Vanguard has no public API for retail investors, so this
+// is manual entry (or future statement import) — not a live sync like T212.
+// Investments Overview (see /investments) reads BTC + T212 totals from the
+// EXISTING lib/overview-data.ts (unmodified) and shows Vanguard alongside
+// as separate figures, per spec: never combine incomparable metrics.
+
+model VanguardAccount {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String // e.g. "Stocks & Shares ISA"
+  accountType String? // ISA | GIA | SIPP | JISA | Other
+  currency    String  @default("GBP")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  holdings VanguardHolding[]
+
+  @@index([userId])
+}
+
+model VanguardHolding {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   VanguardAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  fundName String
+  ticker   String?
+  units    Decimal? @db.Decimal(14, 4)
+
+  // Manually entered/updated — no live pricing feed for Vanguard funds.
+  costBasis      Decimal  @db.Decimal(12, 2) // total invested in this holding
+  currentValue   Decimal  @db.Decimal(12, 2)
+  valueUpdatedAt DateTime @default(now())
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, accountId])
+}
+
+model FinancialGoal {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String
+  category      String? // Savings | Investment | Debt payoff | Emergency fund | Other
+  targetAmount  Decimal   @db.Decimal(12, 2)
+  currentAmount Decimal   @default(0) @db.Decimal(12, 2)
+  currency      String    @default("GBP")
+  targetDate    DateTime?
+  notes         String?   @db.Text
+  isAchieved    Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }

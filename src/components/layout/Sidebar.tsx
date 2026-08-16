@@ -25,7 +25,10 @@ import {
     Calculator,
     Car,
     Folder,
-    BellRing
+    BellRing,
+    PiggyBank,
+    Target,
+    Layers
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -51,6 +54,14 @@ const navEntries: NavEntry[] = [
         section: 'Trading 212',
         items: [
             { name: 'Dashboard', href: '/t212', icon: BarChart3 },
+        ],
+    },
+    {
+        section: 'Investiții',
+        items: [
+            { name: 'Overview unificat', href: '/investments', icon: Layers },
+            { name: 'Vanguard', href: '/vanguard', icon: PiggyBank },
+            { name: 'Goals', href: '/goals', icon: Target },
         ],
     },
     {
