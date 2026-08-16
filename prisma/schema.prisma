@@ -416,6 +416,12 @@ model BankTransaction {
   matchConfidence Float?
   matchStatus     String  @default("unmatched") // unmatched | possible_match | matched
 
+  // Conversion into Income/Expenses — set once the user marks a transaction
+  // as business income, a business expense, or explicitly personal/ignored.
+  // Not a hard FK on purpose, mirroring the receipt-matching fields above.
+  convertedType     String? // income | expense | ignored
+  convertedRecordId String?
+
   taxYear       String
   importBatchId String
   importBatch   BankImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)

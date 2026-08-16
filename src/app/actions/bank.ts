@@ -272,6 +272,119 @@ export async function rejectMatch(transactionId: string) {
     revalidatePath("/self-employed/receipts");
 }
 
+// --- Conversion into Income/Expenses ---
+
+export interface ConvertToIncomeInput {
+    description?: string;
+    client?: string;
+}
+
+export async function convertTransactionToIncome(transactionId: string, input?: ConvertToIncomeInput) {
+    const userId = await requireUserId();
+    const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
+    if (!tx || tx.userId !== userId) throw new Error("Not found");
+    if (tx.convertedType) throw new Error("Tranzacția este deja convertită.");
+
+    const income = await db.selfEmployedIncome.create({
+        data: {
+            userId,
+            date: tx.transactionDate,
+            description: input?.description?.trim() || tx.description,
+            client: input?.client?.trim() || null,
+            amount: tx.amount,
+            paymentMethod: "Transfer bancar",
+            taxYear: tx.taxYear,
+        },
+    });
+
+    await db.bankTransaction.update({
+        where: { id: transactionId },
+        data: { convertedType: "income", convertedRecordId: income.id },
+    });
+
+    revalidatePath("/self-employed/bank");
+    revalidatePath("/self-employed/income");
+    revalidatePath("/self-employed");
+    return income;
+}
+
+export interface ConvertToExpenseInput {
+    merchant?: string;
+    category: string;
+}
+
+export async function convertTransactionToExpense(transactionId: string, input: ConvertToExpenseInput) {
+    const userId = await requireUserId();
+    const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
+    if (!tx || tx.userId !== userId) throw new Error("Not found");
+    if (tx.convertedType) throw new Error("Tranzacția este deja convertită.");
+
+    const expense = await db.selfEmployedExpense.create({
+        data: {
+            userId,
+            date: tx.transactionDate,
+            merchant: input.merchant?.trim() || tx.description,
+            amount: tx.amount,
+            category: input.category,
+            paymentMethod: "Transfer bancar",
+            businessUsePercentage: 100,
+            allowableExpenseStatus: "allowable",
+            taxYear: tx.taxYear,
+            bankTransactionId: tx.id,
+        },
+    });
+
+    await db.bankTransaction.update({
+        where: { id: transactionId },
+        data: { convertedType: "expense", convertedRecordId: expense.id },
+    });
+
+    revalidatePath("/self-employed/bank");
+    revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed");
+    return expense;
+}
+
+/** Marks a transaction as reviewed-but-personal, so it stops showing up as
+ * an actionable item without creating an Income/Expense row for it. */
+export async function ignoreTransaction(transactionId: string) {
+    const userId = await requireUserId();
+    const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
+    if (!tx || tx.userId !== userId) throw new Error("Not found");
+    if (tx.convertedType) throw new Error("Tranzacția este deja convertită.");
+
+    await db.bankTransaction.update({
+        where: { id: transactionId },
+        data: { convertedType: "ignored", convertedRecordId: null },
+    });
+    revalidatePath("/self-employed/bank");
+}
+
+/** Undoes a conversion — deletes the Income/Expense row it created (if any)
+ * and clears the transaction's converted markers so it can be re-converted. */
+export async function undoTransactionConversion(transactionId: string) {
+    const userId = await requireUserId();
+    const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
+    if (!tx || tx.userId !== userId) throw new Error("Not found");
+    if (!tx.convertedType) return;
+
+    if (tx.convertedType === "income" && tx.convertedRecordId) {
+        await db.selfEmployedIncome.deleteMany({ where: { id: tx.convertedRecordId, userId } });
+    } else if (tx.convertedType === "expense" && tx.convertedRecordId) {
+        await db.selfEmployedExpense.deleteMany({ where: { id: tx.convertedRecordId, userId } });
+    }
+
+    await db.bankTransaction.update({
+        where: { id: transactionId },
+        data: { convertedType: null, convertedRecordId: null },
+    });
+
+    revalidatePath("/self-employed/bank");
+    revalidatePath("/self-employed/income");
+    revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed");
+}
+
 // --- Listing ---
 
 export async function listBankTransactions(filter?: { taxYear?: string; matchStatus?: string }) {

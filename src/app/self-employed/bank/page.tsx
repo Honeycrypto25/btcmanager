@@ -29,6 +29,8 @@ export default async function BankPage() {
         matchConfidence: t.matchConfidence,
         matchStatus: t.matchStatus,
         taxYear: t.taxYear,
+        convertedType: t.convertedType,
+        convertedRecordId: t.convertedRecordId,
     }));
 
     const serializedBatches = batches.map((b: any) => ({

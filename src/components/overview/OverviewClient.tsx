@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
-import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase } from "lucide-react";
 import Link from 'next/link';
 import {
     ComposedChart,
@@ -56,6 +56,17 @@ export interface OverviewData {
     t212Stats: AssetStats;
 }
 
+// Optional — populated separately from BTC/T212 (see app/page.tsx). Never
+// part of OverviewData/getOverviewData, so it can't affect the combined
+// BTC/T212 totals, charts, or the email report generator that also reads
+// OverviewData.
+export interface SelfEmployedSnapshot {
+    taxYear: string;
+    totalIncome: number;
+    totalExpenses: number;
+    profit: number;
+}
+
 type Currency = 'USD' | 'GBP';
 
 function scaleFigures(f: AssetFigures, factor: number): AssetFigures {
@@ -71,7 +82,15 @@ function scaleRow(row: PeriodRow, factor: number): PeriodRow {
     };
 }
 
-export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGbp: number }) {
+export function OverviewClient({
+    data,
+    usdToGbp,
+    selfEmployed,
+}: {
+    data: OverviewData;
+    usdToGbp: number;
+    selfEmployed?: SelfEmployedSnapshot | null;
+}) {
     const [currency, setCurrency] = useState<Currency>('USD');
     const factor = currency === 'USD' ? 1 : usdToGbp;
     const symbol = currency === 'USD' ? '$' : '\u00a3';
@@ -203,6 +222,35 @@ export function OverviewClient({ data, usdToGbp }: { data: OverviewData; usdToGb
                     </Card>
                 </Link>
             </div>
+
+            {/* Self Employed snapshot (income/expenses YTD) — additive, separate
+                from the BTC/T212 figures above; never combined into totals. */}
+            {selfEmployed && (selfEmployed.totalIncome > 0 || selfEmployed.totalExpenses > 0) && (
+                <Link href="/self-employed">
+                    <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
+                        <div className="flex items-center gap-4 min-w-0">
+                            <div className="w-11 h-11 rounded-lg bg-white/[0.04] border border-border flex items-center justify-center text-muted shrink-0">
+                                <Briefcase className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">Self Employed</p>
+                                <p className="text-xs text-faint font-num">
+                                    An fiscal {selfEmployed.taxYear} &middot; Venit {'£'}{selfEmployed.totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                            <div>
+                                <p className={cn("text-sm font-medium font-num", selfEmployed.profit >= 0 ? "text-accent" : "text-red-400")}>
+                                    {selfEmployed.profit >= 0 ? '+' : ''}{'£'}{selfEmployed.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </p>
+                                <p className="text-xs text-faint">profit YTD</p>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                        </div>
+                    </Card>
+                </Link>
+            )}
 
             {/* Per-asset stats */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deleteReceiptObject, getReceiptObjectBuffer, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
-import { generateHeicPreview, isHeicMimeType } from "@/lib/receipts/preview";
+import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType } from "@/lib/receipts/preview";
 import { matchReceiptAgainstTransactions } from "@/app/actions/bank";
 
 async function requireUserId(): Promise<string> {
@@ -99,22 +99,26 @@ export async function listReceipts(filter?: { taxYear?: string; status?: string 
     });
 }
 
-/** Backfills a WebP preview for a receipt uploaded before HEIC preview
- * generation existed (or whose conversion failed the first time). */
+/** Backfills a WebP preview for a receipt uploaded before preview
+ * generation existed for its format (or whose conversion failed the first
+ * time) — covers both HEIC (browser-compatibility preview) and JPEG/PNG
+ * (storage-size-optimization preview). */
 export async function backfillReceiptPreview(id: string): Promise<{ ok: boolean; message: string }> {
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
 
-    if (!isHeicMimeType(receipt.originalMimeType)) {
-        return { ok: false, message: "Acest fișier nu este HEIC — nu are nevoie de preview." };
+    const isHeic = isHeicMimeType(receipt.originalMimeType);
+    const isRaster = isRasterImageMimeType(receipt.originalMimeType);
+    if (!isHeic && !isRaster) {
+        return { ok: false, message: "Acest tip de fișier nu are preview generat automat (ex. PDF)." };
     }
     if (receipt.previewObjectKey) {
         return { ok: true, message: "Preview-ul există deja." };
     }
 
     const originalBuffer = await getReceiptObjectBuffer(receipt.originalObjectKey);
-    const previewBuffer = await generateHeicPreview(originalBuffer);
+    const previewBuffer = isHeic ? await generateHeicPreview(originalBuffer) : await generateStandardImagePreview(originalBuffer);
     if (!previewBuffer) {
         return { ok: false, message: "Conversia a eșuat. Poți vedea în continuare fișierul original mai jos." };
     }

@@ -171,7 +171,7 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
 
                 <Card className="p-5 sm:p-6 space-y-4">
                     <div className="flex flex-wrap gap-2">
-                        {(receipt.originalMimeType === "image/heic" || receipt.originalMimeType === "image/heif") && !receipt.hasPreview && (
+                        {["image/heic", "image/heif", "image/jpeg", "image/jpg", "image/png"].includes(receipt.originalMimeType) && !receipt.hasPreview && (
                             <Button variant="outline" size="sm" onClick={generatePreview} disabled={isPending}>
                                 <ImageOff className="w-3.5 h-3.5 mr-2" />
                                 Generează preview

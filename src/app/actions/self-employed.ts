@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
+import { getUkTaxYear, listRecentUkTaxYears } from "@/lib/tax/uk-tax-year";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -248,4 +248,82 @@ export async function getSelfEmployedSummary(taxYear: string) {
         incomeCount: incomes.length,
         expenseCount: expenses.length,
     };
+}
+
+// --- Advanced reports: top merchants, year-over-year comparison, trend ---
+
+function percentChange(previous: number, current: number): number | null {
+    if (previous === 0) return current === 0 ? 0 : null; // avoid a misleading "infinite%" jump from zero
+    return ((current - previous) / previous) * 100;
+}
+
+export async function getAdvancedReportsData(taxYear: string) {
+    const userId = await requireUserId();
+
+    const [expenses, currentSummary] = await Promise.all([
+        db.selfEmployedExpense.findMany({ where: { userId, taxYear }, orderBy: { date: "asc" } }),
+        getSelfEmployedSummary(taxYear),
+    ]);
+
+    // Top merchants by total spend (case-insensitive grouping, but keeps
+    // the first-seen casing for display).
+    const byMerchant = new Map<string, { merchant: string; amount: number; count: number }>();
+    for (const e of expenses as any[]) {
+        const key = e.merchant.trim().toLowerCase();
+        const existing = byMerchant.get(key) ?? { merchant: e.merchant.trim(), amount: 0, count: 0 };
+        existing.amount += Number(e.amount);
+        existing.count += 1;
+        byMerchant.set(key, existing);
+    }
+    const topMerchants = Array.from(byMerchant.values())
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 8);
+
+    // Year-over-year comparison, if a previous tax year exists in the app's
+    // recent-years window.
+    const recentYears = listRecentUkTaxYears(10);
+    const idx = recentYears.indexOf(taxYear);
+    const previousTaxYear = idx >= 0 && idx + 1 < recentYears.length ? recentYears[idx + 1] : null;
+
+    let comparison: {
+        previousTaxYear: string;
+        previousIncome: number;
+        previousExpenses: number;
+        previousProfit: number;
+        incomeChangePercent: number | null;
+        expensesChangePercent: number | null;
+        profitChangePercent: number | null;
+    } | null = null;
+
+    if (previousTaxYear) {
+        const previousSummary = await getSelfEmployedSummary(previousTaxYear);
+        comparison = {
+            previousTaxYear,
+            previousIncome: previousSummary.totalIncome,
+            previousExpenses: previousSummary.totalExpenses,
+            previousProfit: previousSummary.profit,
+            incomeChangePercent: percentChange(previousSummary.totalIncome, currentSummary.totalIncome),
+            expensesChangePercent: percentChange(previousSummary.totalExpenses, currentSummary.totalExpenses),
+            profitChangePercent: percentChange(previousSummary.profit, currentSummary.profit),
+        };
+    }
+
+    // Simple trend: average monthly profit in the first half of the
+    // (chronologically sorted) months with data vs the second half.
+    const chronological: { label: string; income: number; expenses: number }[] = currentSummary.monthlyRows; // already ascending (oldest month first) — see getSelfEmployedSummary above
+    let trend: { direction: "up" | "down" | "flat"; changePercent: number | null; earlyAvgProfit: number; recentAvgProfit: number } | null = null;
+    if (chronological.length >= 2) {
+        const mid = Math.ceil(chronological.length / 2);
+        const early = chronological.slice(0, mid);
+        const recent = chronological.slice(mid);
+        const avg = (rows: { label: string; income: number; expenses: number }[]) =>
+            rows.length > 0 ? rows.reduce((s: number, r: { income: number; expenses: number }) => s + (r.income - r.expenses), 0) / rows.length : 0;
+        const earlyAvgProfit = avg(early);
+        const recentAvgProfit = recent.length > 0 ? avg(recent) : earlyAvgProfit;
+        const changePercent = percentChange(earlyAvgProfit, recentAvgProfit);
+        const direction = changePercent === null ? "flat" : changePercent > 2 ? "up" : changePercent < -2 ? "down" : "flat";
+        trend = { direction, changePercent, earlyAvgProfit, recentAvgProfit };
+    }
+
+    return { taxYear, topMerchants, comparison, trend };
 }

@@ -38,3 +38,29 @@ export async function generateHeicPreview(input: Buffer): Promise<Buffer | null>
 export function isHeicMimeType(mimeType: string): boolean {
     return mimeType === "image/heic" || mimeType === "image/heif";
 }
+
+/**
+ * JPEG/PNG receipt photos ARE renderable directly in a browser (unlike
+ * HEIC), so this preview isn't about compatibility — it's about storage
+ * size: a resized WebP is typically a fraction of the size of a full-
+ * resolution phone camera photo. The original is still never touched or
+ * overwritten; this is purely an additional, smaller object used for
+ * everyday viewing, while "Vezi / descarcă fișierul original" still
+ * serves the untouched original on request.
+ */
+export async function generateStandardImagePreview(input: Buffer): Promise<Buffer | null> {
+    try {
+        const sharp = (await import("sharp")).default;
+        return await sharp(input)
+            .resize({ width: 1600, withoutEnlargement: true })
+            .webp({ quality: 82 })
+            .toBuffer();
+    } catch (err) {
+        console.error("Standard image preview conversion failed", err);
+        return null;
+    }
+}
+
+export function isRasterImageMimeType(mimeType: string): boolean {
+    return mimeType === "image/jpeg" || mimeType === "image/jpg" || mimeType === "image/png";
+}

@@ -12,9 +12,14 @@ import {
     rejectMatch,
     rerunMatching,
     getReceiptSummaries,
+    convertTransactionToIncome,
+    convertTransactionToExpense,
+    ignoreTransaction,
+    undoTransactionConversion,
     type ImportBankCsvInput,
 } from "@/app/actions/bank";
 import type { AmountMode } from "@/lib/bank/csv";
+import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 
 interface Account {
     id: string;
@@ -33,6 +38,8 @@ interface TransactionRow {
     matchConfidence: number | null;
     matchStatus: string;
     taxYear: string;
+    convertedType: string | null;
+    convertedRecordId: string | null;
 }
 
 interface BatchRow {
@@ -360,6 +367,8 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
     const [filter, setFilter] = useState<string | null>(null);
     const [receiptInfo, setReceiptInfo] = useState<Record<string, { merchant: string | null; amount: number | null; receiptDate: string | null }>>({});
     const [isPending, startTransition] = useTransition();
+    const [expandedTx, setExpandedTx] = useState<string | null>(null);
+    const [convertError, setConvertError] = useState<string | null>(null);
 
     const receiptIds = useMemo(() => Array.from(new Set(rows.map((r) => r.receiptId).filter(Boolean))) as string[], [rows]);
 
@@ -398,6 +407,56 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
         });
     }
 
+    function doConvertIncome(tx: TransactionRow, description: string, client: string) {
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                const income = await convertTransactionToIncome(tx.id, { description, client: client || undefined });
+                setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, convertedType: "income", convertedRecordId: income.id } : r)));
+                setExpandedTx(null);
+            } catch (err: any) {
+                setConvertError(err.message || "Conversie eșuată.");
+            }
+        });
+    }
+
+    function doConvertExpense(tx: TransactionRow, merchant: string, category: string) {
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                const expense = await convertTransactionToExpense(tx.id, { merchant, category });
+                setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, convertedType: "expense", convertedRecordId: expense.id } : r)));
+                setExpandedTx(null);
+            } catch (err: any) {
+                setConvertError(err.message || "Conversie eșuată.");
+            }
+        });
+    }
+
+    function doIgnore(tx: TransactionRow) {
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                await ignoreTransaction(tx.id);
+                setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, convertedType: "ignored", convertedRecordId: null } : r)));
+            } catch (err: any) {
+                setConvertError(err.message || "Acțiune eșuată.");
+            }
+        });
+    }
+
+    function doUndoConversion(tx: TransactionRow) {
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                await undoTransactionConversion(tx.id);
+                setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, convertedType: null, convertedRecordId: null } : r)));
+            } catch (err: any) {
+                setConvertError(err.message || "Acțiune eșuată.");
+            }
+        });
+    }
+
     const counts = {
         matched: rows.filter((r) => r.matchStatus === "matched").length,
         possible_match: rows.filter((r) => r.matchStatus === "possible_match").length,
@@ -424,6 +483,12 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                 </Button>
             </div>
 
+            {convertError && (
+                <Card className="p-4 border-red-400/30 bg-red-500/5">
+                    <p className="text-sm text-red-300">{convertError}</p>
+                </Card>
+            )}
+
             <Card className="overflow-hidden p-0 border-border">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -446,54 +511,206 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                                 </tr>
                             ) : (
                                 filtered.map((tx) => (
-                                    <tr key={tx.id} className="hover:bg-white/[0.01] transition-colors">
-                                        <td className="px-6 py-4 text-sm text-foreground whitespace-nowrap">{format(new Date(tx.transactionDate), "dd MMM yyyy")}</td>
-                                        <td className="px-6 py-4 text-sm text-foreground max-w-xs truncate">{tx.description}</td>
-                                        <td className={cn("px-6 py-4 text-sm font-medium whitespace-nowrap", tx.debitCredit === "DEBIT" ? "text-red-400" : "text-green-400")}>
-                                            {tx.debitCredit === "DEBIT" ? "-" : "+"}{formatMoney(tx.amount)}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="space-y-1.5">
-                                                {matchBadge(tx.matchStatus)}
-                                                {tx.matchStatus === "possible_match" && tx.receiptId && receiptInfo[tx.receiptId] && (
-                                                    <p className="text-[11px] text-muted">
-                                                        Sugestie: {receiptInfo[tx.receiptId].merchant || "chitanță"} · {receiptInfo[tx.receiptId].amount !== null ? formatMoney(receiptInfo[tx.receiptId].amount!) : ""}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            {tx.matchStatus === "possible_match" && tx.receiptId && (
-                                                <div className="flex justify-end gap-2">
-                                                    <button
-                                                        onClick={() => confirm(tx.id, tx.receiptId!)}
-                                                        className="p-1.5 rounded-lg text-green-400 hover:bg-green-500/10"
-                                                        title="Confirmă potrivirea"
-                                                    >
-                                                        <Check className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => reject(tx.id)}
-                                                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10"
-                                                        title="Respinge"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                    <React.Fragment key={tx.id}>
+                                        <tr className="hover:bg-white/[0.01] transition-colors">
+                                            <td className="px-6 py-4 text-sm text-foreground whitespace-nowrap">{format(new Date(tx.transactionDate), "dd MMM yyyy")}</td>
+                                            <td className="px-6 py-4 text-sm text-foreground max-w-xs truncate">{tx.description}</td>
+                                            <td className={cn("px-6 py-4 text-sm font-medium whitespace-nowrap", tx.debitCredit === "DEBIT" ? "text-red-400" : "text-green-400")}>
+                                                {tx.debitCredit === "DEBIT" ? "-" : "+"}{formatMoney(tx.amount)}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="space-y-1.5">
+                                                    {matchBadge(tx.matchStatus)}
+                                                    {tx.matchStatus === "possible_match" && tx.receiptId && receiptInfo[tx.receiptId] && (
+                                                        <p className="text-[11px] text-muted">
+                                                            Sugestie: {receiptInfo[tx.receiptId].merchant || "chitanță"} · {receiptInfo[tx.receiptId].amount !== null ? formatMoney(receiptInfo[tx.receiptId].amount!) : ""}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                            )}
-                                            {tx.matchStatus === "matched" && (
-                                                <button onClick={() => reject(tx.id)} className="text-[11px] text-muted hover:text-red-400">
-                                                    Anulează potrivirea
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex flex-col items-end gap-2">
+                                                    {tx.matchStatus === "possible_match" && tx.receiptId && (
+                                                        <div className="flex justify-end gap-2">
+                                                            <button
+                                                                onClick={() => confirm(tx.id, tx.receiptId!)}
+                                                                className="p-1.5 rounded-lg text-green-400 hover:bg-green-500/10"
+                                                                title="Confirmă potrivirea"
+                                                            >
+                                                                <Check className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => reject(tx.id)}
+                                                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10"
+                                                                title="Respinge"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {tx.matchStatus === "matched" && (
+                                                        <button onClick={() => reject(tx.id)} className="text-[11px] text-muted hover:text-red-400">
+                                                            Anulează potrivirea
+                                                        </button>
+                                                    )}
+
+                                                    {tx.convertedType ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="inline-flex items-center rounded-full border border-border bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-muted">
+                                                                {tx.convertedType === "income" ? "→ Venit" : tx.convertedType === "expense" ? "→ Cheltuială" : "Ignorată"}
+                                                            </span>
+                                                            <button onClick={() => doUndoConversion(tx)} className="text-[11px] text-muted hover:text-red-400">
+                                                                Anulează
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            {tx.debitCredit === "CREDIT" && (
+                                                                <button
+                                                                    onClick={() => setExpandedTx(expandedTx === tx.id ? null : tx.id)}
+                                                                    className="text-[11px] text-primary hover:underline"
+                                                                >
+                                                                    Marchează venit
+                                                                </button>
+                                                            )}
+                                                            {tx.debitCredit === "DEBIT" && (
+                                                                <button
+                                                                    onClick={() => setExpandedTx(expandedTx === tx.id ? null : tx.id)}
+                                                                    className="text-[11px] text-primary hover:underline"
+                                                                >
+                                                                    Marchează cheltuială
+                                                                </button>
+                                                            )}
+                                                            <button onClick={() => doIgnore(tx)} className="text-[11px] text-muted hover:text-foreground">
+                                                                Ignoră
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {expandedTx === tx.id && (
+                                            <tr className="bg-white/[0.02]">
+                                                <td colSpan={5} className="px-6 py-4">
+                                                    {tx.debitCredit === "CREDIT" ? (
+                                                        <IncomeConversionForm
+                                                            tx={tx}
+                                                            isPending={isPending}
+                                                            onCancel={() => setExpandedTx(null)}
+                                                            onSubmit={(description, client) => doConvertIncome(tx, description, client)}
+                                                        />
+                                                    ) : (
+                                                        <ExpenseConversionForm
+                                                            tx={tx}
+                                                            isPending={isPending}
+                                                            onCancel={() => setExpandedTx(null)}
+                                                            onSubmit={(merchant, category) => doConvertExpense(tx, merchant, category)}
+                                                        />
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))
                             )}
                         </tbody>
                     </table>
                 </div>
             </Card>
+        </div>
+    );
+}
+
+function IncomeConversionForm({
+    tx,
+    isPending,
+    onCancel,
+    onSubmit,
+}: {
+    tx: TransactionRow;
+    isPending: boolean;
+    onCancel: () => void;
+    onSubmit: (description: string, client: string) => void;
+}) {
+    const [description, setDescription] = useState(tx.description);
+    const [client, setClient] = useState("");
+
+    return (
+        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+            <div className="flex-1 w-full space-y-1">
+                <label className="text-xs text-muted">Descriere</label>
+                <input
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                />
+            </div>
+            <div className="flex-1 w-full space-y-1">
+                <label className="text-xs text-muted">Client (opțional)</label>
+                <input
+                    value={client}
+                    onChange={(e) => setClient(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                />
+            </div>
+            <div className="flex gap-2 shrink-0">
+                <Button variant="primary" size="sm" onClick={() => onSubmit(description, client)} disabled={isPending || !description.trim()}>
+                    Confirmă venit
+                </Button>
+                <Button variant="outline" size="sm" onClick={onCancel}>
+                    Renunță
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function ExpenseConversionForm({
+    tx,
+    isPending,
+    onCancel,
+    onSubmit,
+}: {
+    tx: TransactionRow;
+    isPending: boolean;
+    onCancel: () => void;
+    onSubmit: (merchant: string, category: string) => void;
+}) {
+    const [merchant, setMerchant] = useState(tx.description);
+    const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
+
+    return (
+        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+            <div className="flex-1 w-full space-y-1">
+                <label className="text-xs text-muted">Comerciant</label>
+                <input
+                    value={merchant}
+                    onChange={(e) => setMerchant(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                />
+            </div>
+            <div className="flex-1 w-full space-y-1">
+                <label className="text-xs text-muted">Categorie</label>
+                <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                        <option key={c} value={c} className="bg-surface">
+                            {c}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div className="flex gap-2 shrink-0">
+                <Button variant="primary" size="sm" onClick={() => onSubmit(merchant, category)} disabled={isPending || !merchant.trim()}>
+                    Confirmă cheltuială
+                </Button>
+                <Button variant="outline" size="sm" onClick={onCancel}>
+                    Renunță
+                </Button>
+            </div>
         </div>
     );
 }

@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { isR2Configured } from "@/lib/r2/client";
 import { buildReceiptOriginalKey, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
-import { generateHeicPreview, isHeicMimeType } from "@/lib/receipts/preview";
+import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType } from "@/lib/receipts/preview";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "application/pdf"]);
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
@@ -58,10 +58,21 @@ export async function POST(req: NextRequest) {
         // HEIC/HEIF (default iPhone camera format) can't be rendered by an
         // <img> tag in any mainstream browser. Generate a WebP preview so the
         // receipt is actually viewable — the original HEIC is never touched.
+        // JPEG/PNG are already viewable, but a resized WebP is typically a
+        // fraction of a full-resolution phone photo's size — generating a
+        // preview for those too saves R2 storage over time, still without
+        // ever touching the original.
         let previewObjectKey: string | null = null;
         let previewFileSize: number | null = null;
         if (isHeicMimeType(file.type)) {
             const previewBuffer = await generateHeicPreview(buffer);
+            if (previewBuffer) {
+                previewObjectKey = buildReceiptPreviewKey({ userId, taxYear, date: now, receiptId });
+                await uploadReceiptObject(previewObjectKey, previewBuffer, "image/webp");
+                previewFileSize = previewBuffer.length;
+            }
+        } else if (isRasterImageMimeType(file.type)) {
+            const previewBuffer = await generateStandardImagePreview(buffer);
             if (previewBuffer) {
                 previewObjectKey = buildReceiptPreviewKey({ userId, taxYear, date: now, receiptId });
                 await uploadReceiptObject(previewObjectKey, previewBuffer, "image/webp");
