@@ -4,7 +4,16 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { computeFuelStats, computeMaintenanceStatus } from "@/lib/vehicles/stats";
+import {
+    computeFuelStats,
+    computeMaintenanceStatus,
+    computeFuelPurchaseBuckets,
+    computeDistanceBuckets,
+    computeAverageDistanceRates,
+    computePriceEvolution,
+    computeSupplierRanking,
+    type FuelPurchase,
+} from "@/lib/vehicles/stats";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -161,9 +170,10 @@ export async function listFuelEntries(vehicleId: string) {
  * bank statement and so has no other way into this calculation) and feeds
  * them into the same combined, mileage-sorted sequence as the fuel journal
  * — computeFuelStats doesn't care which table a reading came from. */
-export async function getFuelStats(vehicleId: string) {
-    const userId = await requireUserId();
-    await requireOwnedVehicle(userId, vehicleId);
+/** Shared entries+receipts merge used by both getFuelStats and
+ * getVehicleAnalytics -- keeps the "which table did this fill-up come
+ * from" logic in exactly one place. */
+async function getCombinedFuelPurchases(userId: string, vehicleId: string): Promise<{ entries: any[]; fuelReceipts: any[]; purchases: FuelPurchase[] }> {
     const [entries, fuelReceipts] = await Promise.all([
         db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "asc" } }),
         db.receipt.findMany({
@@ -172,14 +182,16 @@ export async function getFuelStats(vehicleId: string) {
         }),
     ]);
 
-    const combined = [
+    const purchases: FuelPurchase[] = [
         ...entries.map((e: any) => ({
             id: e.id,
             date: e.date,
             mileage: e.mileage,
             quantity: Number(e.quantity),
             cost: Number(e.cost),
+            pricePerUnit: e.pricePerUnit !== null ? Number(e.pricePerUnit) : null,
             isFullTank: e.isFullTank,
+            station: e.station,
         })),
         ...fuelReceipts.map((r: any) => ({
             id: r.id,
@@ -187,13 +199,44 @@ export async function getFuelStats(vehicleId: string) {
             mileage: r.vehicleMileage,
             quantity: Number(r.fuelQuantityLitres),
             cost: r.amount !== null ? Number(r.amount) : 0,
+            pricePerUnit: null,
             isFullTank: !!r.isFullTank,
+            station: r.merchant,
         })),
     ];
 
-    const stats = computeFuelStats(combined);
+    return { entries, fuelReceipts, purchases };
+}
+
+export async function getFuelStats(vehicleId: string) {
+    const userId = await requireUserId();
+    await requireOwnedVehicle(userId, vehicleId);
+    const { entries, fuelReceipts, purchases } = await getCombinedFuelPurchases(userId, vehicleId);
+
+    const stats = computeFuelStats(purchases);
 
     return { entries: entries.reverse(), fuelReceipts, stats };
+}
+
+/** Consolidated analytics for the vehicle's "Statistici" tab: weekly/
+ * monthly fuel + distance buckets, average distance rates, fuel price
+ * evolution, and cheapest-supplier ranking. All derived from the same
+ * combined fuel-entries + linked-receipts purchase list as getFuelStats. */
+export async function getVehicleAnalytics(vehicleId: string) {
+    const userId = await requireUserId();
+    await requireOwnedVehicle(userId, vehicleId);
+    const { purchases } = await getCombinedFuelPurchases(userId, vehicleId);
+
+    return {
+        consumptionSeries: computeFuelStats(purchases),
+        weeklyFuel: computeFuelPurchaseBuckets(purchases, "week"),
+        monthlyFuel: computeFuelPurchaseBuckets(purchases, "month"),
+        weeklyDistance: computeDistanceBuckets(purchases, "week"),
+        monthlyDistance: computeDistanceBuckets(purchases, "month"),
+        averageDistance: computeAverageDistanceRates(purchases),
+        priceEvolution: computePriceEvolution(purchases),
+        cheapestSuppliers: computeSupplierRanking(purchases),
+    };
 }
 
 // --- Maintenance ---

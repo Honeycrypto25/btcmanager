@@ -5,7 +5,8 @@ import { getServerSession } from "next-auth";
 import { redirect, notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getVehicle, getFuelStats, getMaintenanceWithStatus } from "@/app/actions/vehicles";
+import { getVehicle, getFuelStats, getMaintenanceWithStatus, getVehicleAnalytics } from "@/app/actions/vehicles";
+import type { FuelSegmentStat, PeriodBucket, DistanceBucket, PricePoint } from "@/lib/vehicles/stats";
 import { listDocuments } from "@/app/actions/documents";
 import { VehicleDetailClient } from "@/components/vehicles/VehicleDetailClient";
 
@@ -22,10 +23,11 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
         notFound();
     }
 
-    const [{ entries, fuelReceipts, stats }, maintenance, documents] = await Promise.all([
+    const [{ entries, fuelReceipts, stats }, maintenance, documents, analytics] = await Promise.all([
         getFuelStats(id),
         getMaintenanceWithStatus(id),
         listDocuments({ vehicleId: id }),
+        getVehicleAnalytics(id),
     ]);
 
     const serialized = {
@@ -79,6 +81,16 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
             expiryDate: d.expiryDate ? d.expiryDate.toISOString() : null,
             createdAt: d.createdAt.toISOString(),
         })),
+        analytics: {
+            consumptionSeries: analytics.consumptionSeries.map((s: FuelSegmentStat) => ({ ...s, date: s.date.toISOString() })),
+            weeklyFuel: analytics.weeklyFuel.map((b: PeriodBucket) => ({ label: b.label, totalLitres: b.totalLitres, totalCost: b.totalCost })),
+            monthlyFuel: analytics.monthlyFuel.map((b: PeriodBucket) => ({ label: b.label, totalLitres: b.totalLitres, totalCost: b.totalCost })),
+            weeklyDistance: analytics.weeklyDistance.map((b: DistanceBucket) => ({ label: b.label, distanceMiles: b.distanceMiles })),
+            monthlyDistance: analytics.monthlyDistance.map((b: DistanceBucket) => ({ label: b.label, distanceMiles: b.distanceMiles })),
+            averageDistance: analytics.averageDistance,
+            priceEvolution: analytics.priceEvolution.map((p: PricePoint) => ({ date: p.date.toISOString(), pricePerLitre: p.pricePerLitre, station: p.station })),
+            cheapestSuppliers: analytics.cheapestSuppliers,
+        },
     };
 
     return (

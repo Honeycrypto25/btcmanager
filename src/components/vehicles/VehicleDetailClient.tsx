@@ -3,11 +3,13 @@
 import React, { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, Trash2, X, Car, Fuel, Wrench, FileText, Gauge, Upload, ExternalLink } from "lucide-react";
+import { Plus, Trash2, X, Car, Fuel, Wrench, FileText, Gauge, Upload, ExternalLink, BarChart3 } from "lucide-react";
 import { createFuelEntry, deleteFuelEntry, createMaintenanceRecord, deleteMaintenanceRecord, deleteVehicle, type FuelEntryInput, type MaintenanceInput } from "@/app/actions/vehicles";
 import { deleteDocument } from "@/app/actions/documents";
 import { computeExpiryStatus } from "@/lib/documents/lifecycle";
+import { mpgToL100km, costPerMileToCostPerKm, milesToKm } from "@/lib/vehicles/stats";
 
 interface VehicleData {
     id: string;
@@ -72,6 +74,61 @@ interface FuelReceiptRow {
     isFullTank: boolean;
 }
 
+interface ConsumptionPointRow {
+    entryId: string;
+    date: string;
+    distanceMiles: number;
+    litresUsed: number;
+    cost: number;
+    mpg: number;
+    costPerMile: number;
+}
+
+interface FuelBucketRow {
+    label: string;
+    totalLitres: number;
+    totalCost: number;
+}
+
+interface DistanceBucketRow {
+    label: string;
+    distanceMiles: number;
+}
+
+interface AverageDistanceRow {
+    perDayMiles: number;
+    perWeekMiles: number;
+    perMonthMiles: number;
+    perYearMiles: number;
+    perDayKm: number;
+    perWeekKm: number;
+    perMonthKm: number;
+    perYearKm: number;
+}
+
+interface PricePointRow {
+    date: string;
+    pricePerLitre: number;
+    station: string | null;
+}
+
+interface SupplierRow {
+    station: string;
+    avgPricePerLitre: number;
+    fillCount: number;
+}
+
+interface AnalyticsData {
+    consumptionSeries: ConsumptionPointRow[];
+    weeklyFuel: FuelBucketRow[];
+    monthlyFuel: FuelBucketRow[];
+    weeklyDistance: DistanceBucketRow[];
+    monthlyDistance: DistanceBucketRow[];
+    averageDistance: AverageDistanceRow | null;
+    priceEvolution: PricePointRow[];
+    cheapestSuppliers: SupplierRow[];
+}
+
 function formatGBP(amount: number | null): string {
     if (amount === null) return "—";
     return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 2 }).format(amount);
@@ -100,9 +157,9 @@ function StatusBadge({ status }: { status: string }) {
 
 const inputClass = "w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors";
 
-type Tab = "overview" | "fuel" | "maintenance" | "documents";
+type Tab = "overview" | "fuel" | "statistici" | "maintenance" | "documents";
 
-export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fuelEntries: FuelEntryRow[]; fuelStats: FuelStat[]; fuelReceipts: FuelReceiptRow[]; maintenance: MaintenanceRow[]; documents: DocumentRow[] } }) {
+export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fuelEntries: FuelEntryRow[]; fuelStats: FuelStat[]; fuelReceipts: FuelReceiptRow[]; maintenance: MaintenanceRow[]; documents: DocumentRow[]; analytics: AnalyticsData } }) {
     const router = useRouter();
     const [tab, setTab] = useState<Tab>("overview");
     const [fuelEntries, setFuelEntries] = useState(data.fuelEntries);
@@ -140,6 +197,7 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
                 {([
                     ["overview", "Overview", Car],
                     ["fuel", "Combustibil", Fuel],
+                    ["statistici", "Statistici", BarChart3],
                     ["maintenance", "Mentenanță", Wrench],
                     ["documents", "Documente", FileText],
                 ] as const).map(([key, label, Icon]) => (
@@ -195,6 +253,8 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
             {tab === "fuel" && (
                 <FuelTab vehicleId={data.vehicle.id} entries={fuelEntries} setEntries={setFuelEntries} stats={data.fuelStats} fuelReceipts={data.fuelReceipts} />
             )}
+
+            {tab === "statistici" && <StatsTab analytics={data.analytics} />}
 
             {tab === "maintenance" && (
                 <MaintenanceTab vehicleId={data.vehicle.id} records={maintenance} setRecords={setMaintenance} />
@@ -371,6 +431,253 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
                     </div>
                 </Card>
             )}
+        </div>
+    );
+}
+
+const tooltipStyle = { background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 };
+const chartAxisProps = { stroke: "#8c8a80", fontSize: 12 };
+
+function EmptyChartNote({ message }: { message: string }) {
+    return <p className="text-sm text-faint italic py-12 text-center">{message}</p>;
+}
+
+function StatsTab({ analytics }: { analytics: AnalyticsData }) {
+    const [unit, setUnit] = useState<"imperial" | "metric">("imperial");
+    const [period, setPeriod] = useState<"week" | "month">("week");
+
+    const distanceLabel = unit === "imperial" ? "mi" : "km";
+    const formatDistance = (miles: number) => (unit === "imperial" ? miles : milesToKm(miles)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+    const consumptionData = analytics.consumptionSeries.map((s) => ({
+        date: format(new Date(s.date), "dd MMM yy"),
+        consumption: unit === "imperial" ? s.mpg : mpgToL100km(s.mpg),
+        costPerDistance: unit === "imperial" ? s.costPerMile : costPerMileToCostPerKm(s.costPerMile),
+    }));
+
+    const priceData = analytics.priceEvolution.map((p) => ({
+        date: format(new Date(p.date), "dd MMM yy"),
+        price: p.pricePerLitre,
+        station: p.station || "—",
+    }));
+
+    const fuelBuckets = period === "week" ? analytics.weeklyFuel : analytics.monthlyFuel;
+    const distanceBuckets = (period === "week" ? analytics.weeklyDistance : analytics.monthlyDistance).map((b) => ({
+        label: b.label,
+        distance: unit === "imperial" ? b.distanceMiles : milesToKm(b.distanceMiles),
+    }));
+
+    const consumptionUnitLabel = unit === "imperial" ? "mpg" : "L/100km";
+    const costUnitLabel = unit === "imperial" ? "/milă" : "/km";
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted">Statistici derivate din jurnalul de combustibil + chitanțele legate de acest vehicul.</p>
+                <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1 w-fit">
+                    {([
+                        ["imperial", "Mile / mpg"],
+                        ["metric", "Km / L per 100km"],
+                    ] as const).map(([key, label]) => (
+                        <button
+                            key={key}
+                            onClick={() => setUnit(key)}
+                            className={cn(
+                                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                                unit === key ? "bg-primary text-black" : "text-muted hover:bg-white/5 hover:text-foreground"
+                            )}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {analytics.averageDistance ? (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="p-4">
+                        <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Medie / zi</p>
+                        <p className="font-num text-xl font-medium text-foreground">
+                            {formatDistance(analytics.averageDistance.perDayMiles)} {distanceLabel}
+                        </p>
+                    </Card>
+                    <Card className="p-4">
+                        <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Medie / săptămână</p>
+                        <p className="font-num text-xl font-medium text-foreground">
+                            {formatDistance(analytics.averageDistance.perWeekMiles)} {distanceLabel}
+                        </p>
+                    </Card>
+                    <Card className="p-4">
+                        <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Medie / lună</p>
+                        <p className="font-num text-xl font-medium text-foreground">
+                            {formatDistance(analytics.averageDistance.perMonthMiles)} {distanceLabel}
+                        </p>
+                    </Card>
+                    <Card className="p-4">
+                        <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Medie / an</p>
+                        <p className="font-num text-xl font-medium text-foreground">
+                            {formatDistance(analytics.averageDistance.perYearMiles)} {distanceLabel}
+                        </p>
+                    </Card>
+                </div>
+            ) : (
+                <Card className="p-5">
+                    <p className="text-sm text-faint italic">Sunt necesare cel puțin 2 citiri de kilometraj (pe date diferite) pentru a calcula media de kilometri parcurși.</p>
+                </Card>
+            )}
+
+            <Card className="p-5 sm:p-6">
+                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Evoluția consumului ({consumptionUnitLabel})</h3>
+                <div className="h-[280px]">
+                    {consumptionData.length === 0 ? (
+                        <EmptyChartNote message="Sunt necesare cel puțin 2 alimentări complete (plin) pentru a calcula evoluția consumului." />
+                    ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={consumptionData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <YAxis {...chartAxisProps} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => v.toFixed(2)} />
+                                <Line type="monotone" dataKey="consumption" name={consumptionUnitLabel} stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    )}
+                </div>
+            </Card>
+
+            <Card className="p-5 sm:p-6">
+                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Evoluția costului per {unit === "imperial" ? "milă" : "km"}</h3>
+                <div className="h-[280px]">
+                    {consumptionData.length === 0 ? (
+                        <EmptyChartNote message="Sunt necesare cel puțin 2 alimentări complete (plin) pentru a calcula evoluția costului." />
+                    ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={consumptionData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatGBP(v)} />
+                                <Line type="monotone" dataKey="costPerDistance" name={`Cost${costUnitLabel}`} stroke="#d6a24c" strokeWidth={2} dot={{ r: 3 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    )}
+                </div>
+            </Card>
+
+            <Card className="p-5 sm:p-6">
+                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Evoluția prețului la pompă (£/litru)</h3>
+                <div className="h-[280px]">
+                    {priceData.length === 0 ? (
+                        <EmptyChartNote message="Nu există încă alimentări înregistrate." />
+                    ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={priceData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `£${v.toFixed(3)}/L`} />
+                                <Line type="monotone" dataKey="price" name="Preț/litru" stroke="#7aa8d6" strokeWidth={2} dot={{ r: 3 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    )}
+                </div>
+            </Card>
+
+            <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1 w-fit">
+                {([
+                    ["week", "Săptămânal"],
+                    ["month", "Lunar"],
+                ] as const).map(([key, label]) => (
+                    <button
+                        key={key}
+                        onClick={() => setPeriod(key)}
+                        className={cn(
+                            "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                            period === key ? "bg-primary text-black" : "text-muted hover:bg-white/5 hover:text-foreground"
+                        )}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="p-5 sm:p-6">
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Consum {period === "week" ? "săptămânal" : "lunar"} (litri + cost)</h3>
+                    <div className="h-[280px]">
+                        {fuelBuckets.length === 0 ? (
+                            <EmptyChartNote message="Nu există încă alimentări înregistrate." />
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={fuelBuckets}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                    <XAxis dataKey="label" {...chartAxisProps} />
+                                    <YAxis yAxisId="litres" {...chartAxisProps} tickFormatter={(v) => `${v}L`} />
+                                    <YAxis yAxisId="cost" orientation="right" {...chartAxisProps} tickFormatter={(v) => `£${v}`} />
+                                    <Tooltip contentStyle={tooltipStyle} />
+                                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                                    <Bar yAxisId="litres" dataKey="totalLitres" name="Litri" fill="#52c98a" radius={[4, 4, 0, 0]} />
+                                    <Bar yAxisId="cost" dataKey="totalCost" name="Cost (£)" fill="#d6a24c" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+                </Card>
+
+                <Card className="p-5 sm:p-6">
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">
+                        Kilometri parcurși {period === "week" ? "săptămânal" : "lunar"} ({distanceLabel})
+                    </h3>
+                    <div className="h-[280px]">
+                        {distanceBuckets.length === 0 ? (
+                            <EmptyChartNote message="Sunt necesare cel puțin 2 citiri de kilometraj pentru acest grafic." />
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={distanceBuckets}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                    <XAxis dataKey="label" {...chartAxisProps} />
+                                    <YAxis {...chartAxisProps} />
+                                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `${v.toFixed(0)} ${distanceLabel}`} />
+                                    <Bar dataKey="distance" name={`Distanță (${distanceLabel})`} fill="#7aa8d6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+                </Card>
+            </div>
+
+            <Card className="overflow-hidden p-0 border-border">
+                <div className="px-6 py-4 border-b border-border bg-white/[0.02]">
+                    <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Cei mai ieftini furnizori</h3>
+                    <p className="text-xs text-faint mt-1">Preț mediu plătit per litru, pe benzinărie/comerciant — cel mai ieftin primul.</p>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="border-b border-border bg-white/[0.02]">
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">#</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Furnizor</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Preț mediu/litru</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Alimentări</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {analytics.cheapestSuppliers.length === 0 ? (
+                                <tr><td colSpan={4} className="px-6 py-16 text-center text-faint italic">Nu există încă alimentări cu furnizor precizat.</td></tr>
+                            ) : (
+                                analytics.cheapestSuppliers.map((s, i) => (
+                                    <tr key={s.station} className="hover:bg-white/[0.01] transition-colors">
+                                        <td className="px-6 py-4 text-sm text-muted">{i + 1}</td>
+                                        <td className="px-6 py-4 text-sm text-foreground">{s.station}</td>
+                                        <td className="px-6 py-4 text-sm font-medium text-foreground">£{s.avgPricePerLitre.toFixed(3)}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">{s.fillCount}</td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
         </div>
     );
 }
