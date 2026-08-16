@@ -62,6 +62,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
             fuelQuantityLitres: Number(r.fuelQuantityLitres),
             amount: r.amount !== null ? Number(r.amount) : null,
             isFullTank: !!r.isFullTank,
+            estimatedDistanceMiles: r.estimatedDistanceMiles !== null && r.estimatedDistanceMiles !== undefined ? Number(r.estimatedDistanceMiles) : null,
         })),
         maintenance: maintenance.map((m: any) => ({
             id: m.id,

@@ -164,20 +164,19 @@ export async function listFuelEntries(vehicleId: string) {
     return db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "desc" } });
 }
 
-/** Fuel entries + MPG/cost-per-mile stats computed between consecutive
- * full-tank fill-ups. Also pulls in receipts linked to this vehicle with
- * mileage + litres set (e.g. fuel paid in cash, which never appears in a
- * bank statement and so has no other way into this calculation) and feeds
- * them into the same combined, mileage-sorted sequence as the fuel journal
- * — computeFuelStats doesn't care which table a reading came from. */
 /** Shared entries+receipts merge used by both getFuelStats and
  * getVehicleAnalytics -- keeps the "which table did this fill-up come
- * from" logic in exactly one place. */
+ * from" logic in exactly one place. Receipts are included as soon as
+ * litres are known, EVEN WITHOUT a mileage reading -- computeFuelStats
+ * already ignores purchases with mileage === null for the strict MPG/
+ * distance segment math, but litres/cost still count toward weekly and
+ * monthly consumption totals, price evolution, and supplier ranking,
+ * which don't need mileage at all. */
 async function getCombinedFuelPurchases(userId: string, vehicleId: string): Promise<{ entries: any[]; fuelReceipts: any[]; purchases: FuelPurchase[] }> {
     const [entries, fuelReceipts] = await Promise.all([
         db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "asc" } }),
         db.receipt.findMany({
-            where: { userId, vehicleId, vehicleMileage: { not: null }, fuelQuantityLitres: { not: null } },
+            where: { userId, vehicleId, fuelQuantityLitres: { not: null } },
             orderBy: { receiptDate: "asc" },
         }),
     ]);
@@ -215,7 +214,22 @@ export async function getFuelStats(vehicleId: string) {
 
     const stats = computeFuelStats(purchases);
 
-    return { entries: entries.reverse(), fuelReceipts, stats };
+    // Receipts without a mileage reading can't feed the exact MPG/distance
+    // math above, but we can still give the user a rough idea of how far
+    // that tank probably took them, using the vehicle's own average MPG
+    // from fill-ups that DO have mileage -- clearly an estimate, never
+    // mixed back into the real distance/MPG calculation itself.
+    const avgMpg = stats.length > 0 ? stats.reduce((s, x) => s + x.mpg, 0) / stats.length : null;
+    const LITRES_TO_UK_GALLONS = 0.219969;
+    const fuelReceiptsWithEstimate = fuelReceipts.map((r: any) => ({
+        ...r,
+        estimatedDistanceMiles:
+            r.vehicleMileage === null && avgMpg !== null && r.fuelQuantityLitres !== null
+                ? Number(r.fuelQuantityLitres) * LITRES_TO_UK_GALLONS * avgMpg
+                : null,
+    }));
+
+    return { entries: entries.reverse(), fuelReceipts: fuelReceiptsWithEstimate, stats };
 }
 
 /** Consolidated analytics for the vehicle's "Statistici" tab: weekly/

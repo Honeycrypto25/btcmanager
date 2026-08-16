@@ -72,6 +72,7 @@ interface FuelReceiptRow {
     fuelQuantityLitres: number;
     amount: number | null;
     isFullTank: boolean;
+    estimatedDistanceMiles: number | null;
 }
 
 interface ConsumptionPointRow {
@@ -316,7 +317,7 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
             <div className="flex justify-between items-center">
                 <p className="text-sm text-muted">
                     {avgMpg !== null
-                        ? `Medie: ${avgMpg.toFixed(1)} mpg · ${formatGBP(avgCostPerMile)}/milă${fuelReceipts.length > 0 ? " (include chitanțele legate)" : ""}`
+                        ? `Medie: ${avgMpg.toFixed(1)} mpg · ${formatGBP(avgCostPerMile)}/milă${fuelReceipts.some((r) => r.vehicleMileage !== null) ? " (include chitanțele legate cu kilometraj)" : ""}`
                         : "Nu există încă suficiente alimentări complete pentru calcul MPG."}
                 </p>
                 <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
@@ -403,7 +404,7 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
                 <Card className="overflow-hidden p-0 border-border">
                     <div className="px-6 py-4 border-b border-border bg-white/[0.02]">
                         <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Chitanțe combustibil legate (plătite cash)</h3>
-                        <p className="text-xs text-faint mt-1">Nu sunt duplicate ale jurnalului de mai sus — sunt combustibil cumpărat separat, urmărit doar prin chitanță.</p>
+                        <p className="text-xs text-faint mt-1">Nu sunt duplicate ale jurnalului de mai sus — sunt combustibil cumpărat separat, urmărit doar prin chitanță. Chitanțele fără kilometraj completat apar și ele, cu o distanță estimată din MPG mediu al vehiculului.</p>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
@@ -421,7 +422,17 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
                                     <tr key={r.id} className="hover:bg-white/[0.01] transition-colors">
                                         <td className="px-6 py-4 text-sm text-foreground">{format(new Date(r.receiptDate), "dd MMM yyyy")}</td>
                                         <td className="px-6 py-4 text-sm text-muted">{r.merchant || "—"}</td>
-                                        <td className="px-6 py-4 text-sm text-muted">{r.vehicleMileage ? `${r.vehicleMileage.toLocaleString()} mi` : "—"}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">
+                                            {r.vehicleMileage ? (
+                                                `${r.vehicleMileage.toLocaleString()} mi`
+                                            ) : r.estimatedDistanceMiles ? (
+                                                <span title="Estimat din MPG mediu al vehiculului, nu o citire reală de kilometraj.">
+                                                    ~{r.estimatedDistanceMiles.toFixed(0)} mi <span className="text-faint">(estimat)</span>
+                                                </span>
+                                            ) : (
+                                                "—"
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-muted">{r.fuelQuantityLitres.toFixed(2)} L {!r.isFullTank && <span className="text-faint">(parțial)</span>}</td>
                                         <td className="px-6 py-4 text-sm font-medium text-foreground">{r.amount !== null ? formatGBP(r.amount) : "—"}</td>
                                     </tr>

@@ -279,3 +279,60 @@ export async function analyzeReceiptWithAI(_id: string): Promise<{ ok: false; me
     await requireUserId();
     return { ok: false, message: "Analiza AI nu este configurată încă. Adaugă datele manual — vezi pagina Tasks pentru status." };
 }
+
+// --- Convert to expense ---
+// Mirrors actions/bank.ts convertTransactionToExpense -- the equivalent
+// path for receipts that never appear in a bank statement (mainly cash
+// purchases, like fuel bought with cash and linked to a vehicle above).
+// Without this, such receipts had no way into the Expenses ledger at all.
+
+export async function convertReceiptToExpense(id: string) {
+    const userId = await requireUserId();
+    const receipt = await db.receipt.findUnique({ where: { id } });
+    if (!receipt || receipt.userId !== userId) throw new Error("Not found");
+    if (receipt.convertedExpenseId) throw new Error("Chitanța este deja convertită într-o cheltuială.");
+    if (receipt.amount === null) throw new Error("Chitanța nu are o sumă completată — adaugă suma înainte de a converti.");
+    if (!receipt.receiptDate) throw new Error("Chitanța nu are o dată completată — adaugă data înainte de a converti.");
+
+    const taxYear = receipt.taxYear || getUkTaxYear(receipt.receiptDate);
+
+    const expense = await db.selfEmployedExpense.create({
+        data: {
+            userId,
+            date: receipt.receiptDate,
+            merchant: receipt.merchant || "Necunoscut",
+            description: receipt.description,
+            amount: receipt.amount,
+            vatAmount: receipt.vatAmount,
+            category: receipt.category || "Other",
+            paymentMethod: receipt.paymentMethod,
+            taxYear,
+            receiptId: receipt.id,
+        },
+    });
+
+    await db.receipt.update({ where: { id }, data: { convertedExpenseId: expense.id } });
+
+    revalidatePath("/self-employed/receipts");
+    revalidatePath(`/self-employed/receipts/${id}`);
+    revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed");
+    return expense;
+}
+
+/** Undoes a conversion -- deletes the Expense row it created and clears
+ * the receipt's converted marker so it can be edited/re-converted. */
+export async function undoReceiptExpenseConversion(id: string) {
+    const userId = await requireUserId();
+    const receipt = await db.receipt.findUnique({ where: { id } });
+    if (!receipt || receipt.userId !== userId) throw new Error("Not found");
+    if (!receipt.convertedExpenseId) return;
+
+    await db.selfEmployedExpense.deleteMany({ where: { id: receipt.convertedExpenseId, userId } });
+    await db.receipt.update({ where: { id }, data: { convertedExpenseId: null } });
+
+    revalidatePath("/self-employed/receipts");
+    revalidatePath(`/self-employed/receipts/${id}`);
+    revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed");
+}

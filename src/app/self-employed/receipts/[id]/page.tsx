@@ -45,6 +45,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         vehicleMileage: receipt.vehicleMileage,
         fuelQuantityLitres: receipt.fuelQuantityLitres !== null ? Number(receipt.fuelQuantityLitres) : null,
         isFullTank: receipt.isFullTank,
+        convertedExpenseId: receipt.convertedExpenseId,
     };
 
     const vehicleOptions = vehicles.map((v: any) => ({ id: v.id, name: v.name }));

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui/core";
-import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car } from "lucide-react";
+import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car, Receipt as ReceiptIcon, Undo2 } from "lucide-react";
 import {
     updateReceiptDetails,
     deleteReceipt,
@@ -12,6 +12,8 @@ import {
     analyzeReceiptWithAI,
     backfillReceiptPreview,
     updateReceiptVehicleLink,
+    convertReceiptToExpense,
+    undoReceiptExpenseConversion,
     type ReceiptDetailsInput,
 } from "@/app/actions/receipts";
 
@@ -35,6 +37,7 @@ interface ReceiptData {
     vehicleMileage: number | null;
     fuelQuantityLitres: number | null;
     isFullTank: boolean | null;
+    convertedExpenseId: string | null;
 }
 
 export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt: ReceiptData; categories: string[]; vehicles: { id: string; name: string }[] }) {
@@ -66,6 +69,8 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
     const [vehicleLinkSaved, setVehicleLinkSaved] = useState(false);
     const [vehicleLinkError, setVehicleLinkError] = useState<string | null>(null);
     const [ocrText, setOcrText] = useState(receipt.ocrRawText);
+    const [convertedExpenseId, setConvertedExpenseId] = useState(receipt.convertedExpenseId);
+    const [convertError, setConvertError] = useState<string | null>(null);
 
     useEffect(() => {
         fetch(`/api/self-employed/receipts/${receipt.id}/file`)
@@ -158,6 +163,36 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
         startTransition(async () => {
             const result = await analyzeReceiptWithAI(receipt.id);
             setAssistMessage(result.message);
+        });
+    }
+
+    function convertToExpense() {
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                // Persist whatever is currently in the form first, so the
+                // expense is created from what's on screen, not stale DB
+                // values from before the last edit.
+                await updateReceiptDetails(receipt.id, form);
+                const expense = await convertReceiptToExpense(receipt.id);
+                setConvertedExpenseId(expense.id);
+                setSaved(true);
+            } catch (e: any) {
+                setConvertError(e.message || "Nu s-a putut converti în cheltuială.");
+            }
+        });
+    }
+
+    function undoConvertToExpense() {
+        if (!confirm("Anulezi conversia? Cheltuiala creată va fi ștearsă.")) return;
+        setConvertError(null);
+        startTransition(async () => {
+            try {
+                await undoReceiptExpenseConversion(receipt.id);
+                setConvertedExpenseId(null);
+            } catch (e: any) {
+                setConvertError(e.message || "Nu s-a putut anula conversia.");
+            }
         });
     }
 
@@ -340,6 +375,30 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
 
                     {error && <p className="text-sm text-red-400">{error}</p>}
                     {saved && <p className="text-sm text-green-400">Salvat.</p>}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-border">
+                        <div className="pt-3">
+                            {convertedExpenseId ? (
+                                <p className="text-xs text-green-400 flex items-center gap-1.5">
+                                    <ReceiptIcon className="w-3.5 h-3.5" /> Adăugată la Cheltuieli.
+                                </p>
+                            ) : (
+                                <p className="text-xs text-faint">Chitanța nu a fost adăugată încă la Cheltuieli.</p>
+                            )}
+                            {convertError && <p className="text-xs text-red-400 mt-1">{convertError}</p>}
+                        </div>
+                        <div className="pt-3">
+                            {convertedExpenseId ? (
+                                <Button variant="outline" size="sm" onClick={undoConvertToExpense} disabled={isPending}>
+                                    <Undo2 className="w-3.5 h-3.5 mr-1.5" /> Anulează conversia
+                                </Button>
+                            ) : (
+                                <Button variant="outline" size="sm" onClick={convertToExpense} disabled={isPending || !form.amount || !form.receiptDate}>
+                                    <ReceiptIcon className="w-3.5 h-3.5 mr-1.5" /> Convertește în cheltuială
+                                </Button>
+                            )}
+                        </div>
+                    </div>
 
                     <div className="flex gap-2 pt-2">
                         <Button variant="primary" onClick={save} disabled={isPending}>

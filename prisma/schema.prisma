@@ -334,6 +334,12 @@ model Receipt {
 
   status String @default("unmatched") // unmatched | matched | needs_review
 
+  // Set once the user converts this receipt into a SelfEmployedExpense row
+  // (see actions/receipts.ts convertReceiptToExpense) -- mainly for cash
+  // purchases (like the vehicle-linked fuel receipts above) that have no
+  // bank transaction to convert instead. Null means not converted yet.
+  convertedExpenseId String?
+
   retentionUntil DateTime?
 
   createdAt DateTime @default(now())
