@@ -21,7 +21,10 @@ export default async function DocumentsPage() {
         category: d.category,
         title: d.title,
         vehicleId: d.vehicleId,
+        issueDate: d.issueDate ? d.issueDate.toISOString() : null,
         expiryDate: d.expiryDate ? d.expiryDate.toISOString() : null,
+        retentionUntil: d.retentionUntil ? d.retentionUntil.toISOString() : null,
+        notes: d.notes,
         createdAt: d.createdAt.toISOString(),
     }));
 

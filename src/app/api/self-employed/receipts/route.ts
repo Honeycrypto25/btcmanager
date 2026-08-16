@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { isR2Configured } from "@/lib/r2/client";
 import { buildReceiptOriginalKey, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
-import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType } from "@/lib/receipts/preview";
+import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType, compressOriginalIfNeeded } from "@/lib/receipts/preview";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "application/pdf"]);
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
@@ -51,9 +51,15 @@ export async function POST(req: NextRequest) {
         const now = new Date();
         const taxYear = getUkTaxYear(now);
 
-        const key = buildReceiptOriginalKey({ userId, taxYear, date: now, receiptId, mimeType: file.type });
-        const buffer = Buffer.from(await file.arrayBuffer());
-        await uploadReceiptObject(key, buffer, file.type);
+        // Large JPEG/PNG photos get resized + recompressed BEFORE the first
+        // (and only) write to R2 — see compressOriginalIfNeeded for why this
+        // doesn't conflict with "the original is never overwritten". HEIC and
+        // PDF pass through untouched; small images pass through untouched too.
+        const rawBuffer = Buffer.from(await file.arrayBuffer());
+        const { buffer, mimeType: storedMimeType } = await compressOriginalIfNeeded(rawBuffer, file.type);
+
+        const key = buildReceiptOriginalKey({ userId, taxYear, date: now, receiptId, mimeType: storedMimeType });
+        await uploadReceiptObject(key, buffer, storedMimeType);
 
         // HEIC/HEIF (default iPhone camera format) can't be rendered by an
         // <img> tag in any mainstream browser. Generate a WebP preview so the
@@ -64,14 +70,14 @@ export async function POST(req: NextRequest) {
         // ever touching the original.
         let previewObjectKey: string | null = null;
         let previewFileSize: number | null = null;
-        if (isHeicMimeType(file.type)) {
+        if (isHeicMimeType(storedMimeType)) {
             const previewBuffer = await generateHeicPreview(buffer);
             if (previewBuffer) {
                 previewObjectKey = buildReceiptPreviewKey({ userId, taxYear, date: now, receiptId });
                 await uploadReceiptObject(previewObjectKey, previewBuffer, "image/webp");
                 previewFileSize = previewBuffer.length;
             }
-        } else if (isRasterImageMimeType(file.type)) {
+        } else if (isRasterImageMimeType(storedMimeType)) {
             const previewBuffer = await generateStandardImagePreview(buffer);
             if (previewBuffer) {
                 previewObjectKey = buildReceiptPreviewKey({ userId, taxYear, date: now, receiptId });
@@ -88,8 +94,11 @@ export async function POST(req: NextRequest) {
                 currency: "GBP",
                 status: "needs_review",
                 originalObjectKey: key,
-                originalMimeType: file.type,
-                originalFileSize: file.size,
+                // Reflects what's actually stored in R2 — if compressOriginalIfNeeded
+                // resized/recompressed this upload, that's the "original" now, not
+                // the raw bytes the browser sent.
+                originalMimeType: storedMimeType,
+                originalFileSize: buffer.length,
                 previewObjectKey,
                 previewFileSize,
                 retentionUntil: getDefaultRetentionUntil(taxYear),

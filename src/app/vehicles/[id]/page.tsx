@@ -22,7 +22,7 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
         notFound();
     }
 
-    const [{ entries, stats }, maintenance, documents] = await Promise.all([
+    const [{ entries, fuelReceipts, stats }, maintenance, documents] = await Promise.all([
         getFuelStats(id),
         getMaintenanceWithStatus(id),
         listDocuments({ vehicleId: id }),
@@ -52,6 +52,15 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
             station: e.station,
         })),
         fuelStats: stats,
+        fuelReceipts: fuelReceipts.map((r: any) => ({
+            id: r.id,
+            merchant: r.merchant,
+            receiptDate: r.receiptDate ? r.receiptDate.toISOString() : r.createdAt.toISOString(),
+            vehicleMileage: r.vehicleMileage,
+            fuelQuantityLitres: Number(r.fuelQuantityLitres),
+            amount: r.amount !== null ? Number(r.amount) : null,
+            isFullTank: !!r.isFullTank,
+        })),
         maintenance: maintenance.map((m: any) => ({
             id: m.id,
             type: m.type,

@@ -19,6 +19,7 @@ export interface DocumentDetailsInput {
     vehicleId?: string | null;
     issueDate?: string | null;
     expiryDate?: string | null;
+    retentionUntil?: string | null;
     notes?: string;
 }
 
@@ -42,6 +43,7 @@ export async function updateDocumentDetails(id: string, input: DocumentDetailsIn
             vehicleId: input.vehicleId === undefined ? existing.vehicleId : input.vehicleId,
             issueDate: input.issueDate !== undefined ? (input.issueDate ? new Date(input.issueDate) : null) : existing.issueDate,
             expiryDate: input.expiryDate !== undefined ? (input.expiryDate ? new Date(input.expiryDate) : null) : existing.expiryDate,
+            retentionUntil: input.retentionUntil !== undefined ? (input.retentionUntil ? new Date(input.retentionUntil) : null) : existing.retentionUntil,
             notes: input.notes ?? existing.notes,
         },
     });
@@ -52,8 +54,9 @@ export async function updateDocumentDetails(id: string, input: DocumentDetailsIn
 }
 
 /** Deletes the document row AND its R2 object. Only ever called explicitly
- * by the user — no automated retention/deletion pipeline exists yet (see
- * the "Later" roadmap item). */
+ * by the user — retentionUntil (see lib/documents/lifecycle.ts) only flags
+ * a document as past-retention in the UI, it never triggers deletion on
+ * its own. */
 export async function deleteDocument(id: string) {
     const userId = await requireUserId();
     const existing = await db.document.findUnique({ where: { id } });

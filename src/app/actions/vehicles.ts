@@ -155,24 +155,45 @@ export async function listFuelEntries(vehicleId: string) {
     return db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "desc" } });
 }
 
-/** Fuel entries + MPG/cost-per-mile stats computed between consecutive full-tank fill-ups. */
+/** Fuel entries + MPG/cost-per-mile stats computed between consecutive
+ * full-tank fill-ups. Also pulls in receipts linked to this vehicle with
+ * mileage + litres set (e.g. fuel paid in cash, which never appears in a
+ * bank statement and so has no other way into this calculation) and feeds
+ * them into the same combined, mileage-sorted sequence as the fuel journal
+ * — computeFuelStats doesn't care which table a reading came from. */
 export async function getFuelStats(vehicleId: string) {
     const userId = await requireUserId();
     await requireOwnedVehicle(userId, vehicleId);
-    const entries = await db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "asc" } });
+    const [entries, fuelReceipts] = await Promise.all([
+        db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "asc" } }),
+        db.receipt.findMany({
+            where: { userId, vehicleId, vehicleMileage: { not: null }, fuelQuantityLitres: { not: null } },
+            orderBy: { receiptDate: "asc" },
+        }),
+    ]);
 
-    const stats = computeFuelStats(
-        entries.map((e: any) => ({
+    const combined = [
+        ...entries.map((e: any) => ({
             id: e.id,
             date: e.date,
             mileage: e.mileage,
             quantity: Number(e.quantity),
             cost: Number(e.cost),
             isFullTank: e.isFullTank,
-        }))
-    );
+        })),
+        ...fuelReceipts.map((r: any) => ({
+            id: r.id,
+            date: r.receiptDate || r.createdAt,
+            mileage: r.vehicleMileage,
+            quantity: Number(r.fuelQuantityLitres),
+            cost: r.amount !== null ? Number(r.amount) : 0,
+            isFullTank: !!r.isFullTank,
+        })),
+    ];
 
-    return { entries: entries.reverse(), stats };
+    const stats = computeFuelStats(combined);
+
+    return { entries: entries.reverse(), fuelReceipts, stats };
 }
 
 // --- Maintenance ---

@@ -6,6 +6,7 @@ import { redirect, notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getReceipt } from "@/app/actions/receipts";
+import { listVehicles } from "@/app/actions/vehicles";
 import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { ReceiptDetailClient } from "@/components/self-employed/ReceiptDetailClient";
 
@@ -21,6 +22,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     } catch {
         notFound();
     }
+
+    const vehicles = await listVehicles();
 
     const serialized = {
         id: receipt.id,
@@ -38,11 +41,17 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         ocrRawText: receipt.ocrRawText,
         originalMimeType: receipt.originalMimeType,
         hasPreview: !!receipt.previewObjectKey,
+        vehicleId: receipt.vehicleId,
+        vehicleMileage: receipt.vehicleMileage,
+        fuelQuantityLitres: receipt.fuelQuantityLitres !== null ? Number(receipt.fuelQuantityLitres) : null,
+        isFullTank: receipt.isFullTank,
     };
+
+    const vehicleOptions = vehicles.map((v: any) => ({ id: v.id, name: v.name }));
 
     return (
         <DashboardLayout>
-            <ReceiptDetailClient receipt={serialized} categories={[...EXPENSE_CATEGORIES]} />
+            <ReceiptDetailClient receipt={serialized} categories={[...EXPENSE_CATEGORIES]} vehicles={vehicleOptions} />
         </DashboardLayout>
     );
 }

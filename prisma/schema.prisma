@@ -300,8 +300,21 @@ model Receipt {
   paymentMethod String?
   taxYear       String?
 
-  // Reserved — Vehicles table doesn't exist until Phase 5, so no FK yet.
+  // Links this receipt to a vehicle — mainly for fuel receipts paid in cash,
+  // which never appear in a bank statement and so can't be tracked via
+  // BankTransaction. When set, the receipt can optionally carry the odometer
+  // reading + litres so it feeds into the same MPG/cost-per-mile calculation
+  // as the vehicle's own fuel journal (lib/vehicles/stats.ts), not a
+  // separate/parallel one.
   vehicleId     String?
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  // Fuel-specific — only meaningful when vehicleId is set and this receipt
+  // represents a fuel purchase. All optional: a receipt can be linked to a
+  // vehicle for record-keeping without necessarily feeding the MPG math.
+  vehicleMileage     Int?
+  fuelQuantityLitres Decimal? @db.Decimal(8, 3)
+  isFullTank         Boolean?
 
   // --- Cloudflare R2 storage (private objects, accessed via signed URLs) ---
   originalObjectKey String
@@ -466,6 +479,7 @@ model Vehicle {
   maintenanceRecords MaintenanceRecord[]
   documents          Document[]
   reminders          Reminder[]
+  receipts           Receipt[]
 
   @@index([userId])
 }
@@ -547,10 +561,12 @@ model Document {
   issueDate  DateTime?
   expiryDate DateTime?
 
-  // Manual deletion only for now (see Reminder for expiry notifications).
-  // An automated retention/deletion lifecycle is tracked as a Later task —
-  // deliberately NOT implemented yet, to avoid any risk of destructive
-  // auto-deletion before that lifecycle has explicit user-visible logging.
+  // Safe lifecycle: an optional user-set (or user-confirmed) date after
+  // which a document is flagged as "past retention" in the UI. Purely
+  // informational — deletion is, and stays, a manual action only. No
+  // automated/scheduled deletion exists or is planned; this field just
+  // makes stale documents visible so the user can decide.
+  retentionUntil DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

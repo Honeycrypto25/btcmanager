@@ -7,6 +7,7 @@ import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, Trash2, X, Car, Fuel, Wrench, FileText, Gauge, Upload, ExternalLink } from "lucide-react";
 import { createFuelEntry, deleteFuelEntry, createMaintenanceRecord, deleteMaintenanceRecord, deleteVehicle, type FuelEntryInput, type MaintenanceInput } from "@/app/actions/vehicles";
 import { deleteDocument } from "@/app/actions/documents";
+import { computeExpiryStatus } from "@/lib/documents/lifecycle";
 
 interface VehicleData {
     id: string;
@@ -61,6 +62,16 @@ interface DocumentRow {
     createdAt: string;
 }
 
+interface FuelReceiptRow {
+    id: string;
+    merchant: string | null;
+    receiptDate: string;
+    vehicleMileage: number | null;
+    fuelQuantityLitres: number;
+    amount: number | null;
+    isFullTank: boolean;
+}
+
 function formatGBP(amount: number | null): string {
     if (amount === null) return "—";
     return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 2 }).format(amount);
@@ -91,7 +102,7 @@ const inputClass = "w-full bg-white/[0.04] border border-border rounded-xl p-3 t
 
 type Tab = "overview" | "fuel" | "maintenance" | "documents";
 
-export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fuelEntries: FuelEntryRow[]; fuelStats: FuelStat[]; maintenance: MaintenanceRow[]; documents: DocumentRow[] } }) {
+export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fuelEntries: FuelEntryRow[]; fuelStats: FuelStat[]; fuelReceipts: FuelReceiptRow[]; maintenance: MaintenanceRow[]; documents: DocumentRow[] } }) {
     const router = useRouter();
     const [tab, setTab] = useState<Tab>("overview");
     const [fuelEntries, setFuelEntries] = useState(data.fuelEntries);
@@ -182,7 +193,7 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
             )}
 
             {tab === "fuel" && (
-                <FuelTab vehicleId={data.vehicle.id} entries={fuelEntries} setEntries={setFuelEntries} stats={data.fuelStats} />
+                <FuelTab vehicleId={data.vehicle.id} entries={fuelEntries} setEntries={setFuelEntries} stats={data.fuelStats} fuelReceipts={data.fuelReceipts} />
             )}
 
             {tab === "maintenance" && (
@@ -196,7 +207,7 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
     );
 }
 
-function FuelTab({ vehicleId, entries, setEntries, stats }: { vehicleId: string; entries: FuelEntryRow[]; setEntries: React.Dispatch<React.SetStateAction<FuelEntryRow[]>>; stats: FuelStat[] }) {
+function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehicleId: string; entries: FuelEntryRow[]; setEntries: React.Dispatch<React.SetStateAction<FuelEntryRow[]>>; stats: FuelStat[]; fuelReceipts: FuelReceiptRow[] }) {
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<FuelEntryInput>({ vehicleId, date: new Date().toISOString().slice(0, 10), quantity: 0, cost: 0, isFullTank: true });
     const [isPending, startTransition] = useTransition();
@@ -244,7 +255,9 @@ function FuelTab({ vehicleId, entries, setEntries, stats }: { vehicleId: string;
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <p className="text-sm text-muted">
-                    {avgMpg !== null ? `Medie: ${avgMpg.toFixed(1)} mpg · ${formatGBP(avgCostPerMile)}/milă` : "Nu există încă suficiente alimentări complete pentru calcul MPG."}
+                    {avgMpg !== null
+                        ? `Medie: ${avgMpg.toFixed(1)} mpg · ${formatGBP(avgCostPerMile)}/milă${fuelReceipts.length > 0 ? " (include chitanțele legate)" : ""}`
+                        : "Nu există încă suficiente alimentări complete pentru calcul MPG."}
                 </p>
                 <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
                     {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
@@ -325,6 +338,39 @@ function FuelTab({ vehicleId, entries, setEntries, stats }: { vehicleId: string;
                     </table>
                 </div>
             </Card>
+
+            {fuelReceipts.length > 0 && (
+                <Card className="overflow-hidden p-0 border-border">
+                    <div className="px-6 py-4 border-b border-border bg-white/[0.02]">
+                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Chitanțe combustibil legate (plătite cash)</h3>
+                        <p className="text-xs text-faint mt-1">Nu sunt duplicate ale jurnalului de mai sus — sunt combustibil cumpărat separat, urmărit doar prin chitanță.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-border bg-white/[0.02]">
+                                    <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Data</th>
+                                    <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Comerciant</th>
+                                    <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Kilometraj</th>
+                                    <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Litri</th>
+                                    <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {fuelReceipts.map((r) => (
+                                    <tr key={r.id} className="hover:bg-white/[0.01] transition-colors">
+                                        <td className="px-6 py-4 text-sm text-foreground">{format(new Date(r.receiptDate), "dd MMM yyyy")}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">{r.merchant || "—"}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">{r.vehicleMileage ? `${r.vehicleMileage.toLocaleString()} mi` : "—"}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">{r.fuelQuantityLitres.toFixed(2)} L {!r.isFullTank && <span className="text-faint">(parțial)</span>}</td>
+                                        <td className="px-6 py-4 text-sm font-medium text-foreground">{r.amount !== null ? formatGBP(r.amount) : "—"}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
         </div>
     );
 }
@@ -518,18 +564,36 @@ function DocumentsTab({ vehicleId, documents, setDocuments }: { vehicleId: strin
                             <tr className="border-b border-border bg-white/[0.02]">
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Titlu</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Categorie</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Status</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Adăugat</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Acțiuni</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {documents.length === 0 ? (
-                                <tr><td colSpan={4} className="px-6 py-16 text-center text-faint italic">Niciun document încărcat pentru acest vehicul.</td></tr>
+                                <tr><td colSpan={5} className="px-6 py-16 text-center text-faint italic">Niciun document încărcat pentru acest vehicul.</td></tr>
                             ) : (
-                                documents.map((d) => (
+                                documents.map((d) => {
+                                    const status = computeExpiryStatus(d.expiryDate ? new Date(d.expiryDate) : null);
+                                    const statusStyles: Record<string, string> = {
+                                        red: "bg-red-500/10 text-red-300 border-red-400/30",
+                                        amber: "bg-amber-500/10 text-amber-300 border-amber-400/30",
+                                        green: "bg-green-500/10 text-green-300 border-green-400/30",
+                                    };
+                                    const statusLabels: Record<string, string> = { red: "Expirat", amber: "Expiră curând", green: "Valabil" };
+                                    return (
                                     <tr key={d.id} className="hover:bg-white/[0.01] transition-colors group">
                                         <td className="px-6 py-4 text-sm text-foreground">{d.title}</td>
                                         <td className="px-6 py-4 text-sm text-muted">{d.category}</td>
+                                        <td className="px-6 py-4">
+                                            {status === "none" ? (
+                                                <span className="text-xs text-faint">—</span>
+                                            ) : (
+                                                <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider", statusStyles[status])}>
+                                                    {statusLabels[status]}
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-muted">{format(new Date(d.createdAt), "dd MMM yyyy")}</td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -542,7 +606,8 @@ function DocumentsTab({ vehicleId, documents, setDocuments }: { vehicleId: strin
                                             </div>
                                         </td>
                                     </tr>
-                                ))
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

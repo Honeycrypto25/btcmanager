@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui/core";
-import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink } from "lucide-react";
+import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car } from "lucide-react";
 import {
     updateReceiptDetails,
     deleteReceipt,
@@ -11,6 +11,7 @@ import {
     runOcrOnReceipt,
     analyzeReceiptWithAI,
     backfillReceiptPreview,
+    updateReceiptVehicleLink,
     type ReceiptDetailsInput,
 } from "@/app/actions/receipts";
 
@@ -30,9 +31,13 @@ interface ReceiptData {
     ocrRawText: string | null;
     originalMimeType: string;
     hasPreview: boolean;
+    vehicleId: string | null;
+    vehicleMileage: number | null;
+    fuelQuantityLitres: number | null;
+    isFullTank: boolean | null;
 }
 
-export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptData; categories: string[] }) {
+export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt: ReceiptData; categories: string[]; vehicles: { id: string; name: string }[] }) {
     const router = useRouter();
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [imageError, setImageError] = useState(false);
@@ -53,6 +58,13 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [assistMessage, setAssistMessage] = useState<string | null>(null);
+
+    const [vehicleId, setVehicleId] = useState(receipt.vehicleId || "");
+    const [vehicleMileage, setVehicleMileage] = useState(receipt.vehicleMileage?.toString() || "");
+    const [fuelQuantityLitres, setFuelQuantityLitres] = useState(receipt.fuelQuantityLitres?.toString() || "");
+    const [isFullTank, setIsFullTank] = useState(!!receipt.isFullTank);
+    const [vehicleLinkSaved, setVehicleLinkSaved] = useState(false);
+    const [vehicleLinkError, setVehicleLinkError] = useState<string | null>(null);
 
     useEffect(() => {
         fetch(`/api/self-employed/receipts/${receipt.id}/file`)
@@ -126,6 +138,24 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
         startTransition(async () => {
             const result = await analyzeReceiptWithAI(receipt.id);
             setAssistMessage(result.message);
+        });
+    }
+
+    function saveVehicleLink() {
+        setVehicleLinkError(null);
+        setVehicleLinkSaved(false);
+        startTransition(async () => {
+            try {
+                await updateReceiptVehicleLink(receipt.id, {
+                    vehicleId: vehicleId || null,
+                    vehicleMileage: vehicleMileage ? parseInt(vehicleMileage, 10) : null,
+                    fuelQuantityLitres: fuelQuantityLitres ? parseFloat(fuelQuantityLitres) : null,
+                    isFullTank,
+                });
+                setVehicleLinkSaved(true);
+            } catch (e: any) {
+                setVehicleLinkError(e.message || "Nu s-a putut salva legătura cu vehiculul.");
+            }
         });
     }
 
@@ -295,6 +325,66 @@ export function ReceiptDetailClient({ receipt, categories }: { receipt: ReceiptD
                     </div>
                 </Card>
             </div>
+
+            {vehicles.length > 0 && (
+                <Card className="p-5 sm:p-6 space-y-4">
+                    <div className="flex items-center gap-2">
+                        <Car className="w-4 h-4 text-muted" />
+                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Leagă de vehicul (opțional)</h3>
+                    </div>
+                    <p className="text-xs text-faint">
+                        Utilă mai ales pentru combustibil plătit cash, care nu apare într-un extras bancar — kilometrajul și litrii de aici intră în
+                        aceleași grafice de consum (MPG, cost/milă) ca și jurnalul de combustibil al vehiculului.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-xs text-muted">Vehicul</label>
+                            <select
+                                value={vehicleId}
+                                onChange={(e) => setVehicleId(e.target.value)}
+                                className="w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors"
+                            >
+                                <option value="" className="bg-surface">— Fără vehicul —</option>
+                                {vehicles.map((v) => (
+                                    <option key={v.id} value={v.id} className="bg-surface">{v.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-muted">Kilometraj</label>
+                            <input
+                                type="number"
+                                value={vehicleMileage}
+                                onChange={(e) => setVehicleMileage(e.target.value)}
+                                disabled={!vehicleId}
+                                className="w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors disabled:opacity-50"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-muted">Litri combustibil</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={fuelQuantityLitres}
+                                onChange={(e) => setFuelQuantityLitres(e.target.value)}
+                                disabled={!vehicleId}
+                                className="w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors disabled:opacity-50"
+                            />
+                        </div>
+                        <div className="flex items-end pb-3">
+                            <label className="flex items-center gap-2 text-sm text-muted">
+                                <input type="checkbox" checked={isFullTank} onChange={(e) => setIsFullTank(e.target.checked)} disabled={!vehicleId} className="accent-primary" />
+                                Plin complet (necesar pentru MPG)
+                            </label>
+                        </div>
+                    </div>
+                    {vehicleLinkError && <p className="text-sm text-red-400">{vehicleLinkError}</p>}
+                    {vehicleLinkSaved && <p className="text-sm text-green-400">Salvat.</p>}
+                    <Button variant="outline" size="sm" onClick={saveVehicleLink} disabled={isPending}>
+                        Salvează legătura cu vehiculul
+                    </Button>
+                </Card>
+            )}
         </div>
     );
 }

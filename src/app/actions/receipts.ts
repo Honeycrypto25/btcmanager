@@ -75,6 +75,52 @@ export async function updateReceiptDetails(id: string, input: ReceiptDetailsInpu
     return receipt;
 }
 
+export interface ReceiptVehicleLinkInput {
+    vehicleId?: string | null;
+    vehicleMileage?: number | null;
+    fuelQuantityLitres?: number | null;
+    isFullTank?: boolean | null;
+}
+
+/** Links (or unlinks) a receipt to a vehicle — mainly for fuel bought with
+ * cash, which never shows up in a bank statement and so has no other way
+ * into the vehicle's MPG/cost-per-mile calculation. When vehicleMileage +
+ * fuelQuantityLitres are both set, this receipt is picked up by
+ * actions/vehicles.ts getFuelStats() alongside the fuel journal entries. */
+export async function updateReceiptVehicleLink(id: string, input: ReceiptVehicleLinkInput) {
+    const userId = await requireUserId();
+    const existing = await db.receipt.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) throw new Error("Not found");
+
+    if (input.vehicleId) {
+        const vehicle = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
+        if (!vehicle || vehicle.userId !== userId) throw new Error("Vehicle not found");
+    }
+
+    const receipt = await db.receipt.update({
+        where: { id },
+        data: {
+            vehicleId: input.vehicleId === undefined ? existing.vehicleId : input.vehicleId,
+            vehicleMileage: input.vehicleMileage === undefined ? existing.vehicleMileage : input.vehicleMileage,
+            fuelQuantityLitres: input.fuelQuantityLitres === undefined ? existing.fuelQuantityLitres : input.fuelQuantityLitres,
+            isFullTank: input.isFullTank === undefined ? existing.isFullTank : input.isFullTank,
+        },
+    });
+
+    // Keep the vehicle's currentMileage in sync, same as fuel-journal entries.
+    if (receipt.vehicleId && receipt.vehicleMileage) {
+        const vehicle = await db.vehicle.findUnique({ where: { id: receipt.vehicleId } });
+        if (vehicle && (vehicle.currentMileage ?? 0) < receipt.vehicleMileage) {
+            await db.vehicle.update({ where: { id: receipt.vehicleId }, data: { currentMileage: receipt.vehicleMileage } });
+        }
+    }
+
+    revalidatePath("/self-employed/receipts");
+    revalidatePath(`/self-employed/receipts/${id}`);
+    if (receipt.vehicleId) revalidatePath(`/vehicles/${receipt.vehicleId}`);
+    return receipt;
+}
+
 /** Deletes the receipt row AND its R2 objects. Only ever called explicitly
  * by the user — receipts are never auto-deleted (see retention policy). */
 export async function deleteReceipt(id: string) {
