@@ -365,6 +365,9 @@ function ColumnSelect({ label, value, onChange, headers, allowEmpty }: { label: 
 function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
     const [rows, setRows] = useState(transactions);
     const [filter, setFilter] = useState<string | null>(null);
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
+    const [search, setSearch] = useState("");
     const [receiptInfo, setReceiptInfo] = useState<Record<string, { merchant: string | null; amount: number | null; receiptDate: string | null }>>({});
     const [isPending, startTransition] = useTransition();
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
@@ -384,7 +387,24 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [receiptIds.join(",")]);
 
-    const filtered = filter ? rows.filter((r) => r.matchStatus === filter) : rows;
+    const filtered = useMemo(() => {
+        let list = filter ? rows.filter((r) => r.matchStatus === filter) : rows;
+        if (dateFrom) list = list.filter((r) => r.transactionDate.slice(0, 10) >= dateFrom);
+        if (dateTo) list = list.filter((r) => r.transactionDate.slice(0, 10) <= dateTo);
+        if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            list = list.filter((r) => r.description.toLowerCase().includes(q));
+        }
+        return list;
+    }, [rows, filter, dateFrom, dateTo, search]);
+
+    const hasActiveFilters = !!(filter || dateFrom || dateTo || search.trim());
+    function clearFilters() {
+        setFilter(null);
+        setDateFrom("");
+        setDateTo("");
+        setSearch("");
+    }
 
     function confirm(txId: string, receiptId: string) {
         startTransition(async () => {
@@ -482,6 +502,47 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                     Rulează matching
                 </Button>
             </div>
+
+            <Card className="p-3 sm:p-4">
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">De la</label>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Până la</label>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                    </div>
+                    <div className="flex-1 min-w-[160px] space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Caută descriere</label>
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="ex. Tesco, Uber..."
+                            className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                    </div>
+                    {hasActiveFilters && (
+                        <button onClick={clearFilters} className="text-xs text-muted hover:text-red-400 pb-1.5 flex items-center gap-1">
+                            <X className="w-3.5 h-3.5" /> Șterge filtrele
+                        </button>
+                    )}
+                    <span className="text-xs text-faint pb-1.5 ml-auto">
+                        {filtered.length} din {rows.length} tranzacții
+                    </span>
+                </div>
+            </Card>
 
             {convertError && (
                 <Card className="p-4 border-red-400/30 bg-red-500/5">
