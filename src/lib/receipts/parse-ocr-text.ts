@@ -15,6 +15,7 @@ export interface ParsedReceiptFields {
     vatAmount?: number;
     currency?: string; // ISO code, e.g. GBP
     paymentMethod?: string;
+    fuelQuantityLitres?: number; // from a "<qty> LTR @ <price>" style line
 }
 
 const MONTHS: Record<string, number> = {
@@ -114,8 +115,15 @@ function extractAmount(line: string): number | undefined {
 }
 
 const TOTAL_KEYWORDS = /\b(grand total|total due|amount due|balance due|total)\b/i;
-const EXCLUDE_TOTAL_KEYWORDS = /\b(sub[\s-]?total|change|cash tendered|tender|vat|tax)\b/i;
+// Lines matching this are never trusted as "the total" -- covers VAT/subtotal
+// breakdown lines, and (importantly for fuel receipts) pre-authorization
+// hold amounts, which petrol pumps often print as a separate, usually
+// rounder and LARGER figure than what's actually charged.
+const EXCLUDE_AMOUNT_LINE = /\b(sub[\s-]?total|change|cash tendered|tender|vat|tax|pre[\s-]?auth|authoris|authoriz|pending|hold|balance\s*b\/?f|previous balance|reference|ref\s*no|account\s*no|card\s*no)\b/i;
 const VAT_KEYWORDS = /\b(vat|tax)\b/i;
+// "56.28 LTR @ £1.719" style line -- quantity x unit price is a reliable,
+// receipt-specific cross-check for the actual total on fuel receipts.
+const FUEL_QUANTITY_RE = /(\d+(?:[.,]\d+)?)\s*(?:LTR|LITRES?|L)\s*@\s*[£$€]?\s*(\d+(?:[.,]\d+)?)/i;
 const PAYMENT_KEYWORDS: { re: RegExp; label: string }[] = [
     { re: /\bcontactless\b/i, label: "Contactless" },
     { re: /\bvisa\b/i, label: "Card (Visa)" },
@@ -146,21 +154,58 @@ export function parseReceiptOcrText(text: string): ParsedReceiptFields {
     // breakdowns usually appear before the final total on a receipt).
     let bestTotal: number | undefined;
     for (const line of lines) {
-        if (TOTAL_KEYWORDS.test(line) && !EXCLUDE_TOTAL_KEYWORDS.test(line)) {
+        if (TOTAL_KEYWORDS.test(line) && !EXCLUDE_AMOUNT_LINE.test(line)) {
             const amt = extractAmount(line);
             if (amt !== undefined) bestTotal = amt;
         }
     }
     if (bestTotal === undefined) {
         // Fallback: the largest money-shaped figure on the receipt is
-        // usually the total (line items are smaller than their sum).
+        // usually the total (line items are smaller than their sum) --
+        // but skip excluded lines, otherwise a pre-auth hold or reference
+        // number easily beats the real (smaller) total.
         let max: number | undefined;
         for (const line of lines) {
+            if (EXCLUDE_AMOUNT_LINE.test(line)) continue;
             const amt = extractAmount(line);
             if (amt !== undefined && (max === undefined || amt > max)) max = amt;
         }
         bestTotal = max;
     }
+
+    // Fuel receipts: cross-check against quantity x price/unit, since this
+    // is far more reliable than "largest number on the page" when a pre-auth
+    // hold amount (e.g. a round £100) is also printed on the receipt. Also
+    // capture the litres themselves -- feeds the separate "link to vehicle"
+    // form section, which OCR doesn't otherwise touch.
+    const fuelMatch = text.match(FUEL_QUANTITY_RE);
+    if (fuelMatch) {
+        const qty = parseFloat(fuelMatch[1].replace(",", "."));
+        const pricePerUnit = parseFloat(fuelMatch[2].replace(",", "."));
+        if (Number.isFinite(qty)) {
+            result.fuelQuantityLitres = qty;
+        }
+        if (Number.isFinite(qty) && Number.isFinite(pricePerUnit)) {
+            const expected = qty * pricePerUnit;
+            let closest: number | undefined;
+            let closestDiff = Infinity;
+            for (const line of lines) {
+                if (EXCLUDE_AMOUNT_LINE.test(line)) continue;
+                const amt = extractAmount(line);
+                if (amt === undefined) continue;
+                const diff = Math.abs(amt - expected);
+                if (diff < closestDiff) {
+                    closestDiff = diff;
+                    closest = amt;
+                }
+            }
+            // Small tolerance for rounding on the printed price/litre.
+            if (closest !== undefined && closestDiff <= 1) {
+                bestTotal = closest;
+            }
+        }
+    }
+
     if (bestTotal !== undefined) result.amount = bestTotal;
 
     // VAT

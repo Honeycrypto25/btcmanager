@@ -145,6 +145,11 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                     currency: parsed.currency ?? prev.currency,
                     paymentMethod: parsed.paymentMethod ?? prev.paymentMethod,
                 }));
+                // Fuel quantity belongs to the separate "link to vehicle"
+                // section, not the main receipt form above.
+                if (parsed.fuelQuantityLitres !== undefined) {
+                    setFuelQuantityLitres(parsed.fuelQuantityLitres.toString());
+                }
             }
         });
     }
