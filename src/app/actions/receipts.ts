@@ -8,6 +8,7 @@ import { deleteReceiptObject, getReceiptObjectBuffer, buildReceiptPreviewKey, up
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
 import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType } from "@/lib/receipts/preview";
 import { matchReceiptAgainstTransactions } from "@/app/actions/bank";
+import { isVisionConfigured, runTextDetection } from "@/lib/ocr/google-vision";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -225,14 +226,45 @@ export async function deleteMerchantRule(id: string) {
     await db.merchantRule.delete({ where: { id } });
 }
 
-// --- OCR / AI (stubs — architecture ready, not wired to a live provider yet) ---
-// Tracked in /tasks under "Arhitectură OCR (Google Cloud Vision)" and
-// "Buton opțional Analyze with AI" — both stay PLANNED until a provider is
-// configured. These stubs let the UI show the buttons now without breaking.
+// --- OCR (live via Google Cloud Vision, once GOOGLE_VISION_CLIENT_EMAIL /
+// GOOGLE_VISION_PRIVATE_KEY are configured — see lib/ocr/google-vision.ts)
+// / AI (still architecture-only — see runAnalyzeReceiptWithAI stub below) ---
 
-export async function runOcrOnReceipt(_id: string): Promise<{ ok: false; message: string }> {
-    await requireUserId();
-    return { ok: false, message: "OCR nu este configurat încă. Adaugă datele manual — vezi pagina Tasks pentru status." };
+export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; message: string; text?: string }> {
+    const userId = await requireUserId();
+    const receipt = await db.receipt.findUnique({ where: { id } });
+    if (!receipt || receipt.userId !== userId) throw new Error("Not found");
+
+    if (!isVisionConfigured()) {
+        return { ok: false, message: "OCR nu este configurat încă. Adaugă datele manual — vezi pagina Tasks pentru status." };
+    }
+
+    if (receipt.originalMimeType === "application/pdf") {
+        return { ok: false, message: "OCR nu este disponibil pentru fișiere PDF momentan — funcționează doar pe imagini." };
+    }
+
+    // Vision doesn't accept HEIC directly — use the already-generated
+    // JPEG/WebP preview instead, if one exists.
+    const objectKey = isHeicMimeType(receipt.originalMimeType) ? receipt.previewObjectKey : receipt.originalObjectKey;
+    if (!objectKey) {
+        return { ok: false, message: "Nu există o imagine compatibilă pentru OCR — generează mai întâi un preview." };
+    }
+
+    const buffer = await getReceiptObjectBuffer(objectKey);
+    const text = await runTextDetection(buffer);
+
+    if (!text) {
+        return { ok: false, message: "OCR nu a găsit text în imagine (sau cererea către Google a eșuat) — adaugă datele manual." };
+    }
+
+    await db.receipt.update({ where: { id }, data: { ocrRawText: text } });
+    revalidatePath(`/self-employed/receipts/${id}`);
+
+    return {
+        ok: true,
+        message: `OCR completat — ${text.length} caractere extrase. Citește textul de mai jos și completează câmpurile din formular.`,
+        text,
+    };
 }
 
 export async function analyzeReceiptWithAI(_id: string): Promise<{ ok: false; message: string }> {

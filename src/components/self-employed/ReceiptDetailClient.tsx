@@ -65,6 +65,7 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
     const [isFullTank, setIsFullTank] = useState(!!receipt.isFullTank);
     const [vehicleLinkSaved, setVehicleLinkSaved] = useState(false);
     const [vehicleLinkError, setVehicleLinkError] = useState<string | null>(null);
+    const [ocrText, setOcrText] = useState(receipt.ocrRawText);
 
     useEffect(() => {
         fetch(`/api/self-employed/receipts/${receipt.id}/file`)
@@ -131,6 +132,7 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
         startTransition(async () => {
             const result = await runOcrOnReceipt(receipt.id);
             setAssistMessage(result.message);
+            if (result.text) setOcrText(result.text);
         });
     }
 
@@ -217,6 +219,13 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                         </Button>
                     </div>
                     {assistMessage && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2">{assistMessage}</p>}
+
+                    {ocrText && (
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted">Text extras (OCR) — citește și completează manual câmpurile de mai jos:</p>
+                            <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-foreground bg-black/20 border border-border rounded-lg p-3">{ocrText}</pre>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1">
