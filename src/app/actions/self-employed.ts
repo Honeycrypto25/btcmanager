@@ -211,10 +211,29 @@ export async function deleteExpense(id: string) {
 
 export async function listExpenses(taxYear?: string) {
     const userId = await requireUserId();
-    return db.selfEmployedExpense.findMany({
+    const expenses = await db.selfEmployedExpense.findMany({
         where: { userId, ...(taxYear ? { taxYear } : {}) },
         orderBy: { date: "desc" },
     });
+
+    // Same soft-join pattern as listIncome() above -- resolves the bank
+    // account name for expenses created via convertTransactionToExpense.
+    const txIds = Array.from(new Set(expenses.map((e: any) => e.bankTransactionId).filter(Boolean))) as string[];
+    const accountNameByTxId = new Map<string, string>();
+    if (txIds.length > 0) {
+        const txs = await db.bankTransaction.findMany({
+            where: { id: { in: txIds } },
+            include: { account: true },
+        });
+        for (const tx of txs as any[]) {
+            if (tx.account) accountNameByTxId.set(tx.id, tx.account.name);
+        }
+    }
+
+    return expenses.map((e: any) => ({
+        ...e,
+        accountName: e.bankTransactionId ? accountNameByTxId.get(e.bankTransactionId) ?? null : null,
+    }));
 }
 
 // --- Overview / reports aggregation ---
