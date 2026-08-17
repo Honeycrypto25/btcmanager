@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
-import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase } from "lucide-react";
+import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase, Landmark } from "lucide-react";
 import Link from 'next/link';
 import {
     ComposedChart,
@@ -67,6 +67,26 @@ export interface SelfEmployedSnapshot {
     profit: number;
 }
 
+// Vanguard — also additive/isolated (see app/page.tsx), but unlike
+// SelfEmployedSnapshot it IS combined into the header totals below, since
+// invested/current value are directly comparable to BTC/T212 (same
+// invested-vs-current-value shape, just converted from GBP to the same USD
+// base). accounts[] is shown as its own list because there will be several
+// (own, spouse's, children's, ...), not just one aggregate figure.
+export interface VanguardAccountSummary {
+    id: string;
+    name: string;
+    accountType: string | null;
+    invested: number;
+    value: number;
+    pnl: number;
+    pnlPercent: number;
+}
+
+export interface VanguardOverviewSnapshot extends AssetFigures {
+    accounts: VanguardAccountSummary[];
+}
+
 type Currency = 'USD' | 'GBP';
 
 function scaleFigures(f: AssetFigures, factor: number): AssetFigures {
@@ -86,30 +106,48 @@ export function OverviewClient({
     data,
     usdToGbp,
     selfEmployed,
+    vanguard,
 }: {
     data: OverviewData;
     usdToGbp: number;
     selfEmployed?: SelfEmployedSnapshot | null;
+    vanguard?: VanguardOverviewSnapshot | null;
 }) {
     const [currency, setCurrency] = useState<Currency>('USD');
     const factor = currency === 'USD' ? 1 : usdToGbp;
     const symbol = currency === 'USD' ? '$' : '\u00a3';
 
     const view = useMemo(() => {
+        const btcT212Totals = scaleFigures(
+            { invested: data.totalInvested, value: data.totalValue, pnl: data.totalPnl, pnlPercent: data.pnlPercent },
+            factor
+        );
+        const scaledVanguard = vanguard ? scaleFigures(vanguard, factor) : null;
+
+        // Vanguard is combined into the header totals (unlike Self Employed,
+        // which is a different kind of figure — profit YTD, not an
+        // invested-vs-current-value asset). Recompute pnlPercent from the
+        // combined invested/pnl rather than averaging the two percentages.
+        const combinedInvested = btcT212Totals.invested + (scaledVanguard?.invested ?? 0);
+        const combinedValue = btcT212Totals.value + (scaledVanguard?.value ?? 0);
+        const combinedPnl = btcT212Totals.pnl + (scaledVanguard?.pnl ?? 0);
+        const combinedPnlPercent = combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0;
+
         return {
-            totals: scaleFigures(
-                { invested: data.totalInvested, value: data.totalValue, pnl: data.totalPnl, pnlPercent: data.pnlPercent },
-                factor
-            ),
+            totals: { invested: combinedInvested, value: combinedValue, pnl: combinedPnl, pnlPercent: combinedPnlPercent },
             btc: { ...scaleFigures(data.btc, factor), amount: data.btc.amount },
             t212: { ...scaleFigures(data.t212, factor), connected: data.t212.connected, hasSnapshot: data.t212.hasSnapshot },
+            vanguard: vanguard && scaledVanguard ? {
+                ...scaledVanguard,
+                accounts: vanguard.accounts.map((a) => ({ ...a, ...scaleFigures(a, factor) })),
+            } : null,
             weeklyRows: data.weeklyRows.map((r) => scaleRow(r, factor)),
             yearlyRows: data.yearlyRows.map((r) => scaleRow(r, factor)),
             monthlyRows: data.monthlyRows.map((r) => scaleRow(r, factor)),
             btcStats: { ...data.btcStats, avgMonthlyInvested: data.btcStats.avgMonthlyInvested * factor },
             t212Stats: { ...data.t212Stats, avgMonthlyInvested: data.t212Stats.avgMonthlyInvested * factor },
         };
-    }, [data, factor]);
+    }, [data, factor, vanguard]);
 
     const fmt = (n: number) => `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 0 : 2 })}`;
     const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
@@ -222,6 +260,52 @@ export function OverviewClient({
                     </Card>
                 </Link>
             </div>
+
+            {/* Vanguard snapshot — combined into the header totals above (see
+                the `view` memo); shown as its own card, listing each account
+                individually, since there will be several (own, spouse's,
+                children's, ...) rather than just one aggregate figure. */}
+            {view.vanguard && view.vanguard.accounts.length > 0 && (
+                <Link href="/vanguard" className="block">
+                    <Card hover className="group cursor-pointer">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 min-w-0">
+                                <div className="w-11 h-11 rounded-lg bg-white/[0.04] border border-border flex items-center justify-center text-muted shrink-0">
+                                    <Landmark className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium text-foreground">Vanguard</p>
+                                    <p className="text-xs text-faint font-num">
+                                        {view.vanguard.accounts.length} {view.vanguard.accounts.length === 1 ? 'cont' : 'conturi'} &middot; {fmt(view.vanguard.invested)} invested
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="text-right shrink-0 flex items-center gap-2">
+                                <div>
+                                    <p className="text-sm font-medium font-num text-foreground">{fmt(view.vanguard.value)}</p>
+                                    <p className={cn("text-xs font-num", pnlColor(view.vanguard.pnl))}>
+                                        {view.vanguard.pnl >= 0 ? '+' : ''}{fmt(view.vanguard.pnl)}
+                                    </p>
+                                </div>
+                                <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                            </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-border/60 space-y-2">
+                            {view.vanguard.accounts.map((a) => (
+                                <div key={a.id} className="flex items-center justify-between text-xs gap-3">
+                                    <span className="text-muted truncate">{a.name}{a.accountType ? ` \u00b7 ${a.accountType}` : ''}</span>
+                                    <span className="flex items-center gap-2 shrink-0 font-num">
+                                        <span className="text-foreground">{fmt(a.value)}</span>
+                                        <span className={pnlColor(a.pnl)}>
+                                            {a.pnl >= 0 ? '+' : ''}{a.pnlPercent.toFixed(1)}%
+                                        </span>
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </Link>
+            )}
 
             {/* Self Employed snapshot (income/expenses YTD) — additive, separate
                 from the BTC/T212 figures above; never combined into totals. */}

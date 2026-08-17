@@ -193,6 +193,32 @@ export async function getVanguardAccountValueHistory() {
     return series;
 }
 
+/** Per-account invested/value/pnl summary (native GBP figures) — used by
+ * the Overview page's Vanguard card, which lists each account separately
+ * since there will be several (own, spouse's, children's, ...). */
+export async function getVanguardAccountSummaries() {
+    const userId = await requireUserId();
+    const accounts = await db.vanguardAccount.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+        include: { holdings: true },
+    });
+    return accounts.map((a: any) => {
+        const invested = a.holdings.reduce((s: number, h: any) => s + Number(h.costBasis), 0);
+        const value = a.holdings.reduce((s: number, h: any) => s + Number(h.currentValue), 0);
+        const pnl = value - invested;
+        return {
+            id: a.id as string,
+            name: a.name as string,
+            accountType: a.accountType as string | null,
+            invested,
+            value,
+            pnl,
+            pnlPercent: invested > 0 ? (pnl / invested) * 100 : 0,
+        };
+    });
+}
+
 /** Total invested/value across all Vanguard holdings for this user — used
  * by both /vanguard and the unified /investments overview. */
 export async function getVanguardTotals() {
