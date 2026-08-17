@@ -83,10 +83,31 @@ export async function deleteIncome(id: string) {
 
 export async function listIncome(taxYear?: string) {
     const userId = await requireUserId();
-    return db.selfEmployedIncome.findMany({
+    const incomes = await db.selfEmployedIncome.findMany({
         where: { userId, ...(taxYear ? { taxYear } : {}) },
         orderBy: { date: "desc" },
     });
+
+    // Income rows created via convertTransactionToIncome (actions/bank.ts)
+    // carry a soft bankTransactionId reference -- resolve it to an account
+    // name here so the UI can show which bank account each income entry
+    // actually came from, without a hard FK join at the schema level.
+    const txIds = Array.from(new Set(incomes.map((i: any) => i.bankTransactionId).filter(Boolean))) as string[];
+    const accountNameByTxId = new Map<string, string>();
+    if (txIds.length > 0) {
+        const txs = await db.bankTransaction.findMany({
+            where: { id: { in: txIds } },
+            include: { account: true },
+        });
+        for (const tx of txs as any[]) {
+            if (tx.account) accountNameByTxId.set(tx.id, tx.account.name);
+        }
+    }
+
+    return incomes.map((i: any) => ({
+        ...i,
+        accountName: i.bankTransactionId ? accountNameByTxId.get(i.bankTransactionId) ?? null : null,
+    }));
 }
 
 // --- Expenses ---

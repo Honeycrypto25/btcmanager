@@ -294,6 +294,7 @@ export async function convertTransactionToIncome(transactionId: string, input?: 
             amount: tx.amount,
             paymentMethod: "Transfer bancar",
             taxYear: tx.taxYear,
+            bankTransactionId: tx.id,
         },
     });
 

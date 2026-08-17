@@ -211,6 +211,12 @@ model SelfEmployedIncome {
   taxYear       String   // UK tax year, e.g. "2026-27"
   notes         String?  @db.Text
 
+  // Set when this income row was created via convertTransactionToIncome
+  // (see actions/bank.ts) -- not a hard FK, mirrors
+  // SelfEmployedExpense.bankTransactionId. Lets the UI show which bank
+  // account an income entry actually came from.
+  bankTransactionId String?
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
