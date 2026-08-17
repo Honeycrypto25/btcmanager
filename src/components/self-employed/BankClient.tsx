@@ -66,6 +66,14 @@ function formatMoney(amount: number, currency = "GBP"): string {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
 }
 
+/** yyyy-mm-dd string for "n days ago", used to default the Tranzacții list
+ * to the last 30 days instead of loading every imported transaction. */
+function daysAgoISO(n: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+}
+
 function matchBadge(status: string) {
     const styles: Record<string, string> = {
         matched: "bg-green-500/10 text-green-300 border-green-400/30",
@@ -376,10 +384,12 @@ function ColumnSelect({ label, value, onChange, headers, allowEmpty }: { label: 
 function TransactionsTab({ transactions, accounts, matchableReceipts }: { transactions: TransactionRow[]; accounts: Account[]; matchableReceipts: MatchableReceipt[] }) {
     const [rows, setRows] = useState(transactions);
     const [filter, setFilter] = useState<string | null>(null);
-    const [dateFrom, setDateFrom] = useState("");
+    const [dateFrom, setDateFrom] = useState(() => daysAgoISO(30));
     const [dateTo, setDateTo] = useState("");
     const [search, setSearch] = useState("");
     const [accountFilter, setAccountFilter] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 25;
     const [receiptInfo, setReceiptInfo] = useState<Record<string, { merchant: string | null; amount: number | null; receiptDate: string | null }>>({});
     const [isPending, startTransition] = useTransition();
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
@@ -430,6 +440,14 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
         setAccountFilter("");
         setSearch("");
     }
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filter, dateFrom, dateTo, accountFilter, search]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+    const pageStartIndex = (currentPage - 1) * itemsPerPage;
+    const paginated = useMemo(() => filtered.slice(pageStartIndex, pageStartIndex + itemsPerPage), [filtered, pageStartIndex]);
 
     const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
     const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
@@ -724,7 +742,7 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                                     </td>
                                 </tr>
                             ) : (
-                                filtered.map((tx) => (
+                                paginated.map((tx) => (
                                     <React.Fragment key={tx.id}>
                                         <tr className="hover:bg-white/[0.01] transition-colors">
                                             <td className="px-4 py-4">
@@ -892,6 +910,39 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                         </tbody>
                     </table>
                 </div>
+
+                {filtered.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-border">
+                        <p className="text-xs text-muted">
+                            Afișare <span className="text-foreground font-medium">{pageStartIndex + 1}</span>&ndash;
+                            <span className="text-foreground font-medium">{Math.min(pageStartIndex + itemsPerPage, filtered.length)}</span> din{" "}
+                            <span className="text-foreground font-medium">{filtered.length}</span> tranzacții
+                        </p>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    Anterior
+                                </Button>
+                                <span className="text-xs text-muted px-2">
+                                    Pagina {currentPage} din {totalPages}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Următor
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </Card>
         </div>
     );
