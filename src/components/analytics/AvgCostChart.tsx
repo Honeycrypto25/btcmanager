@@ -31,6 +31,14 @@ interface MarketPricePoint {
     marketPrice: number;
 }
 
+interface ChartRow {
+    date: number;
+    avgPrice?: number;
+    buyPrice?: number;
+    amount?: number;
+    marketPrice?: number;
+}
+
 function formatCurrency(val: number): string {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 }
@@ -60,42 +68,34 @@ function daysForRange(range: Range, earliestTxTime: number | null): number {
     return daysSinceFirstBuy + 14;
 }
 
-interface TooltipPayloadItem {
-    dataKey?: string;
-    payload: { date: number; avgPrice?: number; buyPrice?: number; amount?: number; marketPrice?: number };
-}
-
 /** Defined at module scope (not inside AvgCostChart) so it isn't recreated
- * on every render. Reads each series by dataKey rather than assuming a
- * fixed payload order, since avgPrice/buyPrice and marketPrice come from
- * two independently-sampled data arrays overlaid on the same chart. */
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: number }) {
+ * on every render. Reads a single merged row — see the `merged` memo below
+ * for why the chart uses one shared array instead of one per series. */
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartRow }[] }) {
     if (!active || !payload || !payload.length) return null;
-    const avgEntry = payload.find((p) => p.dataKey === 'avgPrice')?.payload;
-    const marketEntry = payload.find((p) => p.dataKey === 'marketPrice')?.payload;
-    if (!avgEntry && !marketEntry) return null;
+    const row = payload[0].payload;
 
     return (
         <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-1 min-w-[170px]">
-            <p className="text-faint text-xs mb-1">{format(new Date(label ?? avgEntry?.date ?? marketEntry?.date ?? 0), 'MMM dd, yyyy')}</p>
-            {avgEntry && avgEntry.avgPrice !== undefined && (
+            <p className="text-faint text-xs mb-1">{format(new Date(row.date), 'MMM dd, yyyy')}</p>
+            {row.avgPrice !== undefined && (
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-xs text-faint">Avg cost</span>
-                    <span className="text-xs font-num font-medium text-accent">{formatCurrency(avgEntry.avgPrice)}</span>
+                    <span className="text-xs font-num font-medium text-accent">{formatCurrency(row.avgPrice)}</span>
                 </div>
             )}
-            {avgEntry && avgEntry.buyPrice !== undefined && avgEntry.amount !== undefined && (
+            {row.buyPrice !== undefined && row.amount !== undefined && (
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-xs text-faint">This buy</span>
                     <span className="text-xs font-num text-foreground">
-                        {avgEntry.amount.toFixed(6)} BTC @ {formatCurrency(avgEntry.buyPrice)}
+                        {row.amount.toFixed(6)} BTC @ {formatCurrency(row.buyPrice)}
                     </span>
                 </div>
             )}
-            {marketEntry && marketEntry.marketPrice !== undefined && (
+            {row.marketPrice !== undefined && (
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-xs text-faint">Live price</span>
-                    <span className="text-xs font-num font-medium text-[#7c93b8]">{formatCurrency(marketEntry.marketPrice)}</span>
+                    <span className="text-xs font-num font-medium text-[#7c93b8]">{formatCurrency(row.marketPrice)}</span>
                 </div>
             )}
         </div>
@@ -153,10 +153,7 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
     const earliestTxTime = allPoints.length > 0 ? allPoints[0].date : null;
 
     // Live BTC price for the same window, straight from CoinGecko (same
-    // endpoint/shape PriceChart already uses) — a separate data array from
-    // `points`, overlaid on the same axes rather than merged into one
-    // dataset, since the two are sampled completely differently (daily
-    // candles vs. one point per purchase).
+    // endpoint/shape PriceChart already uses).
     useEffect(() => {
         let cancelled = false;
         async function run() {
@@ -192,40 +189,57 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
         return marketPrice.filter((p) => p.date >= start);
     }, [marketPrice, range]);
 
-    // XAxis domain covers BOTH series — market price (dense, daily) and
-    // avg-cost points (sparse, one per purchase) rarely share the exact
-    // same date range, so relying on ComposedChart's own `data` prop alone
-    // (points) would silently clip the live-price line at the edges.
-    const xDomain = useMemo((): [number, number] | ['dataMin', 'dataMax'] => {
-        const dates = [...points.map((p) => p.date), ...filteredMarketPrice.map((p) => p.date)];
-        if (dates.length === 0) return ['dataMin', 'dataMax'];
-        return [Math.min(...dates), Math.max(...dates)];
-    }, [points, filteredMarketPrice]);
+    // Recharts can only reliably sync a single hovered index (crosshair +
+    // tooltip) across series that all read from ONE shared data array.
+    // Feeding avg-cost/buy-price (sparse, one row per purchase) and market
+    // price (dense, one row per day) as two differently-sized arrays — the
+    // first version of this chart — made the hover state land on the wrong
+    // row for whichever series wasn't the chart's top-level `data`, which
+    // is what produced a tooltip/highlight mismatch. Merging every date
+    // from both sources into one sorted timeline, and forward-filling
+    // avgPrice onto every row (from the FULL unwindowed purchase history,
+    // same reasoning as `points` above), fixes both that and the earlier
+    // axis-scaling issue in one pass — a single array is also enough for
+    // Recharts' own 'auto' domain detection to work correctly again.
+    const merged = useMemo((): ChartRow[] => {
+        const avgAt = (target: number): number | undefined => {
+            const upToHere = allPoints.filter((p) => p.date <= target);
+            if (upToHere.length === 0) return undefined;
+            return upToHere[upToHere.length - 1].avgPrice;
+        };
 
-    // YAxis domain, likewise computed explicitly across all three series.
-    // Recharts' 'auto'/'auto' domain only reliably picks up the market-price
-    // line (the one with its own `data` prop) once a second differently-
-    // scaled series is layered on top of it — the avg-cost line ends up
-    // scaled against a domain that doesn't include its own values and gets
-    // rendered off-canvas (this is what "the legend stopped matching the
-    // chart" turned out to be: the avg-cost line and buy-price dots for the
-    // narrower Week/Month/Year windows were being drawn far above the
-    // visible area). Computing min/max ourselves across every series
-    // avoids relying on that auto-detection entirely.
+        const purchaseByDate = new Map(points.map((p) => [p.date, p]));
+        const marketByDate = new Map(filteredMarketPrice.map((p) => [p.date, p.marketPrice]));
+        const allDates = Array.from(new Set([...purchaseByDate.keys(), ...marketByDate.keys()])).sort((a, b) => a - b);
+
+        return allDates.map((date) => {
+            const purchase = purchaseByDate.get(date);
+            return {
+                date,
+                avgPrice: avgAt(date),
+                buyPrice: purchase?.buyPrice,
+                amount: purchase?.amount,
+                marketPrice: marketByDate.get(date),
+            };
+        });
+    }, [allPoints, points, filteredMarketPrice]);
+
+    // Explicit min/max across the merged rows — cheap, and guarantees every
+    // series is fully visible regardless of how Recharts' own 'auto'
+    // detection behaves for a given data shape.
     const yDomain = useMemo((): [number, number] | ['auto', 'auto'] => {
         const vals: number[] = [];
-        for (const p of points) {
-            vals.push(p.avgPrice, p.buyPrice);
-        }
-        for (const p of filteredMarketPrice) {
-            vals.push(p.marketPrice);
+        for (const row of merged) {
+            if (row.avgPrice !== undefined) vals.push(row.avgPrice);
+            if (row.buyPrice !== undefined) vals.push(row.buyPrice);
+            if (row.marketPrice !== undefined) vals.push(row.marketPrice);
         }
         if (vals.length === 0) return ['auto', 'auto'];
         const min = Math.min(...vals);
         const max = Math.max(...vals);
         const padding = (max - min) * 0.08 || max * 0.05 || 1000;
         return [Math.max(0, min - padding), max + padding];
-    }, [points, filteredMarketPrice]);
+    }, [merged]);
 
     // Always the true current average (full history), regardless of the
     // selected display window, so "Week" with no recent buys doesn't blank
@@ -289,7 +303,7 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
                             </div>
                         )}
                         <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={points}>
+                            <ComposedChart data={merged}>
                                 <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
                                 <XAxis
                                     dataKey="date"
@@ -298,7 +312,7 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
                                     tick={{ fontSize: 10, fill: '#565550' }}
                                     minTickGap={30}
                                     type="number"
-                                    domain={xDomain}
+                                    domain={['dataMin', 'dataMax']}
                                     scale="time"
                                     tickLine={false}
                                 />
@@ -314,16 +328,24 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
                                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.12)' }} />
                                 {filteredMarketPrice.length > 0 && (
                                     <Line
-                                        data={filteredMarketPrice}
                                         type="monotone"
                                         dataKey="marketPrice"
                                         stroke="#7c93b8"
                                         strokeWidth={1.5}
                                         dot={false}
+                                        connectNulls
                                         isAnimationActive={false}
                                     />
                                 )}
-                                <Line type="stepAfter" dataKey="avgPrice" stroke="#52c98a" strokeWidth={2} dot={false} isAnimationActive={false} />
+                                <Line
+                                    type="stepAfter"
+                                    dataKey="avgPrice"
+                                    stroke="#52c98a"
+                                    strokeWidth={2}
+                                    dot={false}
+                                    connectNulls
+                                    isAnimationActive={false}
+                                />
                                 <Scatter dataKey="buyPrice" fill="#d6a24c" />
                             </ComposedChart>
                         </ResponsiveContainer>
