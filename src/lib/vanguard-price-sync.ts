@@ -43,16 +43,18 @@ export async function syncVanguardPrices(): Promise<
                 data: { currentValue, valueUpdatedAt: now },
             });
 
-            // Record one history point per calendar day per holding -- skip
-            // if we already captured one today (e.g. a manual sync click
-            // right after the daily cron already ran), so the price chart
-            // doesn't fill up with multiple same-day points.
+            // Record a new history point unless the price is literally
+            // unchanged from the last recorded one (e.g. a manual sync
+            // clicked twice in a row with no real market movement in
+            // between) -- that way a real price move is always visible
+            // right away, instead of waiting for the next calendar day,
+            // while a no-op re-sync doesn't just pile up flat duplicates.
             const lastPoint = await db.vanguardPriceHistory.findFirst({
                 where: { holdingId: h.id },
                 orderBy: { capturedAt: "desc" },
             });
-            const alreadyCapturedToday = lastPoint && lastPoint.capturedAt.toDateString() === now.toDateString();
-            if (!alreadyCapturedToday) {
+            const unchanged = lastPoint && Number(lastPoint.price) === quote.price;
+            if (!unchanged) {
                 await db.vanguardPriceHistory.create({
                     data: { holdingId: h.id, price: quote.price, currency: quote.currency, capturedAt: now },
                 });
