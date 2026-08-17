@@ -2,8 +2,9 @@
 
 import React, { useState, useTransition } from "react";
 import { format } from "date-fns";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, X, Trash2, Pencil, Landmark, Check } from "lucide-react";
+import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2 } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import {
     createVanguardAccount,
@@ -11,9 +12,19 @@ import {
     createVanguardHolding,
     updateVanguardHoldingValue,
     deleteVanguardHolding,
+    getVanguardPriceHistory,
     type VanguardAccountInput,
     type VanguardHoldingInput,
 } from "@/app/actions/vanguard";
+
+const tooltipStyle = { background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 };
+const chartAxisProps = { stroke: "#8c8a80", fontSize: 12 };
+
+interface PricePoint {
+    capturedAt: string;
+    price: number;
+    currency: string;
+}
 
 interface HoldingRow {
     id: string;
@@ -157,6 +168,23 @@ function AccountCard({ account, onRemoveAccount, setAccounts }: { account: Accou
     const [editValue, setEditValue] = useState("");
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
+    const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+    const [priceHistory, setPriceHistory] = useState<Record<string, PricePoint[]>>({});
+    const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
+
+    function toggleHistory(holdingId: string) {
+        if (expandedHistoryId === holdingId) {
+            setExpandedHistoryId(null);
+            return;
+        }
+        setExpandedHistoryId(holdingId);
+        if (!priceHistory[holdingId]) {
+            setHistoryLoading((prev) => ({ ...prev, [holdingId]: true }));
+            getVanguardPriceHistory(holdingId)
+                .then((points) => setPriceHistory((prev) => ({ ...prev, [holdingId]: points })))
+                .finally(() => setHistoryLoading((prev) => ({ ...prev, [holdingId]: false })));
+        }
+    }
 
     function submitHolding() {
         if (!form.fundName.trim() || !form.costBasis || !form.currentValue) {
@@ -269,40 +297,75 @@ function AccountCard({ account, onRemoveAccount, setAccounts }: { account: Accou
                             account.holdings.map((h) => {
                                 const pnl = h.currentValue - h.costBasis;
                                 const pnlPercent = h.costBasis > 0 ? (pnl / h.costBasis) * 100 : 0;
+                                const isExpanded = expandedHistoryId === h.id;
                                 return (
-                                    <tr key={h.id} className="hover:bg-white/[0.01] transition-colors group">
-                                        <td className="px-6 py-4 text-sm text-foreground">
-                                            {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-muted">{formatMoney(h.costBasis, account.currency)}</td>
-                                        <td className="px-6 py-4 text-sm">
-                                            {editingValueId === h.id ? (
-                                                <div className="flex items-center gap-1">
-                                                    <input type="number" step="0.01" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="w-24 bg-white/[0.06] border border-border rounded-lg px-2 py-1 text-sm text-foreground" autoFocus />
-                                                    <button onClick={() => saveValueUpdate(h.id)} className="p-1 rounded text-green-400 hover:bg-green-500/10"><Check className="w-3.5 h-3.5" /></button>
-                                                    <button onClick={() => setEditingValueId(null)} className="p-1 rounded text-muted hover:bg-white/5"><X className="w-3.5 h-3.5" /></button>
+                                    <React.Fragment key={h.id}>
+                                        <tr className="hover:bg-white/[0.01] transition-colors group">
+                                            <td className="px-6 py-4 text-sm text-foreground">
+                                                {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-muted">{formatMoney(h.costBasis, account.currency)}</td>
+                                            <td className="px-6 py-4 text-sm">
+                                                {editingValueId === h.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <input type="number" step="0.01" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="w-24 bg-white/[0.06] border border-border rounded-lg px-2 py-1 text-sm text-foreground" autoFocus />
+                                                        <button onClick={() => saveValueUpdate(h.id)} className="p-1 rounded text-green-400 hover:bg-green-500/10"><Check className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => setEditingValueId(null)} className="p-1 rounded text-muted hover:bg-white/5"><X className="w-3.5 h-3.5" /></button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-medium text-foreground">{formatMoney(h.currentValue, account.currency)}</span>
+                                                        <span className={cn("text-xs", pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                                            ({pnl >= 0 ? "+" : ""}{pnlPercent.toFixed(1)}%)
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-xs text-muted">{format(new Date(h.valueUpdatedAt), "dd MMM yyyy")}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {h.ticker && (
+                                                        <button onClick={() => toggleHistory(h.id)} title="Istoric preț" className={cn("p-1.5 rounded-lg hover:bg-white/5", isExpanded ? "text-primary" : "text-muted hover:text-primary")}>
+                                                            <TrendingUp className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => { setEditingValueId(h.id); setEditValue(String(h.currentValue)); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button onClick={() => removeHolding(h.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-medium text-foreground">{formatMoney(h.currentValue, account.currency)}</span>
-                                                    <span className={cn("text-xs", pnl >= 0 ? "text-green-400" : "text-red-400")}>
-                                                        ({pnl >= 0 ? "+" : ""}{pnlPercent.toFixed(1)}%)
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-xs text-muted">{format(new Date(h.valueUpdatedAt), "dd MMM yyyy")}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => { setEditingValueId(h.id); setEditValue(String(h.currentValue)); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
-                                                    <Pencil className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button onClick={() => removeHolding(h.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                            </td>
+                                        </tr>
+                                        {isExpanded && (
+                                            <tr className="bg-white/[0.02]">
+                                                <td colSpan={5} className="px-6 py-4">
+                                                    {historyLoading[h.id] ? (
+                                                        <div className="flex items-center gap-2 text-xs text-muted py-6 justify-center">
+                                                            <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă istoricul...
+                                                        </div>
+                                                    ) : (priceHistory[h.id]?.length ?? 0) < 2 ? (
+                                                        <p className="text-xs text-faint italic text-center py-6">
+                                                            Nu există încă suficiente puncte de preț — istoricul se completează la fiecare sincronizare (zilnic, sau manual din &bdquo;Sincronizează prețuri&rdquo;).
+                                                        </p>
+                                                    ) : (
+                                                        <div className="h-[160px]">
+                                                            <ResponsiveContainer width="100%" height="100%">
+                                                                <LineChart data={priceHistory[h.id]!.map((p) => ({ ...p, label: format(new Date(p.capturedAt), "dd MMM") }))}>
+                                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                                                    <XAxis dataKey="label" {...chartAxisProps} />
+                                                                    <YAxis {...chartAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `£${v}`} width={64} />
+                                                                    <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(2)}`} />
+                                                                    <Line type="monotone" dataKey="price" stroke="#52c98a" strokeWidth={2} dot={false} />
+                                                                </LineChart>
+                                                            </ResponsiveContainer>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 );
                             })
                         )}

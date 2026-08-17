@@ -36,11 +36,28 @@ export async function syncVanguardPrices(): Promise<
                 continue;
             }
 
+            const now = new Date();
             const currentValue = quote.price * Number(h.units);
             await db.vanguardHolding.update({
                 where: { id: h.id },
-                data: { currentValue, valueUpdatedAt: new Date() },
+                data: { currentValue, valueUpdatedAt: now },
             });
+
+            // Record one history point per calendar day per holding -- skip
+            // if we already captured one today (e.g. a manual sync click
+            // right after the daily cron already ran), so the price chart
+            // doesn't fill up with multiple same-day points.
+            const lastPoint = await db.vanguardPriceHistory.findFirst({
+                where: { holdingId: h.id },
+                orderBy: { capturedAt: "desc" },
+            });
+            const alreadyCapturedToday = lastPoint && lastPoint.capturedAt.toDateString() === now.toDateString();
+            if (!alreadyCapturedToday) {
+                await db.vanguardPriceHistory.create({
+                    data: { holdingId: h.id, price: quote.price, currency: quote.currency, capturedAt: now },
+                });
+            }
+
             updated++;
 
             // Be polite to the free/unofficial endpoints — small delay between lookups.

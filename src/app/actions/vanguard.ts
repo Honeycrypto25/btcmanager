@@ -108,6 +108,26 @@ export async function deleteVanguardHolding(id: string) {
     revalidatePath("/investments");
 }
 
+/** Price-evolution points for a holding's expandable chart -- only ever
+ * populated for holdings that have a ticker/ISIN + units (see
+ * lib/vanguard-price-sync.ts), so this can come back empty for a purely
+ * manual holding. */
+export async function getVanguardPriceHistory(holdingId: string) {
+    const userId = await requireUserId();
+    const holding = await db.vanguardHolding.findUnique({ where: { id: holdingId } });
+    if (!holding || holding.userId !== userId) throw new Error("Not found");
+
+    const history = await db.vanguardPriceHistory.findMany({
+        where: { holdingId },
+        orderBy: { capturedAt: "asc" },
+    });
+    return history.map((p: any) => ({
+        capturedAt: p.capturedAt.toISOString(),
+        price: Number(p.price),
+        currency: p.currency,
+    }));
+}
+
 /** Total invested/value across all Vanguard holdings for this user — used
  * by both /vanguard and the unified /investments overview. */
 export async function getVanguardTotals() {

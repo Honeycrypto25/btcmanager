@@ -653,7 +653,9 @@ model VanguardHolding {
   ticker   String?
   units    Decimal? @db.Decimal(14, 4)
 
-  // Manually entered/updated — no live pricing feed for Vanguard funds.
+  // Manually entered/updated by default — auto-refreshed instead for
+  // holdings with both ticker/ISIN and units set (see
+  // lib/vanguard-price-sync.ts).
   costBasis      Decimal  @db.Decimal(12, 2) // total invested in this holding
   currentValue   Decimal  @db.Decimal(12, 2)
   valueUpdatedAt DateTime @default(now())
@@ -663,7 +665,27 @@ model VanguardHolding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  priceHistory VanguardPriceHistory[]
+
   @@index([userId, accountId])
+}
+
+// One row per successful auto price lookup (see syncVanguardPrices) —
+// deduped to ~one per calendar day per holding, so a user can see how a
+// holding's unit price evolved since they set up ticker/ISIN + units,
+// not just the latest value. Cascade-deletes with the holding since this
+// history has no meaning independent of it (unlike the app's soft-join
+// references elsewhere, which deliberately avoid cascading).
+model VanguardPriceHistory {
+  id        String          @id @default(cuid())
+  holdingId String
+  holding   VanguardHolding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+
+  price      Decimal  @db.Decimal(14, 4)
+  currency   String
+  capturedAt DateTime @default(now())
+
+  @@index([holdingId, capturedAt])
 }
 
 model FinancialGoal {
