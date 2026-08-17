@@ -7,6 +7,7 @@ import Link from 'next/link';
 import {
     ComposedChart,
     BarChart,
+    LineChart,
     Bar,
     Area,
     Line,
@@ -17,6 +18,7 @@ import {
     ReferenceLine,
     ResponsiveContainer,
 } from 'recharts';
+import type { AssetEvolution, ValuePoint } from "@/lib/overview-evolution";
 
 export interface AssetFigures {
     invested: number;
@@ -107,11 +109,15 @@ export function OverviewClient({
     usdToGbp,
     selfEmployed,
     vanguard,
+    evolution,
+    vanguardSeries,
 }: {
     data: OverviewData;
     usdToGbp: number;
     selfEmployed?: SelfEmployedSnapshot | null;
     vanguard?: VanguardOverviewSnapshot | null;
+    evolution?: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null;
+    vanguardSeries?: ValuePoint[];
 }) {
     const [currency, setCurrency] = useState<Currency>('USD');
     const factor = currency === 'USD' ? 1 : usdToGbp;
@@ -206,10 +212,13 @@ export function OverviewClient({
                 </Card>
             </div>
 
-            {/* Per-asset breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Link href="/btc">
-                    <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
+            {/* Per-asset breakdown — full-width cards, each with a 30d/6mo/1y
+                value-evolution row (see lib/overview-evolution.ts), same
+                layout as the Vanguard card below so all three read the same
+                way at a glance. */}
+            <Link href="/btc" className="block">
+                <Card hover className="group cursor-pointer">
+                    <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-4 min-w-0">
                             <div className="w-11 h-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
                                 <Bitcoin className="w-5 h-5" />
@@ -228,11 +237,16 @@ export function OverviewClient({
                             </div>
                             <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                         </div>
-                    </Card>
-                </Link>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-border/60">
+                        <EvolutionBadges evo={evolution?.btc} />
+                    </div>
+                </Card>
+            </Link>
 
-                <Link href="/t212">
-                    <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
+            <Link href="/t212" className="block">
+                <Card hover className="group cursor-pointer">
+                    <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-4 min-w-0">
                             <div className="w-11 h-11 rounded-lg bg-white/[0.04] border border-border flex items-center justify-center text-muted shrink-0">
                                 <BarChart3 className="w-5 h-5" />
@@ -257,9 +271,14 @@ export function OverviewClient({
                             )}
                             <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                         </div>
-                    </Card>
-                </Link>
-            </div>
+                    </div>
+                    {view.t212.connected && view.t212.hasSnapshot && (
+                        <div className="mt-3 pt-3 border-t border-border/60">
+                            <EvolutionBadges evo={evolution?.t212} />
+                        </div>
+                    )}
+                </Card>
+            </Link>
 
             {/* Vanguard snapshot — combined into the header totals above (see
                 the `view` memo); shown as its own card, listing each account
@@ -289,6 +308,9 @@ export function OverviewClient({
                                 </div>
                                 <ArrowRight className="w-4 h-4 text-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                             </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-border/60">
+                            <EvolutionBadges evo={evolution?.vanguard} />
                         </div>
                         <div className="mt-3 pt-3 border-t border-border/60 space-y-2">
                             {view.vanguard.accounts.map((a) => (
@@ -380,6 +402,16 @@ export function OverviewClient({
                 />
             </div>
 
+            {/* Vanguard stats & performance — BTC/T212 track monthly purchase
+                history (AssetStatsCard/TrailingPeriodsCard above), which
+                Vanguard's data model doesn't have (holdings are manually
+                edited totals, not a dated transaction log). Its natural
+                equivalent is per-ACCOUNT best/worst plus the same 30d/6mo/1y
+                value evolution shown on the card up top. */}
+            {view.vanguard && view.vanguard.accounts.length > 0 && (
+                <VanguardDetailCard vanguard={view.vanguard} evo={evolution?.vanguard} fmt={fmt} pnlColor={pnlColor} />
+            )}
+
             {/* Growth chart */}
             <InvestmentChart
                 weeklyRows={view.weeklyRows}
@@ -389,6 +421,13 @@ export function OverviewClient({
                 btcConnected={view.btc.invested > 0}
                 t212Connected={view.t212.connected}
             />
+
+            {/* Vanguard evolution — total value across every account, built
+                from VanguardPriceHistory (same source as /vanguard's
+                Statistici tab, just summed instead of per-account). */}
+            {view.vanguard && view.vanguard.accounts.length > 0 && (
+                <VanguardEvolutionChart series={vanguardSeries ?? []} fmt={fmt} />
+            )}
 
             {/* Monthly bars: invested + current value, per asset */}
             <MonthlyBarsChart weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
@@ -405,6 +444,141 @@ export function OverviewClient({
                 )}
             </p>
         </>
+    );
+}
+
+/** Small "30d / 6mo / 1y" value-change readout, shared by the Bitcoin,
+ * Trading 212 and Vanguard cards. `null` entries (not enough history yet
+ * for that window) render as a dash rather than a misleading 0%. */
+function EvolutionBadges({ evo }: { evo: AssetEvolution | null | undefined }) {
+    const items: { label: string; value: number | null }[] = [
+        { label: '30d', value: evo?.d30 ?? null },
+        { label: '6mo', value: evo?.m6 ?? null },
+        { label: '1y', value: evo?.y1 ?? null },
+    ];
+    return (
+        <div className="flex items-center gap-5">
+            {items.map((it) => (
+                <div key={it.label} className="flex items-baseline gap-1.5">
+                    <span className="text-[10px] text-faint uppercase tracking-wider">{it.label}</span>
+                    <span
+                        className={cn(
+                            "text-xs font-num font-medium",
+                            it.value === null ? "text-faint" : it.value >= 0 ? "text-accent" : "text-red-400"
+                        )}
+                    >
+                        {it.value === null ? '\u2014' : `${it.value >= 0 ? '+' : ''}${it.value.toFixed(1)}%`}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/** Vanguard's equivalent of the AssetStatsCard + TrailingPeriodsCard pair
+ * used for BTC/T212 above — adapted to what Vanguard's data model actually
+ * tracks (accounts with a current invested/value/pnl, not a dated
+ * transaction log), so "best/worst month" becomes "best/worst account". */
+function VanguardDetailCard({
+    vanguard,
+    evo,
+    fmt,
+    pnlColor,
+}: {
+    vanguard: VanguardOverviewSnapshot;
+    evo: AssetEvolution | undefined;
+    fmt: (n: number) => string;
+    pnlColor: (n: number) => string;
+}) {
+    const sorted = [...vanguard.accounts].sort((a, b) => b.pnlPercent - a.pnlPercent);
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+    const showBestWorst = sorted.length > 1;
+
+    return (
+        <Card>
+            <div className="flex items-center gap-2 mb-4">
+                <Landmark className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-medium text-foreground">Vanguard &middot; stats &amp; performance</h3>
+            </div>
+
+            <div className={cn("grid grid-cols-2 gap-4 pb-4 mb-4 border-b border-border", showBestWorst ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
+                <div>
+                    <p className="text-[10px] text-faint uppercase tracking-wider mb-1">Accounts</p>
+                    <p className="text-sm font-medium font-num text-foreground">{vanguard.accounts.length}</p>
+                </div>
+                <div>
+                    <p className="text-[10px] text-faint uppercase tracking-wider mb-1">Invested</p>
+                    <p className="text-sm font-medium font-num text-foreground">{fmt(vanguard.invested)}</p>
+                </div>
+                {showBestWorst && (
+                    <div className="min-w-0">
+                        <p className="text-[10px] text-faint uppercase tracking-wider mb-1">Best account</p>
+                        <p className="text-sm font-medium text-foreground truncate">{best.name}</p>
+                        <p className={cn("text-xs font-num", pnlColor(best.pnlPercent))}>
+                            {best.pnlPercent >= 0 ? '+' : ''}{best.pnlPercent.toFixed(1)}%
+                        </p>
+                    </div>
+                )}
+                {showBestWorst && (
+                    <div className="min-w-0">
+                        <p className="text-[10px] text-faint uppercase tracking-wider mb-1">Worst account</p>
+                        <p className="text-sm font-medium text-foreground truncate">{worst.name}</p>
+                        <p className={cn("text-xs font-num", pnlColor(worst.pnlPercent))}>
+                            {worst.pnlPercent >= 0 ? '+' : ''}{worst.pnlPercent.toFixed(1)}%
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            <p className="text-[10px] text-faint uppercase tracking-wider mb-2">Value evolution</p>
+            <EvolutionBadges evo={evo} />
+        </Card>
+    );
+}
+
+/** Total Vanguard value (every account summed) over time, reconstructed
+ * from VanguardPriceHistory — same source and forward-fill logic as the
+ * per-account chart on /vanguard's Statistici tab. */
+function VanguardEvolutionChart({ series, fmt }: { series: ValuePoint[]; fmt: (n: number) => string }) {
+    const chartData = useMemo(
+        () =>
+            series.map((p) => ({
+                value: p.value,
+                label: new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            })),
+        [series]
+    );
+
+    return (
+        <Card>
+            <div className="flex items-center gap-2 mb-1">
+                <Landmark className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-medium text-foreground">Vanguard &middot; evolution</h3>
+            </div>
+            <p className="text-xs text-muted mb-4">Total value across every Vanguard account, built from recorded price history.</p>
+
+            {chartData.length < 2 ? (
+                <p className="text-muted text-sm py-10 text-center">
+                    Not enough price history yet &mdash; this fills in as prices sync over time (see the chart icon on the /vanguard page).
+                </p>
+            ) : (
+                <div className="h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                            <XAxis dataKey="label" stroke="#8c8a80" fontSize={12} />
+                            <YAxis stroke="#8c8a80" fontSize={12} tickFormatter={(v) => fmt(v)} width={64} />
+                            <Tooltip
+                                contentStyle={{ background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}
+                                formatter={(v) => fmt(Number(v))}
+                            />
+                            <Line type="monotone" dataKey="value" stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+        </Card>
     );
 }
 

@@ -11,6 +11,7 @@ import { getSelfEmployedSummary } from "@/app/actions/self-employed";
 import { getCurrentUkTaxYear } from "@/lib/tax/uk-tax-year";
 import { getVanguardTotals, getVanguardAccountSummaries } from "@/app/actions/vanguard";
 import { getExchangeRate } from "@/lib/fx";
+import { getBtcEvolution, getT212Evolution, getVanguardEvolution, type AssetEvolution, type ValuePoint } from "@/lib/overview-evolution";
 
 export default async function OverviewPage() {
     const session = await getServerSession(authOptions);
@@ -31,6 +32,18 @@ export default async function OverviewPage() {
         selfEmployed = null;
     }
 
+    // Shared GBP->USD rate — used to convert Vanguard's native-GBP figures
+    // (totals, accounts, evolution, value history) onto the same USD base
+    // as BTC/T212, and by the T212 evolution lookup below. Falls back to 1
+    // (no conversion) rather than throwing, so a rate-fetch hiccup degrades
+    // gracefully instead of taking out three sections of the page at once.
+    let gbpToUsd = 1;
+    try {
+        gbpToUsd = await getExchangeRate("GBP", "USD");
+    } catch {
+        gbpToUsd = 1;
+    }
+
     // Vanguard — native figures are GBP, converted to the same USD base as
     // BTC/T212 so OverviewClient can combine and scale them together with
     // the existing currency toggle. Isolated in its own try/catch, same
@@ -38,10 +51,9 @@ export default async function OverviewPage() {
     // take down the rest of the dashboard.
     let vanguard: VanguardOverviewSnapshot | null = null;
     try {
-        const [totals, accounts, gbpToUsd] = await Promise.all([
+        const [totals, accounts] = await Promise.all([
             getVanguardTotals(),
             getVanguardAccountSummaries(),
-            getExchangeRate("GBP", "USD"),
         ]);
         vanguard = {
             invested: totals.invested * gbpToUsd,
@@ -62,9 +74,36 @@ export default async function OverviewPage() {
         vanguard = null;
     }
 
+    // 30-day / 6-month / 1-year value evolution for each asset, plus the
+    // Vanguard total-value time series for the evolution chart. Each
+    // individual lookup already guards its own failures (see
+    // lib/overview-evolution.ts) and degrades to nulls/empty rather than
+    // throwing, so this block can't take down the rest of the dashboard.
+    let evolution: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null = null;
+    let vanguardSeries: ValuePoint[] = [];
+    try {
+        const [btcEvo, t212Evo, vanguardEvo] = await Promise.all([
+            getBtcEvolution(),
+            getT212Evolution(gbpToUsd),
+            getVanguardEvolution(gbpToUsd),
+        ]);
+        evolution = { btc: btcEvo, t212: t212Evo, vanguard: vanguardEvo.evolution };
+        vanguardSeries = vanguardEvo.series;
+    } catch {
+        evolution = null;
+        vanguardSeries = [];
+    }
+
     return (
         <DashboardLayout>
-            <OverviewClient data={data} usdToGbp={usdToGbp} selfEmployed={selfEmployed} vanguard={vanguard} />
+            <OverviewClient
+                data={data}
+                usdToGbp={usdToGbp}
+                selfEmployed={selfEmployed}
+                vanguard={vanguard}
+                evolution={evolution}
+                vanguardSeries={vanguardSeries}
+            />
         </DashboardLayout>
     );
 }
