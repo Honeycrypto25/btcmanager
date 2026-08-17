@@ -226,7 +226,7 @@ export function OverviewClient({
             {/* Self Employed snapshot (income/expenses YTD) — additive, separate
                 from the BTC/T212 figures above; never combined into totals. */}
             {selfEmployed && (selfEmployed.totalIncome > 0 || selfEmployed.totalExpenses > 0) && (
-                <Link href="/self-employed">
+                <Link href="/self-employed" className="block">
                     <Card hover className="flex items-center justify-between gap-4 group cursor-pointer">
                         <div className="flex items-center gap-4 min-w-0">
                             <div className="w-11 h-11 rounded-lg bg-white/[0.04] border border-border flex items-center justify-center text-muted shrink-0">
