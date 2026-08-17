@@ -3,8 +3,8 @@
 import React, { useState, useTransition } from "react";
 import { format } from "date-fns";
 import { Card, Button } from "@/components/ui/core";
-import { Plus, Trash2, Pencil, X, Receipt } from "lucide-react";
-import { createExpense, updateExpense, deleteExpense, type ExpenseInput } from "@/app/actions/self-employed";
+import { Plus, Trash2, Pencil, X, Receipt, Tag, Eye } from "lucide-react";
+import { createExpense, updateExpense, updateExpenseCategory, deleteExpense, type ExpenseInput } from "@/app/actions/self-employed";
 
 interface ExpenseRow {
     id: string;
@@ -19,6 +19,7 @@ interface ExpenseRow {
     allowableExpenseStatus: string;
     taxYear: string;
     notes: string | null;
+    receiptId: string | null;
 }
 
 function formatGBP(amount: number): string {
@@ -48,6 +49,8 @@ export function ExpensesClient({ initialExpenses, categories }: { initialExpense
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
     const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+    const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+    const [categoryPendingId, setCategoryPendingId] = useState<string | null>(null);
 
     const filtered = categoryFilter ? expenses.filter((e) => e.category === categoryFilter) : expenses;
     const totalShown = filtered.reduce((sum, e) => sum + e.amount, 0);
@@ -122,6 +125,7 @@ export function ExpensesClient({ initialExpenses, categories }: { initialExpense
                             allowableExpenseStatus: created.allowableExpenseStatus,
                             taxYear: created.taxYear,
                             notes: created.notes,
+                            receiptId: null,
                         },
                         ...prev,
                     ]);
@@ -138,6 +142,21 @@ export function ExpensesClient({ initialExpenses, categories }: { initialExpense
         startTransition(async () => {
             await deleteExpense(id);
             setExpenses((prev) => prev.filter((r) => r.id !== id));
+        });
+    }
+
+    function changeCategory(id: string, category: string) {
+        setEditingCategoryId(null);
+        setCategoryPendingId(id);
+        startTransition(async () => {
+            try {
+                await updateExpenseCategory(id, category);
+                setExpenses((prev) => prev.map((r) => (r.id === id ? { ...r, category } : r)));
+            } catch (e: any) {
+                setError(e.message || "Nu s-a putut schimba categoria.");
+            } finally {
+                setCategoryPendingId(null);
+            }
         });
     }
 
@@ -302,10 +321,48 @@ export function ExpensesClient({ initialExpenses, categories }: { initialExpense
                                     <tr key={row.id} className="hover:bg-white/[0.01] transition-colors group">
                                         <td className="px-6 py-4 text-sm text-foreground">{format(new Date(row.date), "dd MMM yyyy")}</td>
                                         <td className="px-6 py-4 text-sm text-foreground">{row.merchant}</td>
-                                        <td className="px-6 py-4 text-sm text-muted">{row.category}</td>
+                                        <td className="px-6 py-4 text-sm text-muted">
+                                            {editingCategoryId === row.id ? (
+                                                <select
+                                                    autoFocus
+                                                    value={row.category}
+                                                    onChange={(e) => changeCategory(row.id, e.target.value)}
+                                                    onBlur={() => setEditingCategoryId(null)}
+                                                    className="bg-white/[0.04] border border-primary rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none"
+                                                >
+                                                    {categories.map((c) => (
+                                                        <option key={c} value={c} className="bg-surface">
+                                                            {c}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>{categoryPendingId === row.id ? "Se salvează..." : row.category}</span>
+                                                    <button
+                                                        onClick={() => setEditingCategoryId(row.id)}
+                                                        title="Schimbă categoria"
+                                                        className="p-1 rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-white/5 transition-opacity"
+                                                    >
+                                                        <Tag className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-sm font-medium text-red-400">{formatGBP(row.amount)}</td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {row.receiptId && (
+                                                    <a
+                                                        href={`/self-employed/receipts/${row.receiptId}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="Vezi chitanța atașată"
+                                                        className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5"
+                                                    >
+                                                        <Eye className="w-3.5 h-3.5" />
+                                                    </a>
+                                                )}
                                                 <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
                                                     <Pencil className="w-3.5 h-3.5" />
                                                 </button>

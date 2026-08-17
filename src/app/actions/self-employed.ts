@@ -151,6 +151,25 @@ export async function createExpense(input: ExpenseInput) {
     return expense;
 }
 
+/** Lightweight category-only update -- used by the quick inline category
+ * switcher on the Expenses list, so recategorizing a row (common for
+ * bank-derived expenses that default to a generic category) doesn't
+ * require opening the full edit form. */
+export async function updateExpenseCategory(id: string, category: string) {
+    const userId = await requireUserId();
+    const existing = await db.selfEmployedExpense.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) throw new Error("Not found");
+
+    const expense = await db.selfEmployedExpense.update({
+        where: { id },
+        data: { category },
+    });
+
+    revalidatePath("/self-employed");
+    revalidatePath("/self-employed/expenses");
+    return expense;
+}
+
 export async function updateExpense(id: string, input: ExpenseInput) {
     const userId = await requireUserId();
     const date = new Date(input.date);

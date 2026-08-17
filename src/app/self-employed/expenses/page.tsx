@@ -28,6 +28,7 @@ export default async function ExpensesPage() {
         allowableExpenseStatus: e.allowableExpenseStatus,
         taxYear: e.taxYear,
         notes: e.notes,
+        receiptId: e.receiptId,
     }));
 
     return (
