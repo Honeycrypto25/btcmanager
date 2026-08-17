@@ -364,10 +364,22 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                         <div className="flex items-center gap-2 text-xs text-muted py-6 justify-center">
                                                             <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă istoricul...
                                                         </div>
-                                                    ) : (priceHistory[h.id]?.length ?? 0) < 2 ? (
+                                                    ) : (priceHistory[h.id]?.length ?? 0) === 0 ? (
                                                         <p className="text-xs text-faint italic text-center py-6">
-                                                            Nu există încă suficiente puncte de preț — istoricul se completează la fiecare sincronizare (zilnic, sau manual din &bdquo;Sincronizează prețuri&rdquo;).
+                                                            Niciun preț înregistrat încă — apasă &bdquo;Sincronizează prețuri&rdquo; ca să prindem primul.
                                                         </p>
+                                                    ) : (priceHistory[h.id]?.length ?? 0) === 1 ? (
+                                                        <div className="text-center py-6">
+                                                            <p className="text-xl font-medium font-num text-foreground">
+                                                                £{priceHistory[h.id]![0].price.toFixed(4)}
+                                                            </p>
+                                                            <p className="text-xs text-faint mt-1">
+                                                                Primul preț înregistrat &middot; {format(new Date(priceHistory[h.id]![0].capturedAt), "dd MMM yyyy, HH:mm")}
+                                                            </p>
+                                                            <p className="text-[11px] text-faint mt-2">
+                                                                Graficul apare de la al doilea preț diferit — un fond OEIC ca acesta are un singur preț NAV pe zi, deci poate dura o zi sau mai multe.
+                                                            </p>
+                                                        </div>
                                                     ) : (
                                                         <div className="h-[160px]">
                                                             <ResponsiveContainer width="100%" height="100%">
@@ -376,7 +388,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                                     <XAxis dataKey="label" {...chartAxisProps} />
                                                                     <YAxis {...chartAxisProps} domain={["auto", "auto"]} tickFormatter={(v) => `£${v}`} width={64} />
                                                                     <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(2)}`} />
-                                                                    <Line type="monotone" dataKey="price" stroke="#52c98a" strokeWidth={2} dot={false} />
+                                                                    <Line type="monotone" dataKey="price" stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
                                                                 </LineChart>
                                                             </ResponsiveContainer>
                                                         </div>
