@@ -4,6 +4,7 @@ import React, { useState, useTransition } from "react";
 import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Trash2, Pencil, Landmark, Check } from "lucide-react";
+import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import {
     createVanguardAccount,
     deleteVanguardAccount,
@@ -85,16 +86,22 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                         {accounts.length} conturi · Valoare totală {formatMoney(totalValue, "GBP")} · Investit {formatMoney(totalInvested, "GBP")}
                     </p>
                 </div>
-                <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
-                    {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                    {showAccountForm ? "Anulează" : "Adaugă cont"}
-                </Button>
+                <div className="flex items-center gap-2">
+                    <VanguardSyncButton />
+                    <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
+                        {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                        {showAccountForm ? "Anulează" : "Adaugă cont"}
+                    </Button>
+                </div>
             </div>
 
             <Card className="p-4 border-white/10 bg-white/[0.02]">
                 <p className="text-xs text-muted leading-relaxed">
-                    Vanguard nu are un API public pentru investitori individuali, deci datele se introduc și se actualizează manual —
-                    nu sunt sincronizate live ca la Trading 212.
+                    Vanguard nu are un API public pentru investitori individuali. Dacă un holding are completate atât
+                    Ticker/ISIN cât și Unități, prețul i se actualizează automat o dată pe zi — pentru ETF-uri (ex. VWRL)
+                    din prețul de la bursa din Londra, iar pentru fonduri OEIC (ex. &bdquo;FTSE Global All Cap&rdquo;) din
+                    ISIN, printr-o sursă publică ce se poate opri fără avertisment dacă își schimbă pagina. Fără ambele
+                    câmpuri completate, holdingul rămâne complet manual.
                 </p>
             </Card>
 
@@ -219,8 +226,8 @@ function AccountCard({ account, onRemoveAccount, setAccounts }: { account: Accou
                             <input value={form.fundName} onChange={(e) => setForm({ ...form, fundName: e.target.value })} placeholder="ex. FTSE Global All Cap" className={inputClass} />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs text-muted">Ticker (opțional)</label>
-                            <input value={form.ticker || ""} onChange={(e) => setForm({ ...form, ticker: e.target.value })} className={inputClass} />
+                            <label className="text-xs text-muted">Ticker LSE / ISIN (opțional)</label>
+                            <input value={form.ticker || ""} onChange={(e) => setForm({ ...form, ticker: e.target.value })} placeholder="ex. VWRL sau GB00BD3RZ582" className={inputClass} />
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-muted">Unități (opțional)</label>
