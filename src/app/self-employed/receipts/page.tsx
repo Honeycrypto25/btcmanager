@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listReceipts } from "@/app/actions/receipts";
 import { isR2Configured } from "@/lib/r2/client";
+import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { ReceiptsClient } from "@/components/self-employed/ReceiptsClient";
 
 export default async function ReceiptsPage() {
@@ -22,12 +23,14 @@ export default async function ReceiptsPage() {
         currency: r.currency,
         category: r.category,
         status: r.status,
+        taxYear: r.taxYear,
+        convertedExpenseId: r.convertedExpenseId,
         createdAt: r.createdAt.toISOString(),
     }));
 
     return (
         <DashboardLayout>
-            <ReceiptsClient initialReceipts={serialized} r2Configured={isR2Configured()} />
+            <ReceiptsClient initialReceipts={serialized} r2Configured={isR2Configured()} categories={[...EXPENSE_CATEGORIES]} />
         </DashboardLayout>
     );
 }
