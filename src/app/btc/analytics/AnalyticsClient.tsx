@@ -5,6 +5,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
 import { Wallet, Check, X, LineChart } from "lucide-react";
 import AdvancedChart from "@/components/analytics/AdvancedChart";
+import AvgCostChart from "@/components/analytics/AvgCostChart";
 
 interface Transaction {
     id: string;
@@ -101,10 +102,11 @@ export default function AnalyticsClient({ wallets, transactions }: AnalyticsClie
             </Card>
 
             {/* Chart Area */}
-            <div className="grid grid-cols-1">
+            <div className="grid grid-cols-1 gap-4">
                 <div className="min-h-[500px]">
                     <AdvancedChart transactions={filteredTransactions} />
                 </div>
+                <AvgCostChart transactions={filteredTransactions} />
             </div>
         </div>
     );
