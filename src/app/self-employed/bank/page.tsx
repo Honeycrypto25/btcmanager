@@ -20,6 +20,7 @@ export default async function BankPage() {
 
     const serializedTransactions = transactions.map((t: any) => ({
         id: t.id,
+        accountId: t.accountId,
         transactionDate: t.transactionDate.toISOString(),
         description: t.description,
         amount: Number(t.amount),

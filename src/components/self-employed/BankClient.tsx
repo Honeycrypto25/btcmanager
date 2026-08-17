@@ -29,6 +29,7 @@ interface Account {
 
 interface TransactionRow {
     id: string;
+    accountId: string | null;
     transactionDate: string;
     description: string;
     amount: number;
@@ -109,7 +110,7 @@ export function BankClient({ accounts, transactions, batches }: { accounts: Acco
             </div>
 
             {tab === "import" && <ImportTab accounts={accounts} />}
-            {tab === "transactions" && <TransactionsTab transactions={transactions} />}
+            {tab === "transactions" && <TransactionsTab transactions={transactions} accounts={accounts} />}
             {tab === "history" && <HistoryTab batches={batches} />}
         </div>
     );
@@ -362,12 +363,13 @@ function ColumnSelect({ label, value, onChange, headers, allowEmpty }: { label: 
 
 // --- Transactions tab ---
 
-function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
+function TransactionsTab({ transactions, accounts }: { transactions: TransactionRow[]; accounts: Account[] }) {
     const [rows, setRows] = useState(transactions);
     const [filter, setFilter] = useState<string | null>(null);
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [search, setSearch] = useState("");
+    const [accountFilter, setAccountFilter] = useState("");
     const [receiptInfo, setReceiptInfo] = useState<Record<string, { merchant: string | null; amount: number | null; receiptDate: string | null }>>({});
     const [isPending, startTransition] = useTransition();
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
@@ -387,22 +389,30 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [receiptIds.join(",")]);
 
+    const accountNameById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const a of accounts) map.set(a.id, a.name);
+        return map;
+    }, [accounts]);
+
     const filtered = useMemo(() => {
         let list = filter ? rows.filter((r) => r.matchStatus === filter) : rows;
         if (dateFrom) list = list.filter((r) => r.transactionDate.slice(0, 10) >= dateFrom);
         if (dateTo) list = list.filter((r) => r.transactionDate.slice(0, 10) <= dateTo);
+        if (accountFilter) list = list.filter((r) => r.accountId === accountFilter);
         if (search.trim()) {
             const q = search.trim().toLowerCase();
             list = list.filter((r) => r.description.toLowerCase().includes(q));
         }
         return list;
-    }, [rows, filter, dateFrom, dateTo, search]);
+    }, [rows, filter, dateFrom, dateTo, accountFilter, search]);
 
-    const hasActiveFilters = !!(filter || dateFrom || dateTo || search.trim());
+    const hasActiveFilters = !!(filter || dateFrom || dateTo || accountFilter || search.trim());
     function clearFilters() {
         setFilter(null);
         setDateFrom("");
         setDateTo("");
+        setAccountFilter("");
         setSearch("");
     }
 
@@ -523,6 +533,21 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                             className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                         />
                     </div>
+                    {accounts.length > 0 && (
+                        <div className="space-y-1">
+                            <label className="text-[11px] text-muted uppercase tracking-wider">Cont</label>
+                            <select
+                                value={accountFilter}
+                                onChange={(e) => setAccountFilter(e.target.value)}
+                                className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                            >
+                                <option value="" className="bg-surface">Toate conturile</option>
+                                {accounts.map((a) => (
+                                    <option key={a.id} value={a.id} className="bg-surface">{a.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <div className="flex-1 min-w-[160px] space-y-1">
                         <label className="text-[11px] text-muted uppercase tracking-wider">Caută descriere</label>
                         <input
@@ -556,6 +581,7 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                         <thead>
                             <tr className="border-b border-border bg-white/[0.02]">
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Data</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Cont</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Descriere</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Sumă</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Status</th>
@@ -565,7 +591,7 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                         <tbody className="divide-y divide-white/5">
                             {filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-16 text-center text-faint italic">
+                                    <td colSpan={6} className="px-6 py-16 text-center text-faint italic">
                                         <Landmark className="w-6 h-6 mx-auto mb-2 opacity-40" />
                                         Nicio tranzacție. Importă un CSV din tab-ul &bdquo;Import&rdquo;.
                                     </td>
@@ -575,6 +601,7 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                                     <React.Fragment key={tx.id}>
                                         <tr className="hover:bg-white/[0.01] transition-colors">
                                             <td className="px-6 py-4 text-sm text-foreground whitespace-nowrap">{format(new Date(tx.transactionDate), "dd MMM yyyy")}</td>
+                                            <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{tx.accountId ? accountNameById.get(tx.accountId) || "—" : "—"}</td>
                                             <td className="px-6 py-4 text-sm text-foreground max-w-xs truncate">{tx.description}</td>
                                             <td className={cn("px-6 py-4 text-sm font-medium whitespace-nowrap", tx.debitCredit === "DEBIT" ? "text-red-400" : "text-green-400")}>
                                                 {tx.debitCredit === "DEBIT" ? "-" : "+"}{formatMoney(tx.amount)}
@@ -652,7 +679,7 @@ function TransactionsTab({ transactions }: { transactions: TransactionRow[] }) {
                                         </tr>
                                         {expandedTx === tx.id && (
                                             <tr className="bg-white/[0.02]">
-                                                <td colSpan={5} className="px-6 py-4">
+                                                <td colSpan={6} className="px-6 py-4">
                                                     {tx.debitCredit === "CREDIT" ? (
                                                         <IncomeConversionForm
                                                             tx={tx}
