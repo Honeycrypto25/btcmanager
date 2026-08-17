@@ -357,6 +357,11 @@ export async function convertTransactionToExpense(transactionId: string, input: 
             allowableExpenseStatus: "allowable",
             taxYear: tx.taxYear,
             bankTransactionId: tx.id,
+            // Carry over a receipt the user manually (or automatically)
+            // linked to this transaction, so the Expenses list can offer a
+            // "View" link to it -- previously dropped here, so a manually
+            // linked receipt looked unattached on the resulting expense.
+            receiptId: tx.receiptId,
         },
     });
 
@@ -365,8 +370,18 @@ export async function convertTransactionToExpense(transactionId: string, input: 
         data: { convertedType: "expense", convertedRecordId: expense.id },
     });
 
+    // Mark the linked receipt itself as converted too, mirroring
+    // convertReceiptToExpense -- otherwise the receipt detail page would
+    // still offer its own "Convertește în cheltuială" button and a second,
+    // duplicate expense could be created for the same purchase.
+    if (tx.receiptId) {
+        await db.receipt.update({ where: { id: tx.receiptId }, data: { convertedExpenseId: expense.id } });
+        revalidatePath(`/self-employed/receipts/${tx.receiptId}`);
+    }
+
     revalidatePath("/self-employed/bank");
     revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed/receipts");
     revalidatePath("/self-employed");
     return expense;
 }
@@ -398,6 +413,13 @@ export async function undoTransactionConversion(transactionId: string) {
         await db.selfEmployedIncome.deleteMany({ where: { id: tx.convertedRecordId, userId } });
     } else if (tx.convertedType === "expense" && tx.convertedRecordId) {
         await db.selfEmployedExpense.deleteMany({ where: { id: tx.convertedRecordId, userId } });
+        // Undo the receipt-side marker set by convertTransactionToExpense so
+        // a linked receipt becomes convertible/matchable again instead of
+        // being stuck "already converted" with no expense to show for it.
+        if (tx.receiptId) {
+            await db.receipt.update({ where: { id: tx.receiptId }, data: { convertedExpenseId: null } });
+            revalidatePath(`/self-employed/receipts/${tx.receiptId}`);
+        }
     }
 
     await db.bankTransaction.update({
@@ -408,6 +430,7 @@ export async function undoTransactionConversion(transactionId: string) {
     revalidatePath("/self-employed/bank");
     revalidatePath("/self-employed/income");
     revalidatePath("/self-employed/expenses");
+    revalidatePath("/self-employed/receipts");
     revalidatePath("/self-employed");
 }
 
