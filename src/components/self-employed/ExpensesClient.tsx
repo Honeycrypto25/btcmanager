@@ -479,7 +479,7 @@ export function ExpensesClient({ initialExpenses, categories, accounts }: { init
                                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         {row.receiptId && (
                                                             <a
-                                                                href={`/self-employed/receipts/${row.receiptId}`}
+                                                                href={`/self-employed/receipts/${row.receiptId}/view`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 title="Vezi chitanța atașată"

@@ -43,7 +43,7 @@ export async function buildAccountingExportZip(userId: string, taxYear: string):
         bankTransactionId ? accountNameByTxId.get(bankTransactionId) ?? "" : "";
 
     const base = appBaseUrl();
-    const receiptLinkFor = (receiptId: string | null) => (receiptId ? `${base}/self-employed/receipts/${receiptId}` : "");
+    const receiptLinkFor = (receiptId: string | null) => (receiptId ? `${base}/self-employed/receipts/${receiptId}/view` : "");
 
     const incomeCsv = Papa.unparse({
         fields: ["Date", "Description", "Client", "Amount (GBP)", "Payment method", "Account", "Notes"],
