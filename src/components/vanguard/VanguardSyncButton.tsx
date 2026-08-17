@@ -9,7 +9,7 @@ import axios from "axios";
 /** Manually triggers the ETF/OEIC price sync (see /api/vanguard/sync) --
  * only affects holdings that have both a ticker/ISIN and a unit count set;
  * everything else stays as-is. Mirrors T212SyncButton.tsx. */
-export function VanguardSyncButton() {
+export function VanguardSyncButton({ onSynced }: { onSynced?: () => void }) {
     const router = useRouter();
     const [syncing, setSyncing] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
@@ -28,6 +28,7 @@ export function VanguardSyncButton() {
                 setMessage(`${updated} actualizate${failed > 0 ? `, ${failed} eșuate` : ""} din ${total}.`);
             }
             router.refresh();
+            onSynced?.();
         } catch (err: any) {
             setError(err.response?.data?.error || "Sincronizarea a eșuat.");
         } finally {

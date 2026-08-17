@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
@@ -52,6 +52,7 @@ function formatMoney(amount: number, currency: string): string {
 
 export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRow[] }) {
     const [accounts, setAccounts] = useState(initialAccounts);
+    const [syncTick, setSyncTick] = useState(0);
     const [showAccountForm, setShowAccountForm] = useState(false);
     const [accountForm, setAccountForm] = useState<VanguardAccountInput>({ name: "", accountType: "ISA", currency: "GBP" });
     const [isPending, startTransition] = useTransition();
@@ -98,7 +99,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <VanguardSyncButton />
+                    <VanguardSyncButton onSynced={() => setSyncTick((t) => t + 1)} />
                     <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
                         {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
                         {showAccountForm ? "Anulează" : "Adaugă cont"}
@@ -154,14 +155,14 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                 </Card>
             ) : (
                 accounts.map((account) => (
-                    <AccountCard key={account.id} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} />
+                    <AccountCard key={account.id} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} syncTick={syncTick} />
                 ))
             )}
         </div>
     );
 }
 
-function AccountCard({ account, onRemoveAccount, setAccounts }: { account: AccountRow; onRemoveAccount: (id: string) => void; setAccounts: React.Dispatch<React.SetStateAction<AccountRow[]>> }) {
+function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { account: AccountRow; onRemoveAccount: (id: string) => void; setAccounts: React.Dispatch<React.SetStateAction<AccountRow[]>>; syncTick: number }) {
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<VanguardHoldingInput>({ accountId: account.id, fundName: "", costBasis: 0, currentValue: 0 });
     const [editingValueId, setEditingValueId] = useState<string | null>(null);
@@ -172,19 +173,37 @@ function AccountCard({ account, onRemoveAccount, setAccounts }: { account: Accou
     const [priceHistory, setPriceHistory] = useState<Record<string, PricePoint[]>>({});
     const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
 
+    function loadHistory(holdingId: string) {
+        setHistoryLoading((prev) => ({ ...prev, [holdingId]: true }));
+        getVanguardPriceHistory(holdingId)
+            .then((points) => setPriceHistory((prev) => ({ ...prev, [holdingId]: points })))
+            .finally(() => setHistoryLoading((prev) => ({ ...prev, [holdingId]: false })));
+    }
+
     function toggleHistory(holdingId: string) {
         if (expandedHistoryId === holdingId) {
             setExpandedHistoryId(null);
             return;
         }
         setExpandedHistoryId(holdingId);
-        if (!priceHistory[holdingId]) {
-            setHistoryLoading((prev) => ({ ...prev, [holdingId]: true }));
-            getVanguardPriceHistory(holdingId)
-                .then((points) => setPriceHistory((prev) => ({ ...prev, [holdingId]: points })))
-                .finally(() => setHistoryLoading((prev) => ({ ...prev, [holdingId]: false })));
-        }
+        // Always fetch fresh on open rather than trusting a possibly-stale
+        // cached result (e.g. a prior open that found "not enough points
+        // yet", before a sync since added one).
+        loadHistory(holdingId);
     }
+
+    // A sync (manual button or elsewhere) bumps syncTick -- if a history
+    // panel happens to be open when that finishes, refresh it in place
+    // instead of requiring the user to collapse/reopen to see the new point.
+    const isFirstRender = React.useRef(true);
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+        if (expandedHistoryId) loadHistory(expandedHistoryId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [syncTick]);
 
     function submitHolding() {
         if (!form.fundName.trim() || !form.costBasis || !form.currentValue) {
