@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2 } from "lucide-react";
+import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3 } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import {
     createVanguardAccount,
@@ -13,12 +13,27 @@ import {
     updateVanguardHoldingValue,
     deleteVanguardHolding,
     getVanguardPriceHistory,
+    getVanguardAccountValueHistory,
     type VanguardAccountInput,
     type VanguardHoldingInput,
 } from "@/app/actions/vanguard";
 
 const tooltipStyle = { background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 };
 const chartAxisProps = { stroke: "#8c8a80", fontSize: 12 };
+const ACCOUNT_COLORS = ["#52c98a", "#7aa8d6", "#d6a24c", "#c97ad6", "#d65252", "#5ec9c9"];
+
+type Tab = "list" | "stats";
+
+interface AccountValuePoint {
+    date: string;
+    value: number;
+}
+
+interface AccountValueSeries {
+    accountId: string;
+    accountName: string;
+    points: AccountValuePoint[];
+}
 
 interface PricePoint {
     capturedAt: string;
@@ -53,6 +68,7 @@ function formatMoney(amount: number, currency: string): string {
 export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRow[] }) {
     const [accounts, setAccounts] = useState(initialAccounts);
     const [syncTick, setSyncTick] = useState(0);
+    const [tab, setTab] = useState<Tab>("list");
     const [showAccountForm, setShowAccountForm] = useState(false);
     const [accountForm, setAccountForm] = useState<VanguardAccountInput>({ name: "", accountType: "ISA", currency: "GBP" });
     const [isPending, startTransition] = useTransition();
@@ -98,66 +114,187 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                         {accounts.length} conturi · Valoare totală {formatMoney(totalValue, "GBP")} · Investit {formatMoney(totalInvested, "GBP")}
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1">
+                        {([
+                            ["list", "Listă", List],
+                            ["stats", "Statistici", BarChart3],
+                        ] as const).map(([key, label, Icon]) => (
+                            <button
+                                key={key}
+                                onClick={() => setTab(key)}
+                                className={cn(
+                                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5",
+                                    tab === key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                <Icon className="w-3.5 h-3.5" />
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                     <VanguardSyncButton onSynced={() => setSyncTick((t) => t + 1)} />
-                    <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
-                        {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                        {showAccountForm ? "Anulează" : "Adaugă cont"}
-                    </Button>
+                    {tab === "list" && (
+                        <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
+                            {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                            {showAccountForm ? "Anulează" : "Adaugă cont"}
+                        </Button>
+                    )}
                 </div>
             </div>
 
-            <Card className="p-4 border-white/10 bg-white/[0.02]">
-                <p className="text-xs text-muted leading-relaxed">
-                    Vanguard nu are un API public pentru investitori individuali. Dacă un holding are completate atât
-                    Ticker/ISIN cât și Unități, prețul i se actualizează automat o dată pe zi — pentru ETF-uri (ex. VWRL)
-                    din prețul de la bursa din Londra, iar pentru fonduri OEIC (ex. &bdquo;FTSE Global All Cap&rdquo;) din
-                    ISIN, printr-o sursă publică ce se poate opri fără avertisment dacă își schimbă pagina. Fără ambele
-                    câmpuri completate, holdingul rămâne complet manual.
-                </p>
-            </Card>
-
-            {showAccountForm && (
-                <Card className="p-5 sm:p-6 border-primary/30">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-xs text-muted">Nume cont</label>
-                            <input value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="ex. Stocks & Shares ISA" className={inputClass} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-muted">Tip</label>
-                            <select value={accountForm.accountType} onChange={(e) => setAccountForm({ ...accountForm, accountType: e.target.value })} className={inputClass}>
-                                <option value="ISA">ISA</option>
-                                <option value="GIA">GIA</option>
-                                <option value="SIPP">SIPP</option>
-                                <option value="JISA">JISA</option>
-                                <option value="Other">Altul</option>
-                            </select>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-muted">Monedă</label>
-                            <input value={accountForm.currency} onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })} className={inputClass} />
-                        </div>
-                    </div>
-                    {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
-                    <div className="flex gap-2 mt-4">
-                        <Button variant="primary" onClick={submitAccount} disabled={isPending}>
-                            {isPending ? "Se salvează..." : "Salvează"}
-                        </Button>
-                    </div>
-                </Card>
-            )}
-
-            {accounts.length === 0 ? (
-                <Card className="p-16 text-center">
-                    <Landmark className="w-6 h-6 mx-auto mb-2 opacity-40 text-faint" />
-                    <p className="text-faint italic">Niciun cont Vanguard adăugat încă.</p>
-                </Card>
+            {tab === "stats" ? (
+                <StatsTab accounts={accounts} />
             ) : (
-                accounts.map((account) => (
-                    <AccountCard key={account.id} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} syncTick={syncTick} />
-                ))
+                <>
+                    <Card className="p-4 border-white/10 bg-white/[0.02]">
+                        <p className="text-xs text-muted leading-relaxed">
+                            Vanguard nu are un API public pentru investitori individuali. Dacă un holding are completate atât
+                            Ticker/ISIN cât și Unități, prețul i se actualizează automat o dată pe zi — pentru ETF-uri (ex. VWRL)
+                            din prețul de la bursa din Londra, iar pentru fonduri OEIC (ex. &bdquo;FTSE Global All Cap&rdquo;) din
+                            ISIN, printr-o sursă publică ce se poate opri fără avertisment dacă își schimbă pagina. Fără ambele
+                            câmpuri completate, holdingul rămâne complet manual.
+                        </p>
+                    </Card>
+
+                    {showAccountForm && (
+                        <Card className="p-5 sm:p-6 border-primary/30">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-muted">Nume cont</label>
+                                    <input value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="ex. Stocks & Shares ISA" className={inputClass} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-muted">Tip</label>
+                                    <select value={accountForm.accountType} onChange={(e) => setAccountForm({ ...accountForm, accountType: e.target.value })} className={inputClass}>
+                                        <option value="ISA">ISA</option>
+                                        <option value="GIA">GIA</option>
+                                        <option value="SIPP">SIPP</option>
+                                        <option value="JISA">JISA</option>
+                                        <option value="Other">Altul</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-muted">Monedă</label>
+                                    <input value={accountForm.currency} onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })} className={inputClass} />
+                                </div>
+                            </div>
+                            {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
+                            <div className="flex gap-2 mt-4">
+                                <Button variant="primary" onClick={submitAccount} disabled={isPending}>
+                                    {isPending ? "Se salvează..." : "Salvează"}
+                                </Button>
+                            </div>
+                        </Card>
+                    )}
+
+                    {accounts.length === 0 ? (
+                        <Card className="p-16 text-center">
+                            <Landmark className="w-6 h-6 mx-auto mb-2 opacity-40 text-faint" />
+                            <p className="text-faint italic">Niciun cont Vanguard adăugat încă.</p>
+                        </Card>
+                    ) : (
+                        accounts.map((account) => (
+                            <AccountCard key={account.id} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} syncTick={syncTick} />
+                        ))
+                    )}
+                </>
             )}
+        </div>
+    );
+}
+
+function StatsTab({ accounts }: { accounts: AccountRow[] }) {
+    const [history, setHistory] = useState<AccountValueSeries[] | null>(null);
+
+    useEffect(() => {
+        getVanguardAccountValueHistory().then(setHistory);
+    }, []);
+
+    const summaries = accounts.map((a) => {
+        const invested = a.holdings.reduce((s, h) => s + h.costBasis, 0);
+        const value = a.holdings.reduce((s, h) => s + h.currentValue, 0);
+        const pnl = value - invested;
+        const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
+        return { ...a, invested, value, pnl, pnlPercent };
+    });
+
+    // Merge all per-account series into one date-indexed dataset for a
+    // single multi-line chart (one line per account, sharing an X axis).
+    const chartData = React.useMemo(() => {
+        if (!history || history.length === 0) return [];
+        const dates = Array.from(new Set(history.flatMap((s) => s.points.map((p) => p.date)))).sort();
+        return dates.map((date) => {
+            const row: Record<string, number | string> = { date, label: format(new Date(date), "dd MMM") };
+            for (const series of history) {
+                const point = series.points.find((p) => p.date === date);
+                if (point) row[series.accountId] = point.value;
+            }
+            return row;
+        });
+    }, [history]);
+
+    const hasEnoughForChart = (history?.length ?? 0) > 0 && chartData.length >= 2;
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {summaries.map((a) => (
+                    <Card key={a.id} className="p-5">
+                        <p className="text-sm font-medium text-foreground">{a.name}</p>
+                        <p className="text-xs text-muted mb-3">{a.accountType} &middot; {a.currency}</p>
+                        <p className="text-xl font-medium font-num text-foreground">{formatMoney(a.value, a.currency)}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-muted">Investit {formatMoney(a.invested, a.currency)}</span>
+                            <span className={cn("text-xs font-medium", a.pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                ({a.pnl >= 0 ? "+" : ""}{a.pnlPercent.toFixed(1)}%)
+                            </span>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            <Card className="p-5 sm:p-6">
+                <p className="text-sm font-medium text-foreground mb-1">Evoluție valoare pe cont</p>
+                <p className="text-xs text-muted mb-4">
+                    Construită din istoricul de prețuri (vezi iconița de grafic din tab-ul Listă) — include doar
+                    holdingurile cu ticker/ISIN și unități completate.
+                </p>
+                {history === null ? (
+                    <div className="flex items-center gap-2 text-xs text-muted py-10 justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă...
+                    </div>
+                ) : !hasEnoughForChart ? (
+                    <p className="text-xs text-faint italic text-center py-10">
+                        Nu există încă suficiente date pentru un grafic — ai nevoie de holdinguri cu ticker/ISIN +
+                        unități completate, cu cel puțin două prețuri diferite înregistrate în timp.
+                    </p>
+                ) : (
+                    <div className="h-[280px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="label" {...chartAxisProps} />
+                                <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v}`} width={64} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(2)}`} />
+                                <Legend wrapperStyle={{ fontSize: 12 }} />
+                                {history!.map((series, i) => (
+                                    <Line
+                                        key={series.accountId}
+                                        type="monotone"
+                                        dataKey={series.accountId}
+                                        name={series.accountName}
+                                        stroke={ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]}
+                                        strokeWidth={2}
+                                        dot={{ r: 3 }}
+                                        connectNulls
+                                    />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+            </Card>
         </div>
     );
 }

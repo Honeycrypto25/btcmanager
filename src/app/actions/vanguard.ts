@@ -128,6 +128,71 @@ export async function getVanguardPriceHistory(holdingId: string) {
     }));
 }
 
+/** Per-account portfolio value evolution, built from each holding's price
+ * history (units are treated as constant at their current value -- there's
+ * no historical "units held on date X" record, only a live snapshot, so
+ * this is a best-effort reconstruction, not a perfectly accurate one if
+ * units were ever changed after the fact).
+ *
+ * For every calendar date where ANY holding in ANY of the user's accounts
+ * got a price point, each account's value on that date is the sum, over
+ * its holdings, of (that holding's most recently known price at or before
+ * that date) × its current units -- i.e. forward-filled, so an account
+ * with an OEIC fund (long gaps between distinct prices) doesn't need a
+ * point on every single date to still contribute a running value.
+ * Holdings with no price history at all (purely manual, no ticker/ISIN)
+ * don't contribute a time series here -- their value only ever shows up
+ * in the current totals elsewhere on the page, not in this chart.
+ */
+export async function getVanguardAccountValueHistory() {
+    const userId = await requireUserId();
+    const accounts = await db.vanguardAccount.findMany({
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+        include: { holdings: { include: { priceHistory: { orderBy: { capturedAt: "asc" } } } } },
+    });
+
+    const allDates = new Set<string>();
+    for (const acc of accounts as any[]) {
+        for (const h of acc.holdings) {
+            for (const p of h.priceHistory) {
+                allDates.add(p.capturedAt.toISOString().slice(0, 10));
+            }
+        }
+    }
+    const sortedDates = Array.from(allDates).sort();
+
+    const series = (accounts as any[])
+        .map((acc) => {
+            const points = sortedDates
+                .map((date) => {
+                    let value = 0;
+                    let hasAny = false;
+                    for (const h of acc.holdings) {
+                        if (h.units === null) continue;
+                        let lastPrice: number | null = null;
+                        for (const p of h.priceHistory) {
+                            if (p.capturedAt.toISOString().slice(0, 10) <= date) {
+                                lastPrice = Number(p.price);
+                            } else {
+                                break;
+                            }
+                        }
+                        if (lastPrice !== null) {
+                            value += lastPrice * Number(h.units);
+                            hasAny = true;
+                        }
+                    }
+                    return hasAny ? { date, value } : null;
+                })
+                .filter((p): p is { date: string; value: number } => p !== null);
+            return { accountId: acc.id as string, accountName: acc.name as string, points };
+        })
+        .filter((a) => a.points.length > 0);
+
+    return series;
+}
+
 /** Total invested/value across all Vanguard holdings for this user — used
  * by both /vanguard and the unified /investments overview. */
 export async function getVanguardTotals() {
