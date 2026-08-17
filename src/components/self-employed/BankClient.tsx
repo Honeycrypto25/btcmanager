@@ -16,6 +16,8 @@ import {
     convertTransactionToExpense,
     ignoreTransaction,
     undoTransactionConversion,
+    bulkIgnoreTransactions,
+    bulkAssignAccount,
     type ImportBankCsvInput,
 } from "@/app/actions/bank";
 import type { AmountMode } from "@/lib/bank/csv";
@@ -385,6 +387,8 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
     const [matchPickerTxId, setMatchPickerTxId] = useState<string | null>(null);
     const [matchSearch, setMatchSearch] = useState("");
     const [linkedReceiptIds, setLinkedReceiptIds] = useState<Set<string>>(new Set());
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [bulkAccountId, setBulkAccountId] = useState("");
 
     const receiptIds = useMemo(() => Array.from(new Set(rows.map((r) => r.receiptId).filter(Boolean))) as string[], [rows]);
 
@@ -425,6 +429,33 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
         setDateTo("");
         setAccountFilter("");
         setSearch("");
+    }
+
+    const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+    const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+
+    function toggleSelect(id: string) {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
+
+    function toggleSelectAllFiltered() {
+        setSelected((prev) => {
+            if (allFilteredSelected) {
+                const next = new Set(prev);
+                for (const id of filteredIds) next.delete(id);
+                return next;
+            }
+            return new Set([...prev, ...filteredIds]);
+        });
+    }
+
+    function clearSelection() {
+        setSelected(new Set());
     }
 
     function confirm(txId: string, receiptId: string) {
@@ -503,6 +534,40 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
             try {
                 await undoTransactionConversion(tx.id);
                 setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, convertedType: null, convertedRecordId: null } : r)));
+            } catch (err: any) {
+                setConvertError(err.message || "Acțiune eșuată.");
+            }
+        });
+    }
+
+    function doBulkIgnore() {
+        if (selected.size === 0) return;
+        setConvertError(null);
+        const ids = Array.from(selected);
+        startTransition(async () => {
+            try {
+                await bulkIgnoreTransactions(ids);
+                const idSet = new Set(ids);
+                setRows((prev) => prev.map((r) => (idSet.has(r.id) && !r.convertedType ? { ...r, convertedType: "ignored", convertedRecordId: null } : r)));
+                clearSelection();
+            } catch (err: any) {
+                setConvertError(err.message || "Acțiune eșuată.");
+            }
+        });
+    }
+
+    function doBulkAssignAccount() {
+        if (selected.size === 0 || !bulkAccountId) return;
+        setConvertError(null);
+        const ids = Array.from(selected);
+        const accId = bulkAccountId;
+        startTransition(async () => {
+            try {
+                await bulkAssignAccount(ids, accId);
+                const idSet = new Set(ids);
+                setRows((prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, accountId: accId } : r)));
+                clearSelection();
+                setBulkAccountId("");
             } catch (err: any) {
                 setConvertError(err.message || "Acțiune eșuată.");
             }
@@ -591,6 +656,37 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                 </div>
             </Card>
 
+            {selected.size > 0 && (
+                <Card className="p-3 sm:p-4 border-primary/30 bg-primary/5">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm text-foreground font-medium">{selected.size} selectate</span>
+                        {accounts.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={bulkAccountId}
+                                    onChange={(e) => setBulkAccountId(e.target.value)}
+                                    className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                                >
+                                    <option value="" className="bg-surface">Alege cont...</option>
+                                    {accounts.map((a) => (
+                                        <option key={a.id} value={a.id} className="bg-surface">{a.name}</option>
+                                    ))}
+                                </select>
+                                <Button variant="outline" size="sm" onClick={doBulkAssignAccount} disabled={isPending || !bulkAccountId}>
+                                    Atribuie cont
+                                </Button>
+                            </div>
+                        )}
+                        <Button variant="outline" size="sm" onClick={doBulkIgnore} disabled={isPending}>
+                            Ignoră selectate
+                        </Button>
+                        <button onClick={clearSelection} className="text-xs text-muted hover:text-foreground ml-auto flex items-center gap-1">
+                            <X className="w-3.5 h-3.5" /> Anulează selecția
+                        </button>
+                    </div>
+                </Card>
+            )}
+
             {convertError && (
                 <Card className="p-4 border-red-400/30 bg-red-500/5">
                     <p className="text-sm text-red-300">{convertError}</p>
@@ -602,6 +698,15 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-border bg-white/[0.02]">
+                                <th className="px-4 py-4 w-10">
+                                    <input
+                                        type="checkbox"
+                                        checked={allFilteredSelected}
+                                        onChange={toggleSelectAllFiltered}
+                                        aria-label="Selectează toate tranzacțiile filtrate"
+                                        className="w-4 h-4 rounded border-border bg-white/[0.04] accent-primary cursor-pointer"
+                                    />
+                                </th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Data</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Cont</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Descriere</th>
@@ -613,7 +718,7 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                         <tbody className="divide-y divide-white/5">
                             {filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-16 text-center text-faint italic">
+                                    <td colSpan={7} className="px-6 py-16 text-center text-faint italic">
                                         <Landmark className="w-6 h-6 mx-auto mb-2 opacity-40" />
                                         Nicio tranzacție. Importă un CSV din tab-ul &bdquo;Import&rdquo;.
                                     </td>
@@ -622,6 +727,15 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                                 filtered.map((tx) => (
                                     <React.Fragment key={tx.id}>
                                         <tr className="hover:bg-white/[0.01] transition-colors">
+                                            <td className="px-4 py-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selected.has(tx.id)}
+                                                    onChange={() => toggleSelect(tx.id)}
+                                                    aria-label="Selectează tranzacția"
+                                                    className="w-4 h-4 rounded border-border bg-white/[0.04] accent-primary cursor-pointer"
+                                                />
+                                            </td>
                                             <td className="px-6 py-4 text-sm text-foreground whitespace-nowrap">{format(new Date(tx.transactionDate), "dd MMM yyyy")}</td>
                                             <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{tx.accountId ? accountNameById.get(tx.accountId) || "—" : "—"}</td>
                                             <td className="px-6 py-4 text-sm text-foreground max-w-xs truncate">{tx.description}</td>
@@ -709,7 +823,7 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                                         </tr>
                                         {expandedTx === tx.id && (
                                             <tr className="bg-white/[0.02]">
-                                                <td colSpan={6} className="px-6 py-4">
+                                                <td colSpan={7} className="px-6 py-4">
                                                     {tx.debitCredit === "CREDIT" ? (
                                                         <IncomeConversionForm
                                                             tx={tx}
@@ -730,7 +844,7 @@ function TransactionsTab({ transactions, accounts, matchableReceipts }: { transa
                                         )}
                                         {matchPickerTxId === tx.id && (
                                             <tr className="bg-white/[0.02]">
-                                                <td colSpan={6} className="px-6 py-4">
+                                                <td colSpan={7} className="px-6 py-4">
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between">
                                                             <p className="text-xs text-muted">

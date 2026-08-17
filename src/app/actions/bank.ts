@@ -401,6 +401,42 @@ export async function ignoreTransaction(transactionId: string) {
     revalidatePath("/self-employed/bank");
 }
 
+/** Bulk version of ignoreTransaction, for the multi-select action bar.
+ * Silently skips any transaction that's already converted (income/expense/
+ * ignored) rather than failing the whole batch. */
+export async function bulkIgnoreTransactions(transactionIds: string[]) {
+    const userId = await requireUserId();
+    if (transactionIds.length === 0) return { count: 0 };
+
+    const result = await db.bankTransaction.updateMany({
+        where: { id: { in: transactionIds }, userId, convertedType: null },
+        data: { convertedType: "ignored", convertedRecordId: null },
+    });
+    revalidatePath("/self-employed/bank");
+    return { count: result.count };
+}
+
+/** Bulk-assigns (or clears, if accountId is null) the bank account on a set
+ * of transactions -- used by the multi-select "Atribuie cont" bulk action so
+ * the user can tag a batch of rows (e.g. all personal-card spending) at
+ * once instead of one at a time. */
+export async function bulkAssignAccount(transactionIds: string[], accountId: string | null) {
+    const userId = await requireUserId();
+    if (transactionIds.length === 0) return { count: 0 };
+
+    if (accountId) {
+        const account = await db.bankAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.userId !== userId) throw new Error("Cont invalid.");
+    }
+
+    const result = await db.bankTransaction.updateMany({
+        where: { id: { in: transactionIds }, userId },
+        data: { accountId },
+    });
+    revalidatePath("/self-employed/bank");
+    return { count: result.count };
+}
+
 /** Undoes a conversion — deletes the Income/Expense row it created (if any)
  * and clears the transaction's converted markers so it can be re-converted. */
 export async function undoTransactionConversion(transactionId: string) {
