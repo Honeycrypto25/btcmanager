@@ -5,17 +5,18 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { listBankAccounts, listBankTransactions, listImportBatches } from "@/app/actions/bank";
+import { listBankAccounts, listBankTransactions, listImportBatches, listReceiptsForManualMatch } from "@/app/actions/bank";
 import { BankClient } from "@/components/self-employed/BankClient";
 
 export default async function BankPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const [accounts, transactions, batches] = await Promise.all([
+    const [accounts, transactions, batches, matchableReceipts] = await Promise.all([
         listBankAccounts(),
         listBankTransactions(),
         listImportBatches(),
+        listReceiptsForManualMatch(),
     ]);
 
     const serializedTransactions = transactions.map((t: any) => ({
@@ -47,7 +48,7 @@ export default async function BankPage() {
 
     return (
         <DashboardLayout>
-            <BankClient accounts={serializedAccounts} transactions={serializedTransactions} batches={serializedBatches} />
+            <BankClient accounts={serializedAccounts} transactions={serializedTransactions} batches={serializedBatches} matchableReceipts={matchableReceipts} />
         </DashboardLayout>
     );
 }

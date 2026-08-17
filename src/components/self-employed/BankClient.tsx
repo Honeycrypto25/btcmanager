@@ -43,6 +43,14 @@ interface TransactionRow {
     convertedRecordId: string | null;
 }
 
+interface MatchableReceipt {
+    id: string;
+    merchant: string | null;
+    amount: number | null;
+    receiptDate: string | null;
+    category: string | null;
+}
+
 interface BatchRow {
     id: string;
     filename: string;
@@ -76,7 +84,7 @@ function matchBadge(status: string) {
 
 type Tab = "import" | "transactions" | "history";
 
-export function BankClient({ accounts, transactions, batches }: { accounts: Account[]; transactions: TransactionRow[]; batches: BatchRow[] }) {
+export function BankClient({ accounts, transactions, batches, matchableReceipts }: { accounts: Account[]; transactions: TransactionRow[]; batches: BatchRow[]; matchableReceipts: MatchableReceipt[] }) {
     const [tab, setTab] = useState<Tab>("transactions");
 
     return (
@@ -110,7 +118,7 @@ export function BankClient({ accounts, transactions, batches }: { accounts: Acco
             </div>
 
             {tab === "import" && <ImportTab accounts={accounts} />}
-            {tab === "transactions" && <TransactionsTab transactions={transactions} accounts={accounts} />}
+            {tab === "transactions" && <TransactionsTab transactions={transactions} accounts={accounts} matchableReceipts={matchableReceipts} />}
             {tab === "history" && <HistoryTab batches={batches} />}
         </div>
     );
@@ -363,7 +371,7 @@ function ColumnSelect({ label, value, onChange, headers, allowEmpty }: { label: 
 
 // --- Transactions tab ---
 
-function TransactionsTab({ transactions, accounts }: { transactions: TransactionRow[]; accounts: Account[] }) {
+function TransactionsTab({ transactions, accounts, matchableReceipts }: { transactions: TransactionRow[]; accounts: Account[]; matchableReceipts: MatchableReceipt[] }) {
     const [rows, setRows] = useState(transactions);
     const [filter, setFilter] = useState<string | null>(null);
     const [dateFrom, setDateFrom] = useState("");
@@ -374,6 +382,9 @@ function TransactionsTab({ transactions, accounts }: { transactions: Transaction
     const [isPending, startTransition] = useTransition();
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
     const [convertError, setConvertError] = useState<string | null>(null);
+    const [matchPickerTxId, setMatchPickerTxId] = useState<string | null>(null);
+    const [matchSearch, setMatchSearch] = useState("");
+    const [linkedReceiptIds, setLinkedReceiptIds] = useState<Set<string>>(new Set());
 
     const receiptIds = useMemo(() => Array.from(new Set(rows.map((r) => r.receiptId).filter(Boolean))) as string[], [rows]);
 
@@ -419,9 +430,20 @@ function TransactionsTab({ transactions, accounts }: { transactions: Transaction
     function confirm(txId: string, receiptId: string) {
         startTransition(async () => {
             await confirmMatch(txId, receiptId);
-            setRows((prev) => prev.map((r) => (r.id === txId ? { ...r, matchStatus: "matched", matchConfidence: 1 } : r)));
+            setRows((prev) => prev.map((r) => (r.id === txId ? { ...r, receiptId, matchStatus: "matched", matchConfidence: 1 } : r)));
+            setLinkedReceiptIds((prev) => new Set(prev).add(receiptId));
+            setMatchPickerTxId(null);
+            setMatchSearch("");
         });
     }
+
+    const matchCandidates = useMemo(() => {
+        const q = matchSearch.trim().toLowerCase();
+        return matchableReceipts
+            .filter((r) => !linkedReceiptIds.has(r.id))
+            .filter((r) => !q || (r.merchant || "").toLowerCase().includes(q))
+            .slice(0, 20);
+    }, [matchableReceipts, matchSearch, linkedReceiptIds]);
 
     function reject(txId: string) {
         startTransition(async () => {
@@ -669,6 +691,14 @@ function TransactionsTab({ transactions, accounts }: { transactions: Transaction
                                                                     Marchează cheltuială
                                                                 </button>
                                                             )}
+                                                            {tx.matchStatus === "unmatched" && (
+                                                                <button
+                                                                    onClick={() => { setMatchPickerTxId(matchPickerTxId === tx.id ? null : tx.id); setMatchSearch(""); }}
+                                                                    className="text-[11px] text-primary hover:underline"
+                                                                >
+                                                                    Leagă chitanță
+                                                                </button>
+                                                            )}
                                                             <button onClick={() => doIgnore(tx)} className="text-[11px] text-muted hover:text-foreground">
                                                                 Ignoră
                                                             </button>
@@ -695,6 +725,50 @@ function TransactionsTab({ transactions, accounts }: { transactions: Transaction
                                                             onSubmit={(merchant, category) => doConvertExpense(tx, merchant, category)}
                                                         />
                                                     )}
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {matchPickerTxId === tx.id && (
+                                            <tr className="bg-white/[0.02]">
+                                                <td colSpan={6} className="px-6 py-4">
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="text-xs text-muted">
+                                                                Leagă manual o chitanță de această tranzacție, chiar dacă suma nu se potrivește exact (ex. combustibil + un alt produs cumpărat la aceeași plată).
+                                                            </p>
+                                                            <button onClick={() => setMatchPickerTxId(null)} className="text-faint hover:text-foreground">
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                        <input
+                                                            autoFocus
+                                                            value={matchSearch}
+                                                            onChange={(e) => setMatchSearch(e.target.value)}
+                                                            placeholder="Caută după comerciant..."
+                                                            className="w-full bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                                                        />
+                                                        <div className="max-h-64 overflow-y-auto divide-y divide-white/5 rounded-lg border border-border">
+                                                            {matchCandidates.length === 0 ? (
+                                                                <p className="px-3 py-4 text-xs text-faint italic">Nicio chitanță disponibilă pentru legare manuală.</p>
+                                                            ) : (
+                                                                matchCandidates.map((r) => (
+                                                                    <div key={r.id} className="flex items-center justify-between px-3 py-2 hover:bg-white/[0.02]">
+                                                                        <div>
+                                                                            <p className="text-sm text-foreground">{r.merchant || "Chitanță fără comerciant"}</p>
+                                                                            <p className="text-[11px] text-muted">
+                                                                                {r.receiptDate ? format(new Date(r.receiptDate), "dd MMM yyyy") : "fără dată"}
+                                                                                {r.amount !== null ? ` · ${formatMoney(r.amount)}` : ""}
+                                                                                {r.category ? ` · ${r.category}` : ""}
+                                                                            </p>
+                                                                        </div>
+                                                                        <Button variant="outline" size="sm" onClick={() => confirm(tx.id, r.id)} disabled={isPending}>
+                                                                            Leagă
+                                                                        </Button>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )}

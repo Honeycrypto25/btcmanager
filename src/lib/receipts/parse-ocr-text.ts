@@ -153,10 +153,14 @@ export function parseReceiptOcrText(text: string): ParsedReceiptFields {
     // Total: prefer the LAST line matching a total keyword (subtotal/VAT
     // breakdowns usually appear before the final total on a receipt).
     let bestTotal: number | undefined;
+    let totalFromKeyword = false;
     for (const line of lines) {
         if (TOTAL_KEYWORDS.test(line) && !EXCLUDE_AMOUNT_LINE.test(line)) {
             const amt = extractAmount(line);
-            if (amt !== undefined) bestTotal = amt;
+            if (amt !== undefined) {
+                bestTotal = amt;
+                totalFromKeyword = true;
+            }
         }
     }
     if (bestTotal === undefined) {
@@ -185,7 +189,12 @@ export function parseReceiptOcrText(text: string): ParsedReceiptFields {
         if (Number.isFinite(qty)) {
             result.fuelQuantityLitres = qty;
         }
-        if (Number.isFinite(qty) && Number.isFinite(pricePerUnit)) {
+        // Only cross-check/override when we don't already trust an explicit
+        // "TOTAL" line -- otherwise a receipt that legitimately includes a
+        // non-fuel item alongside the fuel (e.g. a bottle of water) gets its
+        // correct, larger total wrongly replaced by the fuel-only figure,
+        // which then no longer matches the actual bank charge.
+        if (Number.isFinite(qty) && Number.isFinite(pricePerUnit) && !totalFromKeyword) {
             const expected = qty * pricePerUnit;
             let closest: number | undefined;
             let closestDiff = Infinity;

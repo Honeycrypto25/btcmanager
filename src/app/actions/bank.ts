@@ -238,6 +238,8 @@ export async function confirmMatch(transactionId: string, receiptId: string) {
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
+    const receipt = await db.receipt.findUnique({ where: { id: receiptId } });
+    if (!receipt || receipt.userId !== userId) throw new Error("Chitanța nu a fost găsită.");
 
     await db.bankTransaction.update({
         where: { id: transactionId },
@@ -250,6 +252,29 @@ export async function confirmMatch(transactionId: string, receiptId: string) {
 
     revalidatePath("/self-employed/bank");
     revalidatePath("/self-employed/receipts");
+}
+
+/** Receipts eligible to be manually linked to a bank transaction --
+ * excludes anything already matched or already converted straight into an
+ * expense. Used by the manual "Leagă chitanță" picker on unmatched
+ * transactions, for cases the automatic amount-based matching in
+ * lib/bank/matching.ts misses (e.g. a fuel receipt whose bank charge is
+ * higher because a non-fuel item like a drink was bought in the same
+ * transaction). */
+export async function listReceiptsForManualMatch() {
+    const userId = await requireUserId();
+    const receipts = await db.receipt.findMany({
+        where: { userId, status: { not: "matched" }, convertedExpenseId: null },
+        orderBy: { receiptDate: "desc" },
+        take: 200,
+    });
+    return receipts.map((r: any) => ({
+        id: r.id,
+        merchant: r.merchant,
+        amount: r.amount !== null ? Number(r.amount) : null,
+        receiptDate: r.receiptDate ? r.receiptDate.toISOString() : null,
+        category: r.category,
+    }));
 }
 
 export async function rejectMatch(transactionId: string) {
