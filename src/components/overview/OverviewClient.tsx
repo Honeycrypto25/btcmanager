@@ -104,6 +104,86 @@ function scaleRow(row: PeriodRow, factor: number): PeriodRow {
     };
 }
 
+export interface PeriodRowWithVanguard extends PeriodRow {
+    vanguard: AssetFigures;
+    /** btc + t212 + vanguard, since row.total from the server only ever
+     * covers btc + t212. */
+    combinedTotal: AssetFigures;
+}
+
+/** Monday of the week containing `date`, at midnight — must match
+ * mondayOf() in lib/overview-data.ts exactly, since weekly labels below
+ * are joined against weeklyRows by plain string equality. */
+function mondayOfLocal(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = (day + 6) % 7;
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - diff);
+    return d;
+}
+
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Buckets Vanguard's total-value series into week/month/year labels using
+ * the exact same label format getOverviewData() uses for weeklyRows/
+ * monthlyRows/yearlyRows, so they can be joined by label string below.
+ * Each map holds the LAST value recorded within that bucket (ascending
+ * iteration — later points overwrite earlier ones in the same bucket). */
+function buildVanguardPeriodMaps(series: ValuePoint[]) {
+    const week = new Map<string, number>();
+    const month = new Map<string, number>();
+    const year = new Map<string, number>();
+    for (const p of series) {
+        const d = new Date(p.date);
+        week.set(mondayOfLocal(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), p.value);
+        month.set(`${MONTH_NAMES_SHORT[d.getMonth()]} ${d.getFullYear()}`, p.value);
+        year.set(String(d.getFullYear()), p.value);
+    }
+    return { week, month, year };
+}
+
+/**
+ * Merges Vanguard into a set of period rows (weekly/monthly/yearly),
+ * forward-filling the last known total value into periods with no new
+ * price point — same idea as the account value-history reconstruction on
+ * /vanguard. Vanguard has no dated contribution log (holdings just carry a
+ * current cost basis, not a purchase-by-purchase history like BTC/T212),
+ * so there's no way to know which period the money actually went in. The
+ * whole current invested total is attributed to the FIRST period that has
+ * a value — a single-lump-sum approximation that at least keeps "sum of
+ * invested across periods" equal to the true total instead of inventing
+ * money — every other period gets invested=0 with its real value still
+ * shown (AssetSubRow shows value/invested independently for this reason).
+ */
+function withVanguard(rows: PeriodRow[], periodMap: Map<string, number>, totalInvested: number): PeriodRowWithVanguard[] {
+    const chronological = [...rows].reverse(); // rows arrive newest-first
+    let lastValue = 0;
+    let investedAssigned = false;
+    const built = chronological.map((row) => {
+        if (periodMap.has(row.label)) lastValue = periodMap.get(row.label)!;
+        let invested = 0;
+        if (!investedAssigned && lastValue > 0) {
+            invested = totalInvested;
+            investedAssigned = true;
+        }
+        const value = lastValue;
+        const pnl = value - invested;
+        const vanguard: AssetFigures = { invested, value, pnl, pnlPercent: invested > 0 ? (pnl / invested) * 100 : 0 };
+        const combinedInvested = row.total.invested + invested;
+        const combinedValue = row.total.value + value;
+        const combinedPnl = row.total.pnl + pnl;
+        const combinedTotal: AssetFigures = {
+            invested: combinedInvested,
+            value: combinedValue,
+            pnl: combinedPnl,
+            pnlPercent: combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0,
+        };
+        return { ...row, vanguard, combinedTotal };
+    });
+    return built.reverse(); // back to newest-first, matching the input order
+}
+
 export function OverviewClient({
     data,
     usdToGbp,
@@ -152,11 +232,33 @@ export function OverviewClient({
             monthlyRows: data.monthlyRows.map((r) => scaleRow(r, factor)),
             btcStats: { ...data.btcStats, avgMonthlyInvested: data.btcStats.avgMonthlyInvested * factor },
             t212Stats: { ...data.t212Stats, avgMonthlyInvested: data.t212Stats.avgMonthlyInvested * factor },
+            vanguardSeries: (vanguardSeries ?? []).map((p) => ({ date: p.date, value: p.value * factor })),
         };
-    }, [data, factor, vanguard]);
+    }, [data, factor, vanguard, vanguardSeries]);
 
     const fmt = (n: number) => `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 0 : 2 })}`;
     const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
+
+    // Vanguard merged into the week/month/year breakdown rows — used by
+    // both the "Invested vs. value" bar chart and the "Invested by ..."
+    // table below, so the two stay in sync with each other and with the
+    // top card's evolution chart (all three read from the same
+    // vanguardSeries, just bucketed differently). See withVanguard() for
+    // the "first period gets the whole invested total" approximation.
+    const vanguardPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.vanguardSeries), [view.vanguardSeries]);
+    const vanguardTotalInvested = view.vanguard?.invested ?? 0;
+    const weeklyRowsV = useMemo(
+        () => withVanguard(view.weeklyRows, vanguardPeriodMaps.week, vanguardTotalInvested),
+        [view.weeklyRows, vanguardPeriodMaps, vanguardTotalInvested]
+    );
+    const monthlyRowsV = useMemo(
+        () => withVanguard(view.monthlyRows, vanguardPeriodMaps.month, vanguardTotalInvested),
+        [view.monthlyRows, vanguardPeriodMaps, vanguardTotalInvested]
+    );
+    const yearlyRowsV = useMemo(
+        () => withVanguard(view.yearlyRows, vanguardPeriodMaps.year, vanguardTotalInvested),
+        [view.yearlyRows, vanguardPeriodMaps, vanguardTotalInvested]
+    );
 
     return (
         <>
@@ -426,14 +528,14 @@ export function OverviewClient({
                 from VanguardPriceHistory (same source as /vanguard's
                 Statistici tab, just summed instead of per-account). */}
             {view.vanguard && view.vanguard.accounts.length > 0 && (
-                <VanguardEvolutionChart series={vanguardSeries ?? []} fmt={fmt} />
+                <VanguardEvolutionChart series={view.vanguardSeries} fmt={fmt} />
             )}
 
-            {/* Monthly bars: invested + current value, per asset */}
-            <MonthlyBarsChart weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} />
+            {/* Monthly bars: invested + current value, per asset (incl. Vanguard) */}
+            <MonthlyBarsChart weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} hasVanguard={!!view.vanguard} />
 
-            {/* Invested breakdown, with Week/Month/Year toggle */}
-            <PeriodBreakdown weeklyRows={view.weeklyRows} monthlyRows={view.monthlyRows} yearlyRows={view.yearlyRows} fmt={fmt} pnlColor={pnlColor} />
+            {/* Invested breakdown, with Week/Month/Year toggle (incl. Vanguard) */}
+            <PeriodBreakdown weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} pnlColor={pnlColor} hasVanguard={!!view.vanguard} />
 
             <p className="text-[10px] text-faint text-center leading-relaxed">
                 {data.t212.connected && data.t212NativeCurrency && data.t212NativeCurrency !== 'USD' && (
@@ -929,12 +1031,14 @@ function PeriodBreakdown({
     yearlyRows,
     fmt,
     pnlColor,
+    hasVanguard,
 }: {
-    weeklyRows: PeriodRow[];
-    monthlyRows: PeriodRow[];
-    yearlyRows: PeriodRow[];
+    weeklyRows: PeriodRowWithVanguard[];
+    monthlyRows: PeriodRowWithVanguard[];
+    yearlyRows: PeriodRowWithVanguard[];
     fmt: (n: number) => string;
     pnlColor: (n: number) => string;
+    hasVanguard: boolean;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
     const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
@@ -970,25 +1074,41 @@ function PeriodBreakdown({
                         <span className="text-[10px] text-faint uppercase tracking-wider text-right">P&amp;L</span>
                     </div>
                     <div className="max-h-[420px] overflow-y-auto pr-1">
-                        {rows.map((row) => (
-                            <div key={row.label} className="py-2.5 border-b border-border last:border-0">
-                                <div className={cn("grid gap-x-3 items-baseline", gridCols)}>
-                                    <span className="text-sm font-medium text-foreground truncate">{row.label}</span>
-                                    <span className="text-sm font-medium font-num text-foreground text-right">
-                                        {row.total.invested !== 0 ? fmt(row.total.invested) : '\u2014'}
-                                    </span>
-                                    <span className="text-sm font-medium font-num text-foreground text-right">{fmt(row.total.value)}</span>
-                                    <span className={cn("text-xs font-num text-right", pnlColor(row.total.pnlPercent))}>
-                                        {row.total.invested !== 0 ? `${row.total.pnlPercent >= 0 ? '+' : ''}${row.total.pnlPercent.toFixed(1)}%` : '\u2014'}
-                                    </span>
+                        {rows.map((row) => {
+                            const total = hasVanguard ? row.combinedTotal : row.total;
+                            return (
+                                <div key={row.label} className="py-2.5 border-b border-border last:border-0">
+                                    <div className={cn("grid gap-x-3 items-baseline", gridCols)}>
+                                        <span className="text-sm font-medium text-foreground truncate">{row.label}</span>
+                                        <span className="text-sm font-medium font-num text-foreground text-right">
+                                            {total.invested !== 0 ? fmt(total.invested) : '\u2014'}
+                                        </span>
+                                        <span className="text-sm font-medium font-num text-foreground text-right">
+                                            {total.value !== 0 ? fmt(total.value) : '\u2014'}
+                                        </span>
+                                        <span className={cn("text-xs font-num text-right", pnlColor(total.pnlPercent))}>
+                                            {total.invested !== 0 ? `${total.pnlPercent >= 0 ? '+' : ''}${total.pnlPercent.toFixed(1)}%` : '\u2014'}
+                                        </span>
+                                    </div>
+                                    <div className="mt-1 space-y-0.5">
+                                        <AssetSubRow name="Bitcoin" figures={row.btc} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                        <AssetSubRow name="Trading 212" figures={row.t212} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                        {hasVanguard && (
+                                            <AssetSubRow name="Vanguard" figures={row.vanguard} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="mt-1 space-y-0.5">
-                                    <AssetSubRow name="Bitcoin" figures={row.btc} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
-                                    <AssetSubRow name="Trading 212" figures={row.t212} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
+                    {hasVanguard && (
+                        <p className="text-[10px] text-faint mt-3 leading-relaxed">
+                            Vanguard has no dated contribution history (holdings carry a current total, not a
+                            purchase-by-purchase log), so its full &quot;invested&quot; figure is shown once, in the
+                            earliest period with price data &mdash; every other period shows its real value with no
+                            new investment attributed to it.
+                        </p>
+                    )}
                 </>
             )}
         </Card>
@@ -1008,14 +1128,18 @@ function AssetSubRow({
     pnlColor: (n: number) => string;
     gridCols: string;
 }) {
-    const hasData = figures.invested !== 0;
+    // Invested and value are shown independently — Vanguard rows can have a
+    // real value with no "new investment" attributed to that period (see
+    // withVanguard()), and should still show the value rather than a dash.
+    const hasInvested = figures.invested !== 0;
+    const hasValue = figures.value !== 0;
     return (
         <div className={cn("grid gap-x-3 items-baseline text-xs pl-3 border-l border-border", gridCols)}>
             <span className="text-faint truncate">{name}</span>
-            <span className="font-num text-faint text-right">{hasData ? fmt(figures.invested) : '\u2014'}</span>
-            <span className="font-num text-faint text-right">{hasData ? fmt(figures.value) : '\u2014'}</span>
-            <span className={cn("font-num text-right", hasData ? pnlColor(figures.pnlPercent) : "text-faint")}>
-                {hasData ? `${figures.pnlPercent >= 0 ? '+' : ''}${figures.pnlPercent.toFixed(1)}%` : '\u2014'}
+            <span className="font-num text-faint text-right">{hasInvested ? fmt(figures.invested) : '\u2014'}</span>
+            <span className="font-num text-faint text-right">{hasValue ? fmt(figures.value) : '\u2014'}</span>
+            <span className={cn("font-num text-right", hasInvested ? pnlColor(figures.pnlPercent) : "text-faint")}>
+                {hasInvested ? `${figures.pnlPercent >= 0 ? '+' : ''}${figures.pnlPercent.toFixed(1)}%` : '\u2014'}
             </span>
         </div>
     );
@@ -1231,14 +1355,16 @@ function MonthlyBarsChart({
     monthlyRows,
     yearlyRows,
     fmt,
+    hasVanguard,
 }: {
-    weeklyRows: PeriodRow[];
-    monthlyRows: PeriodRow[];
-    yearlyRows: PeriodRow[];
+    weeklyRows: PeriodRowWithVanguard[];
+    monthlyRows: PeriodRowWithVanguard[];
+    yearlyRows: PeriodRowWithVanguard[];
     fmt: (n: number) => string;
+    hasVanguard: boolean;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
-    const [isolated, setIsolated] = useState<'all' | 'BTC' | 'T212'>('all');
+    const [isolated, setIsolated] = useState<'all' | 'BTC' | 'T212' | 'Vanguard'>('all');
     const scrollRef = React.useRef<HTMLDivElement>(null);
 
     const chronological = useMemo(() => {
@@ -1249,6 +1375,8 @@ function MonthlyBarsChart({
             btcValue: row.btc.value,
             t212Invested: row.t212.invested,
             t212Value: row.t212.value,
+            vanguardInvested: row.vanguard.invested,
+            vanguardValue: row.vanguard.value,
         }));
     }, [weeklyRows, monthlyRows, yearlyRows, granularity]);
 
@@ -1267,14 +1395,17 @@ function MonthlyBarsChart({
         const btcValue = chronological.reduce((s, r) => s + r.btcValue, 0);
         const t212Invested = chronological.reduce((s, r) => s + r.t212Invested, 0);
         const t212Value = chronological.reduce((s, r) => s + r.t212Value, 0);
-        const invested = btcInvested + t212Invested;
-        const value = btcValue + t212Value;
+        const vanguardInvested = chronological.reduce((s, r) => s + r.vanguardInvested, 0);
+        const vanguardValue = chronological.reduce((s, r) => s + r.vanguardValue, 0);
+        const invested = btcInvested + t212Invested + vanguardInvested;
+        const value = btcValue + t212Value + vanguardValue;
         return {
             invested,
             value,
             pnlPercent: invested !== 0 ? ((value - invested) / invested) * 100 : 0,
             btcPercent: btcInvested !== 0 ? ((btcValue - btcInvested) / btcInvested) * 100 : 0,
             t212Percent: t212Invested !== 0 ? ((t212Value - t212Invested) / t212Invested) * 100 : 0,
+            vanguardPercent: vanguardInvested !== 0 ? ((vanguardValue - vanguardInvested) / vanguardInvested) * 100 : 0,
         };
     }, [chronological]);
 
@@ -1285,8 +1416,8 @@ function MonthlyBarsChart({
         const point = payload[0]?.payload;
         if (!point) return null;
 
-        const totalInvested = point.btcInvested + point.t212Invested;
-        const totalValue = point.btcValue + point.t212Value;
+        const totalInvested = point.btcInvested + point.t212Invested + point.vanguardInvested;
+        const totalValue = point.btcValue + point.t212Value + point.vanguardValue;
 
         const Row = ({ color, name, value, filled, valueColorClass }: { color: string; name: string; value: number; filled: boolean; valueColorClass?: string }) => (
             <div className="flex items-center gap-2 justify-between">
@@ -1308,6 +1439,12 @@ function MonthlyBarsChart({
                 <Row color="#d6a24c" name="BTC value" value={point.btcValue} filled valueColorClass={point.btcInvested !== 0 ? pnlColor(point.btcValue - point.btcInvested) : undefined} />
                 <Row color="#7c93b8" name="T212 invested" value={point.t212Invested} filled={false} />
                 <Row color="#7c93b8" name="T212 value" value={point.t212Value} filled valueColorClass={point.t212Invested !== 0 ? pnlColor(point.t212Value - point.t212Invested) : undefined} />
+                {point.vanguardValue !== 0 && (
+                    <>
+                        <Row color="#52c98a" name="Vanguard invested" value={point.vanguardInvested} filled={false} />
+                        <Row color="#52c98a" name="Vanguard value" value={point.vanguardValue} filled valueColorClass={point.vanguardInvested !== 0 ? pnlColor(point.vanguardValue - point.vanguardInvested) : undefined} />
+                    </>
+                )}
                 <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-border">
                     <span className="text-xs text-muted">Total invested</span>
                     <span className="text-xs font-num text-muted">{fmt(totalInvested)}</span>
@@ -1401,16 +1538,22 @@ function MonthlyBarsChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                            {isolated !== 'T212' && (
+                            {isolated !== 'T212' && isolated !== 'Vanguard' && (
                                 <>
                                     <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.12} stroke="#d6a24c" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                     <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                 </>
                             )}
-                            {isolated !== 'BTC' && (
+                            {isolated !== 'BTC' && isolated !== 'Vanguard' && (
                                 <>
                                     <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.12} stroke="#7c93b8" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                     <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                </>
+                            )}
+                            {hasVanguard && isolated !== 'BTC' && isolated !== 'T212' && (
+                                <>
+                                    <Bar dataKey="vanguardInvested" name="Vanguard invested" fill="#52c98a" fillOpacity={0.12} stroke="#52c98a" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                    <Bar dataKey="vanguardValue" name="Vanguard value" fill="#52c98a" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                 </>
                             )}
                         </BarChart>
@@ -1430,7 +1573,7 @@ function MonthlyBarsChart({
                     className={cn(
                         "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
                         isolated === 'BTC' ? "border-primary/40 bg-primary/5" : "border-transparent hover:bg-white/[0.03]",
-                        isolated === 'T212' && "opacity-40"
+                        isolated !== 'all' && isolated !== 'BTC' && "opacity-40"
                     )}
                 >
                     <span className="flex items-center gap-1.5">
@@ -1451,7 +1594,7 @@ function MonthlyBarsChart({
                     className={cn(
                         "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
                         isolated === 'T212' ? "border-[#7c93b8]/40 bg-[#7c93b8]/5" : "border-transparent hover:bg-white/[0.03]",
-                        isolated === 'BTC' && "opacity-40"
+                        isolated !== 'all' && isolated !== 'T212' && "opacity-40"
                     )}
                 >
                     <span className="flex items-center gap-1.5">
@@ -1466,10 +1609,33 @@ function MonthlyBarsChart({
                         </span>
                     </span>
                 </button>
+                {hasVanguard && (
+                    <button
+                        type="button"
+                        onClick={() => setIsolated(isolated === 'Vanguard' ? 'all' : 'Vanguard')}
+                        className={cn(
+                            "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
+                            isolated === 'Vanguard' ? "border-[#52c98a]/40 bg-[#52c98a]/5" : "border-transparent hover:bg-white/[0.03]",
+                            isolated !== 'all' && isolated !== 'Vanguard' && "opacity-40"
+                        )}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #52c98a' }} />
+                            <span className="text-faint">Vanguard invested</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#52c98a' }} />
+                            <span className="text-faint">value</span>
+                            <span className={cn("font-num font-medium", pnlColor(totals.vanguardPercent))}>
+                                {totals.vanguardPercent >= 0 ? '+' : ''}{totals.vanguardPercent.toFixed(1)}%
+                            </span>
+                        </span>
+                    </button>
+                )}
             </div>
             {isolated !== 'all' && (
                 <p className="text-[10px] text-faint text-center mt-2">
-                    Showing {isolated} only &mdash; click it again to show both
+                    Showing {isolated} only &mdash; click it again to show all
                 </p>
             )}
         </Card>

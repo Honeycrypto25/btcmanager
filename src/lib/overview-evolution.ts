@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { getCurrentBtcPrice, getPriceHistory } from "@/lib/btc";
-import { getVanguardAccountValueHistory } from "@/app/actions/vanguard";
+import { getVanguardReportData, type VanguardTotalsSnapshot } from "@/lib/vanguard-report-data";
 
 /**
  * "How has this asset's total value moved over the last 30 days / 6 months /
@@ -144,22 +144,6 @@ export async function getT212Evolution(gbpToUsd: number): Promise<AssetEvolution
     }
 }
 
-/** Merges every Vanguard account's forward-filled value history
- * (getVanguardAccountValueHistory, already used by /vanguard's Statistici
- * tab) into a single total-portfolio-value-over-time series, in USD. */
-async function getVanguardTotalSeries(gbpToUsd: number): Promise<ValuePoint[]> {
-    const perAccount = await getVanguardAccountValueHistory();
-    const byDate = new Map<string, number>();
-    for (const series of perAccount) {
-        for (const p of series.points) {
-            byDate.set(p.date, (byDate.get(p.date) ?? 0) + p.value);
-        }
-    }
-    return Array.from(byDate.entries())
-        .map(([date, value]) => ({ date, value: value * gbpToUsd }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-}
-
 /**
  * Vanguard: same "value now vs. value back then" idea as BTC/T212 above,
  * built from VanguardPriceHistory instead of a klines API or account
@@ -167,11 +151,32 @@ async function getVanguardTotalSeries(gbpToUsd: number): Promise<ValuePoint[]> {
  * OEIC funds price once a day at best), most windows will read `null` for
  * a while — same "not enough data yet" story as the per-holding evolution
  * chart on /vanguard, not a bug.
+ *
+ * Reads through getVanguardReportData() (session-independent — see that
+ * file) rather than the session-gated getVanguardAccountValueHistory
+ * Server Action, so this also works from the cron-triggered email reports
+ * (lib/email/send-report.ts), which have no NextAuth session to scope by.
+ * Also returns `totals`, since callers on that path need both anyway.
  */
-export async function getVanguardEvolution(gbpToUsd: number): Promise<{ evolution: AssetEvolution; series: ValuePoint[] }> {
+export async function getVanguardEvolution(
+    gbpToUsd: number
+): Promise<{ evolution: AssetEvolution; series: ValuePoint[]; totals: VanguardTotalsSnapshot }> {
+    const emptyTotals: VanguardTotalsSnapshot = { invested: 0, value: 0, pnl: 0, pnlPercent: 0, accountCount: 0 };
     try {
-        const points = await getVanguardTotalSeries(gbpToUsd);
-        if (points.length === 0) return { evolution: { d30: null, m6: null, y1: null }, series: [] };
+        const { totals, series: rawSeries } = await getVanguardReportData();
+        const points = rawSeries
+            .map((p) => ({ date: p.date, value: p.value * gbpToUsd }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        const scaledTotals: VanguardTotalsSnapshot = {
+            invested: totals.invested * gbpToUsd,
+            value: totals.value * gbpToUsd,
+            pnl: totals.pnl * gbpToUsd,
+            pnlPercent: totals.pnlPercent,
+            accountCount: totals.accountCount,
+        };
+
+        if (points.length === 0) return { evolution: { d30: null, m6: null, y1: null }, series: [], totals: scaledTotals };
 
         const currentValue = points[points.length - 1].value;
 
@@ -193,8 +198,9 @@ export async function getVanguardEvolution(gbpToUsd: number): Promise<{ evolutio
         return {
             evolution: { d30: percentAt(daysAgo(30)), m6: percentAt(monthsAgo(6)), y1: percentAt(yearsAgo(1)) },
             series: points,
+            totals: scaledTotals,
         };
     } catch {
-        return { evolution: { d30: null, m6: null, y1: null }, series: [] };
+        return { evolution: { d30: null, m6: null, y1: null }, series: [], totals: emptyTotals };
     }
 }

@@ -1,6 +1,8 @@
 import { Resend } from "resend";
 import { getOverviewData, getCalendarWeekStats, getCalendarMonthStats } from "@/lib/overview-data";
 import { buildReportHtml } from "@/lib/email/report-template";
+import { getExchangeRate } from "@/lib/fx";
+import { getBtcEvolution, getT212Evolution, getVanguardEvolution } from "@/lib/overview-evolution";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -32,6 +34,30 @@ function rangeLabel(start: Date, end: Date): string {
     return `${fmt(start)} \u2013 ${fmt(lastDay)}, ${lastDay.getFullYear()}`;
 }
 
+/**
+ * Vanguard totals (USD-converted) + the same 30d/6mo/1y evolution shown on
+ * the dashboard — additive, isolated behind its own try/catch so a
+ * Vanguard read failure (or the Binance/T212-snapshot lookups inside
+ * getBtcEvolution/getT212Evolution) can never stop the weekly/monthly
+ * report from sending with at least the BTC/T212 figures it already had.
+ */
+async function getReportExtras() {
+    try {
+        const gbpToUsd = await getExchangeRate("GBP", "USD");
+        const [btcEvo, t212Evo, vanguardEvo] = await Promise.all([
+            getBtcEvolution(),
+            getT212Evolution(gbpToUsd),
+            getVanguardEvolution(gbpToUsd),
+        ]);
+        return {
+            vanguard: vanguardEvo.totals,
+            evolution: { btc: btcEvo, t212: t212Evo, vanguard: vanguardEvo.evolution },
+        };
+    } catch {
+        return { vanguard: null, evolution: null };
+    }
+}
+
 export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; error: string }> {
     const resend = getResendClient();
     if (!resend) return { ok: false, error: "RESEND_API_KEY is not set" };
@@ -43,6 +69,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
         // Săptămâna calendaristică ÎNCHEIATĂ cel mai recent (luni-duminică),
         // nu ultimele 7 zile de la momentul rulării.
         const { start, end, ...windowStats } = await getCalendarWeekStats(1);
+        const { vanguard, evolution } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "weekly",
@@ -50,6 +77,8 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
             data,
             windowStats,
             dashboardUrl: getDashboardUrl(),
+            vanguard,
+            evolution,
         });
 
         const result = await resend.emails.send({
@@ -79,6 +108,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
         // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
         // raportul, tot pe ziua 1, să ruleze).
         const { start, ...windowStats } = await getCalendarMonthStats(1);
+        const { vanguard, evolution } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "monthly",
@@ -86,6 +116,8 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
             data,
             windowStats,
             dashboardUrl: getDashboardUrl(),
+            vanguard,
+            evolution,
         });
 
         const result = await resend.emails.send({

@@ -1,4 +1,5 @@
 import type { OverviewData, PeriodRow } from "@/components/overview/OverviewClient";
+import type { AssetEvolution } from "@/lib/overview-evolution";
 
 interface WindowStats {
     btcInvested: number;
@@ -49,6 +50,16 @@ function pnlSoft(n: number): string {
 
 function pnlSoftFromHex(hex: string): string {
     return hex === COLORS.accent ? COLORS.accentSoft : COLORS.redSoft;
+}
+
+/** "30d +2.1% \u00b7 6mo \u2014 \u00b7 1y \u2014" — same 30-day/6-month/1-year
+ * value-evolution reading shown on the dashboard cards (see
+ * lib/overview-evolution.ts). Dashes mean not enough history yet for that
+ * window, not a 0% change. */
+function evoText(evo?: AssetEvolution | null): string {
+    if (!evo) return '';
+    const one = (n: number | null) => (n === null ? '\u2014' : `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`);
+    return `30d ${one(evo.d30)} &middot; 6mo ${one(evo.m6)} &middot; 1y ${one(evo.y1)}`;
 }
 
 function statPill(label: string, value: string, color: string): string {
@@ -138,16 +149,38 @@ function monthsTable(rows: PeriodRow[]): string {
   </table>`;
 }
 
+export interface ReportVanguardTotals {
+    invested: number;
+    value: number;
+    pnl: number;
+    pnlPercent: number;
+    accountCount: number;
+}
+
 export function buildReportHtml(opts: {
     periodType: 'weekly' | 'monthly';
     periodLabel: string;
     data: OverviewData;
     windowStats: WindowStats;
     dashboardUrl: string;
+    /** USD-converted, same base as data.total* — combined into the hero
+     * total/stat pills below (unlike windowStats, which stays BTC/T212
+     * only: Vanguard has no dated contribution log, so there's no "this
+     * week/month" figure to show for it — see lib/overview-evolution.ts). */
+    vanguard?: ReportVanguardTotals | null;
+    evolution?: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null;
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
+
+    // Combined hero/pill totals — BTC + T212 (data.total*) + Vanguard, same
+    // "invested-vs-current-value assets are directly comparable" reasoning
+    // the dashboard's Overview page already uses (see OverviewClient.tsx).
+    const combinedInvested = data.totalInvested + (vanguard?.invested ?? 0);
+    const combinedValue = data.totalValue + (vanguard?.value ?? 0);
+    const combinedPnl = data.totalPnl + (vanguard?.pnl ?? 0);
+    const combinedPnlPercent = combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -186,10 +219,10 @@ export function buildReportHtml(opts: {
               <tr>
                 <td style="padding:26px 24px;">
                   <div style="font-family:${FONT_BODY}; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:${COLORS.faint}; margin-bottom:10px;">Total portfolio value</div>
-                  <div style="font-family:${FONT_MONO}; font-size:38px; font-weight:600; color:${COLORS.foreground}; line-height:1;">${fmt(data.totalValue)}</div>
+                  <div style="font-family:${FONT_MONO}; font-size:38px; font-weight:600; color:${COLORS.foreground}; line-height:1;">${fmt(combinedValue)}</div>
                   <div style="margin-top:12px;">
-                    <span style="font-family:${FONT_MONO}; font-size:13px; font-weight:600; color:${pnlColor(data.totalPnl)}; background-color:${pnlSoft(data.totalPnl)}; padding:5px 12px; border-radius:20px;">
-                      ${data.totalPnl >= 0 ? '+' : ''}${fmt(data.totalPnl)} (${pct(data.pnlPercent)})
+                    <span style="font-family:${FONT_MONO}; font-size:13px; font-weight:600; color:${pnlColor(combinedPnl)}; background-color:${pnlSoft(combinedPnl)}; padding:5px 12px; border-radius:20px;">
+                      ${combinedPnl >= 0 ? '+' : ''}${fmt(combinedPnl)} (${pct(combinedPnlPercent)})
                     </span>
                   </div>
                 </td>
@@ -203,9 +236,9 @@ export function buildReportHtml(opts: {
           <td style="padding-bottom:20px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                ${statPill('Total invested', fmt(data.totalInvested), COLORS.foreground)}
-                ${statPill('Unrealized P&L', `${data.totalPnl >= 0 ? '+' : ''}${fmt(data.totalPnl)}`, pnlColor(data.totalPnl))}
-                ${statPill('ROI', pct(data.pnlPercent), pnlColor(data.pnlPercent))}
+                ${statPill('Total invested', fmt(combinedInvested), COLORS.foreground)}
+                ${statPill('Unrealized P&L', `${combinedPnl >= 0 ? '+' : ''}${fmt(combinedPnl)}`, pnlColor(combinedPnl))}
+                ${statPill('ROI', pct(combinedPnlPercent), pnlColor(combinedPnlPercent))}
               </tr>
             </table>
           </td>
@@ -252,7 +285,7 @@ export function buildReportHtml(opts: {
                 pnlText: `${data.btc.pnl >= 0 ? '+' : ''}${fmt(data.btc.pnl)}`,
                 pnlPercentText: pct(data.btc.pnlPercent),
                 pnlHex: pnlColor(data.btc.pnlPercent),
-                extraLine: `${data.btc.amount.toFixed(6)} BTC held`,
+                extraLine: [`${data.btc.amount.toFixed(6)} BTC held`, evoText(evolution?.btc)].filter(Boolean).join('<br/>'),
             })}
             ${data.t212.connected ? assetCard({
                 name: 'Trading 212',
@@ -264,6 +297,19 @@ export function buildReportHtml(opts: {
                 pnlText: `${data.t212.pnl >= 0 ? '+' : ''}${fmt(data.t212.pnl)}`,
                 pnlPercentText: pct(data.t212.pnlPercent),
                 pnlHex: pnlColor(data.t212.pnlPercent),
+                extraLine: evoText(evolution?.t212) || undefined,
+            }) : ''}
+            ${vanguard && vanguard.accountCount > 0 ? assetCard({
+                name: `Vanguard (${vanguard.accountCount} account${vanguard.accountCount === 1 ? '' : 's'})`,
+                accentColor: COLORS.accent,
+                investedLabel: 'Invested',
+                investedValue: fmt(vanguard.invested),
+                valueLabel: 'Current value',
+                currentValue: fmt(vanguard.value),
+                pnlText: `${vanguard.pnl >= 0 ? '+' : ''}${fmt(vanguard.pnl)}`,
+                pnlPercentText: pct(vanguard.pnlPercent),
+                pnlHex: pnlColor(vanguard.pnlPercent),
+                extraLine: evoText(evolution?.vanguard) || undefined,
             }) : ''}
           </td>
         </tr>
