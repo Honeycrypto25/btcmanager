@@ -202,6 +202,31 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
         return [Math.min(...dates), Math.max(...dates)];
     }, [points, filteredMarketPrice]);
 
+    // YAxis domain, likewise computed explicitly across all three series.
+    // Recharts' 'auto'/'auto' domain only reliably picks up the market-price
+    // line (the one with its own `data` prop) once a second differently-
+    // scaled series is layered on top of it — the avg-cost line ends up
+    // scaled against a domain that doesn't include its own values and gets
+    // rendered off-canvas (this is what "the legend stopped matching the
+    // chart" turned out to be: the avg-cost line and buy-price dots for the
+    // narrower Week/Month/Year windows were being drawn far above the
+    // visible area). Computing min/max ourselves across every series
+    // avoids relying on that auto-detection entirely.
+    const yDomain = useMemo((): [number, number] | ['auto', 'auto'] => {
+        const vals: number[] = [];
+        for (const p of points) {
+            vals.push(p.avgPrice, p.buyPrice);
+        }
+        for (const p of filteredMarketPrice) {
+            vals.push(p.marketPrice);
+        }
+        if (vals.length === 0) return ['auto', 'auto'];
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        const padding = (max - min) * 0.08 || max * 0.05 || 1000;
+        return [Math.max(0, min - padding), max + padding];
+    }, [points, filteredMarketPrice]);
+
     // Always the true current average (full history), regardless of the
     // selected display window, so "Week" with no recent buys doesn't blank
     // out the header figure.
@@ -278,7 +303,7 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
                                     tickLine={false}
                                 />
                                 <YAxis
-                                    domain={['auto', 'auto']}
+                                    domain={yDomain}
                                     stroke="rgba(255,255,255,0.08)"
                                     tick={{ fontSize: 10, fill: '#565550' }}
                                     tickFormatter={(val) => `$${val.toLocaleString()}`}
