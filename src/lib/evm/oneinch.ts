@@ -144,7 +144,7 @@ export async function createTakeProfitSellOrder(wallet: Wallet, params: {
         makerTraits
     );
 
-    const typedData = order.getTypedData();
+    const typedData = order.getTypedData(BASE_CHAIN_ID);
     const signature = await wallet.signTypedData(typedData.domain, { Order: typedData.types.Order }, typedData.message);
 
     await client.submitOrder(order, signature);
