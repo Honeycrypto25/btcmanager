@@ -139,6 +139,43 @@ export function SolanaStatsClient({
         }));
     }, [allLots]);
 
+    // How long each finalized sell order actually took to fill, grouped by its
+    // take-profit percent (reconstructed per-lot from targetPriceUsd/buyPriceUsd
+    // rather than read from current settings, since that % can change over time
+    // while old lots keep whatever target they were created with). Duration is
+    // measured from when the limit order was placed (sellOrderCreatedAt) to when
+    // it filled (soldAt) — cancelled/still-pending lots have no fill time and are
+    // excluded. Meant to answer "which target % actually executes fastest?"
+    // rather than sitting unfilled for a long time.
+    const durationByPercentData = useMemo(() => {
+        const groups = new Map<string, { totalHours: number; count: number; percent: number }>();
+        for (const lot of allLots) {
+            if (lot.status !== "FILLED" || !lot.soldAt) continue;
+            const buyPrice = Number(lot.buyPriceUsd);
+            const targetPrice = lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null;
+            if (!targetPrice || buyPrice <= 0) continue;
+
+            const start = new Date(lot.sellOrderCreatedAt ?? lot.boughtAt).getTime();
+            const end = new Date(lot.soldAt).getTime();
+            const hours = (end - start) / (1000 * 60 * 60);
+            if (!Number.isFinite(hours) || hours < 0) continue;
+
+            const percent = Math.round((targetPrice / buyPrice - 1) * 1000) / 10; // one decimal, e.g. 5.0
+            const key = `${percent}%`;
+            const existing = groups.get(key) ?? { totalHours: 0, count: 0, percent };
+            existing.totalHours += hours;
+            existing.count += 1;
+            groups.set(key, existing);
+        }
+        return [...groups.entries()]
+            .sort(([, a], [, b]) => a.percent - b.percent)
+            .map(([label, g]) => ({
+                percent: label,
+                avgHours: Math.round((g.totalHours / g.count) * 10) / 10,
+                count: g.count,
+            }));
+    }, [allLots]);
+
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
 
@@ -310,6 +347,30 @@ export function SolanaStatsClient({
                                 formatter={(v) => `${Number(v).toFixed(4)} SOL`}
                             />
                             <Bar dataKey="sol" name="SOL cumpărat" fill="rgba(214,162,76,0.7)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </Card>
+            )}
+
+            {durationByPercentData.length > 0 && (
+                <Card>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">Timp mediu până la execuție, pe procent țintă</h2>
+                    <p className="mb-4 text-xs text-faint">
+                        Doar cicluri finalizate cu vânzare — de la plasarea ordinului limită până la execuție. Ajută să vezi ce procent țintă se execută cel mai repede din istoric (numărul de cicluri per bară contează — o medie din 1-2 cicluri nu e încă relevantă).
+                    </p>
+                    <ResponsiveContainer width="100%" height={240}>
+                        <BarChart data={durationByPercentData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                            <XAxis dataKey="percent" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" label={{ value: "ore", angle: -90, position: "insideLeft", fontSize: 11, fill: "rgba(255,255,255,0.3)" }} />
+                            <Tooltip
+                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                                formatter={(value, name, item) => {
+                                    const count = (item?.payload as { count?: number } | undefined)?.count ?? 0;
+                                    return [`${Number(value).toFixed(1)} ore (n=${count})`, "Timp mediu"];
+                                }}
+                            />
+                            <Bar dataKey="avgHours" name="Timp mediu" fill="rgba(45,212,191,0.6)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </Card>
