@@ -52,6 +52,14 @@ interface SettingsDTO {
     lastRunError: string | null;
 }
 
+/** Vercel Cron for /api/cron/solana-dca runs daily at 09:00 UTC (see vercel.json) — this just mirrors that schedule for display. */
+function nextCronRunUtc(): Date {
+    const now = new Date();
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 9, 0, 0));
+    if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+    return next;
+}
+
 function formatUsd(n: number): string {
     return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 }
@@ -160,6 +168,38 @@ export function SolanaClient({
                     </p>
                 </div>
             </div>
+
+            {/* Status */}
+            <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                    <span className="relative flex h-3 w-3">
+                        {settings?.enabled && (
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        )}
+                        <span className={cn("relative inline-flex h-3 w-3 rounded-full", settings?.enabled ? "bg-emerald-400" : "bg-white/20")} />
+                    </span>
+                    <div>
+                        <p className="text-sm font-medium text-foreground">
+                            {settings?.enabled ? "Bot activ" : "Bot inactiv"}
+                        </p>
+                        <p className="text-xs text-faint">
+                            {settings
+                                ? `${settings.walletAddress.slice(0, 4)}...${settings.walletAddress.slice(-4)} · $${settings.buyAmountUsd}/${settings.intervalHours}h · țintă +${settings.takeProfitPercent}%`
+                                : "Nesalvat încă"}
+                        </p>
+                    </div>
+                </div>
+                <div className="flex flex-col gap-0.5 text-xs text-faint sm:text-right">
+                    <span>
+                        Ultima rulare: {settings?.lastRunAt ? format(new Date(settings.lastRunAt), "d MMM, HH:mm") : "niciodată încă"}
+                        {settings?.lastRunStatus ? ` · ${settings.lastRunStatus}` : ""}
+                    </span>
+                    {settings?.enabled && (
+                        <span>Următoarea verificare automată: {format(nextCronRunUtc(), "d MMM, HH:mm")} UTC</span>
+                    )}
+                    {settings?.lastRunError && <span className="text-red-300">{settings.lastRunError}</span>}
+                </div>
+            </Card>
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
