@@ -182,7 +182,7 @@ export function SolanaClient({
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v: number) => formatUsd(v)}
+                                formatter={(v) => formatUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
@@ -202,7 +202,7 @@ export function SolanaClient({
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v: number) => formatUsd(v)}
+                                formatter={(v) => formatUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Bar dataKey="invested" name="Investit cumulativ" fill="rgba(139,92,246,0.5)" />
