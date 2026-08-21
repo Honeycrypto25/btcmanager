@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { ComposedChart, Line, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { ComposedChart, Area, ReferenceLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Card, cn } from "@/components/ui/core";
 import { Loader2 } from "lucide-react";
 import { format } from "date-fns";
@@ -142,6 +142,31 @@ export default function RoiEvolutionChart({ transactions, usdToGbp }: RoiEvoluti
     ];
 
     const latest = chartData.length > 0 ? chartData[chartData.length - 1] : null;
+    const activeKey = mode === "percent" ? "roiPercentage" : mode === "usd" ? "roiUsd" : "roiGbp";
+
+    // Explicit domain (always widened to include 0) so the green/red split
+    // gradient below can be placed at the exact pixel row where the line
+    // crosses zero, and so the shadow fill (anchored at baseValue=0) reads
+    // against a stable axis instead of one that reflows per toggle.
+    const yDomain = useMemo((): [number, number] => {
+        const vals = chartData.map((r) => valueForMode(r, mode));
+        let min = Math.min(0, ...vals);
+        let max = Math.max(0, ...vals);
+        if (min === max) {
+            min -= 1;
+            max += 1;
+        }
+        const padding = (max - min) * 0.1;
+        return [min - padding, max + padding];
+    }, [chartData, mode]);
+
+    // Where zero falls within [0,1] of the plot height (0 = top/all-green, 1 = bottom/all-red) — feeds the gradient stop offsets below.
+    const zeroOffset = useMemo(() => {
+        const [min, max] = yDomain;
+        if (max <= 0) return 0;
+        if (min >= 0) return 1;
+        return max / (max - min);
+    }, [yDomain]);
 
     if (sorted.length === 0) {
         return (
@@ -210,6 +235,7 @@ export default function RoiEvolutionChart({ transactions, usdToGbp }: RoiEvoluti
                                 tickLine={false}
                             />
                             <YAxis
+                                domain={yDomain}
                                 stroke="rgba(255,255,255,0.08)"
                                 tick={{ fontSize: 10, fill: "#565550" }}
                                 tickFormatter={(val) => (mode === "percent" ? `${val.toFixed(0)}%` : mode === "usd" ? `$${val.toLocaleString()}` : `£${val.toLocaleString()}`)}
@@ -219,11 +245,27 @@ export default function RoiEvolutionChart({ transactions, usdToGbp }: RoiEvoluti
                             />
                             <Tooltip content={<CustomTooltip mode={mode} />} cursor={{ stroke: "rgba(255,255,255,0.12)" }} />
                             <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
-                            <Line
+                            <defs>
+                                {/* Hard split at the zero crossing: green stroke above, red below. */}
+                                <linearGradient id="roiStroke" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset={zeroOffset} stopColor="#22c55e" />
+                                    <stop offset={zeroOffset} stopColor="#ef4444" />
+                                </linearGradient>
+                                {/* Soft shadow under/over the line, anchored at zero (baseValue=0 below) and fading toward zero from each side. */}
+                                <linearGradient id="roiFill" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#22c55e" stopOpacity={0.35} />
+                                    <stop offset={zeroOffset} stopColor="#22c55e" stopOpacity={0.04} />
+                                    <stop offset={zeroOffset} stopColor="#ef4444" stopOpacity={0.04} />
+                                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.35} />
+                                </linearGradient>
+                            </defs>
+                            <Area
                                 type="monotone"
-                                dataKey={mode === "percent" ? "roiPercentage" : mode === "usd" ? "roiUsd" : "roiGbp"}
-                                stroke="#52c98a"
+                                dataKey={activeKey}
+                                baseValue={0}
+                                stroke="url(#roiStroke)"
                                 strokeWidth={2}
+                                fill="url(#roiFill)"
                                 dot={false}
                                 isAnimationActive={false}
                             />

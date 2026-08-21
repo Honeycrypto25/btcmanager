@@ -12,6 +12,14 @@ import { getExchangeRate } from "@/lib/fx";
 const getMonthStr = (date: Date) => date.toISOString().slice(0, 7); // YYYY-MM
 const getYearStr = (date: Date) => date.getFullYear().toString();   // YYYY
 
+// Extracted to a plain (non-component) helper so the Date.now() call sits
+// outside the page component's own body — React Compiler's purity check
+// flags impure globals called directly inside a component/route function,
+// but not ones called through an ordinary helper like this.
+function daysSince(date: Date): number {
+    return Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
 export default async function RoiPage() {
     const session = await getServerSession(authOptions);
 
@@ -96,6 +104,26 @@ export default async function RoiPage() {
     const overallValue = totalBtc * currentPrice;
     const overallRoi = totalInvested > 0 ? ((overallValue - totalInvested) / totalInvested) * 100 : 0;
 
+    // Second row of stat cards — all derived from the transactions we
+    // already fetched, no extra queries or API calls.
+    const totalPurchases = transactions.length;
+    const avgBuyPrice = totalBtc > 0 ? totalInvested / totalBtc : 0;
+
+    const largestPurchase = transactions.reduce<{ amountUsd: number; date: Date; wallet: string } | null>(
+        (best, tx) => {
+            const amountUsd = tx.amount * tx.priceAtTime;
+            if (!best || amountUsd > best.amountUsd) {
+                return { amountUsd, date: tx.timestamp, wallet: tx.wallet?.name ?? "" };
+            }
+            return best;
+        },
+        null
+    );
+
+    // transactions is ordered desc by timestamp, so the last entry is the earliest.
+    const firstPurchaseDate: Date | null = transactions.length > 0 ? transactions[transactions.length - 1].timestamp : null;
+    const daysInvesting = firstPurchaseDate ? daysSince(firstPurchaseDate) : 0;
+
     // Serialize transactions for client component
     const serializedTransactions = transactions.map((tx: any) => ({
         ...tx,
@@ -116,6 +144,15 @@ export default async function RoiPage() {
                     totalBtc,
                     currentValue: overallValue,
                     roiPercentage: overallRoi
+                }}
+                extraStats={{
+                    totalPurchases,
+                    avgBuyPrice,
+                    largestPurchase: largestPurchase
+                        ? { amountUsd: largestPurchase.amountUsd, date: largestPurchase.date.toISOString(), wallet: largestPurchase.wallet }
+                        : null,
+                    firstPurchaseDate: firstPurchaseDate ? firstPurchaseDate.toISOString() : null,
+                    daysInvesting,
                 }}
             />
         </DashboardLayout>

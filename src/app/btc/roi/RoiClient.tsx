@@ -10,7 +10,11 @@ import {
     Bitcoin,
     ArrowUpRight,
     ArrowDownRight,
-    Percent
+    Percent,
+    Hash,
+    Scale,
+    Zap,
+    Clock
 } from "lucide-react";
 import PriceChart from "@/components/dashboard/PriceChart";
 import RoiEvolutionChart from "./RoiEvolutionChart";
@@ -37,9 +41,16 @@ interface RoiClientProps {
         currentValue: number;
         roiPercentage: number;
     };
+    extraStats: {
+        totalPurchases: number;
+        avgBuyPrice: number;
+        largestPurchase: { amountUsd: number; date: string; wallet: string } | null;
+        firstPurchaseDate: string | null;
+        daysInvesting: number;
+    };
 }
 
-export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, usdToGbp, overall }: RoiClientProps) {
+export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, usdToGbp, overall, extraStats }: RoiClientProps) {
     const [view, setView] = useState<'yearly' | 'monthly'>('yearly');
     const [yearlyPage, setYearlyPage] = useState(1);
     const [monthlyPage, setMonthlyPage] = useState(1);
@@ -150,6 +161,52 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                             <ArrowDownRight className="w-5 h-5 text-red-500" />
                         )}
                     </div>
+                </Card>
+            </div>
+
+            {/* Second row — activity/behavior stats, all derived from the transaction history already loaded above */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Hash className="w-24 h-24 text-primary" />
+                    </div>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total Purchases</p>
+                    <p className="text-3xl font-medium text-foreground">{extraStats.totalPurchases}</p>
+                </Card>
+                <Card className="p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Scale className="w-24 h-24 text-accent" />
+                    </div>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Average Buy Price</p>
+                    <p className="text-3xl font-medium text-foreground">{formatCurrency(extraStats.avgBuyPrice)}</p>
+                    <p className="text-xs text-muted mt-1">per BTC, all-time</p>
+                </Card>
+                <Card className="p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Zap className="w-24 h-24 text-orange-500" />
+                    </div>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Largest Purchase</p>
+                    <p className="text-3xl font-medium text-foreground">
+                        {extraStats.largestPurchase ? formatCurrency(extraStats.largestPurchase.amountUsd) : "—"}
+                    </p>
+                    {extraStats.largestPurchase && (
+                        <p className="text-xs text-muted mt-1 font-mono">
+                            {new Date(extraStats.largestPurchase.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {extraStats.largestPurchase.wallet ? ` · ${extraStats.largestPurchase.wallet}` : ""}
+                        </p>
+                    )}
+                </Card>
+                <Card className="p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Clock className="w-24 h-24 text-primary" />
+                    </div>
+                    <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Investing Since</p>
+                    <p className="text-3xl font-medium text-foreground">{extraStats.daysInvesting}d</p>
+                    {extraStats.firstPurchaseDate && (
+                        <p className="text-xs text-muted mt-1 font-mono">
+                            since {new Date(extraStats.firstPurchaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                    )}
                 </Card>
             </div>
 
