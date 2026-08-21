@@ -18,7 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
+import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 
 const PAGE_SIZE = 10;
@@ -312,7 +312,7 @@ export function SolanaStatsClient({
                     value={formatUsd(stats.totalRealizedPnlUsd)}
                     positive={stats.totalRealizedPnlUsd >= 0}
                 />
-                <StatCard label="Fee-uri totale" value={formatUsd(stats.totalFeesUsd)} />
+                <StatCard label="Fee-uri totale" value={formatUsdFee(stats.totalFeesUsd)} />
                 <StatCard label="SOL deținut" value={`${stats.solHeld.toFixed(4)} SOL`} />
                 <StatCard label="Ordine active" value={String(stats.openOrders)} />
             </div>
@@ -510,7 +510,7 @@ function PurchasesTable({ lots }: { lots: LotDTO[] }) {
                             <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
                             <td className="py-2 pr-4 text-foreground">{Number(lot.solAcquired).toFixed(4)} SOL</td>
                             <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
-                            <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
+                            <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
                             <td className="py-2 text-faint">
                                 {lot.buyTxSignature ? <SolscanLink signature={lot.buyTxSignature} label="Vezi ↗" /> : "—"}
                             </td>

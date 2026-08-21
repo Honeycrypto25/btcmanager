@@ -18,7 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
+import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileEvmOrdersNow } from "@/app/actions/evm";
 
 const PAGE_SIZE = 10;
@@ -307,7 +307,7 @@ export function EvmStatsClient({
                     value={formatUsd(stats.totalRealizedPnlUsd)}
                     positive={stats.totalRealizedPnlUsd >= 0}
                 />
-                <StatCard label="Fee-uri totale" value={formatUsd(stats.totalFeesUsd)} />
+                <StatCard label="Fee-uri totale" value={formatUsdFee(stats.totalFeesUsd)} />
                 <StatCard label="WETH deținut" value={`${stats.wethHeld.toFixed(5)} WETH`} />
                 <StatCard label="Ordine active" value={String(stats.openOrders)} />
             </div>
@@ -499,7 +499,7 @@ function PurchasesTable({ lots }: { lots: LotDTO[] }) {
                             <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
                             <td className="py-2 pr-4 text-foreground">{Number(lot.wethAcquired).toFixed(5)} WETH</td>
                             <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
-                            <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
+                            <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
                             <td className="py-2 text-faint">
                                 {lot.buyTxHash ? <BasescanLink hash={lot.buyTxHash} label="Vezi ↗" /> : "—"}
                             </td>

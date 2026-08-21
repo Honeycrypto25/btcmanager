@@ -62,6 +62,21 @@ export function formatUsd(n: number): string {
     return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
 }
 
+/**
+ * Same as formatUsd, but shows up to 4 decimals for sub-cent amounts
+ * instead of collapsing them to "$0.00" — a real Solana network fee
+ * (typically $0.0005-$0.002) otherwise displays as "$0.00" and looks like
+ * an unpopulated field, which it isn't. Same fix as the Base bot's
+ * formatUsdFee, applied here too once the same class of issue showed up
+ * there.
+ */
+export function formatUsdFee(n: number): string {
+    if (n > 0 && n < 0.01) {
+        return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
+    }
+    return formatUsd(n);
+}
+
 export const statusMeta: Record<string, { label: string; icon: ElementType; className: string }> = {
     PENDING_SELL_ORDER: { label: "Ordin în curs", icon: Clock, className: "text-amber-300 bg-amber-500/10 border-amber-400/30" },
     OPEN: { label: "Ordin activ", icon: Clock, className: "text-primary bg-primary/10 border-primary/30" },
