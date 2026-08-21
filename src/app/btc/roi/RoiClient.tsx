@@ -171,13 +171,14 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Current Value</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">BTC Acquired</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Avg Price</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Profit</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">ROI</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {paginatedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-20 text-center text-faint font-medium italic">
+                                    <td colSpan={7} className="px-6 py-20 text-center text-faint font-medium italic">
                                         No data available for this period.
                                     </td>
                                 </tr>
@@ -198,6 +199,12 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                                         </td>
                                         <td className="px-6 py-5 text-right font-mono text-muted">
                                             {formatCurrency(row.totalInvested / row.totalBtc)}
+                                        </td>
+                                        <td className={cn(
+                                            "px-6 py-5 text-right font-mono font-bold",
+                                            row.roiAmount >= 0 ? "text-green-500" : "text-red-500"
+                                        )}>
+                                            {row.roiAmount >= 0 ? '+' : ''}{formatCurrency(row.roiAmount)}
                                         </td>
                                         <td className="px-6 py-5 text-right">
                                             <span className={cn(
