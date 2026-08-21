@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert } from "lucide-react";
+import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertSolanaSettings, runSolanaDcaNow, runSolanaSweepNow, type SolanaSettingsInput } from "@/app/actions/solana";
 import { formatUsd, type SettingsDTO } from "./shared";
@@ -44,6 +44,7 @@ export function SolanaClient({
     const [sweeping, startSweeping] = useTransition();
     const [runMessage, setRunMessage] = useState<string | null>(null);
     const [sweepMessage, setSweepMessage] = useState<string | null>(null);
+    const [showSweepConfirm, setShowSweepConfirm] = useState(false);
     const [savedMessage, setSavedMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -80,9 +81,11 @@ export function SolanaClient({
     }
 
     function handleSweepNow() {
-        if (!window.confirm("Trimite acum excedentul de SOL peste minimul configurat, către portofelul de retragere? Este o tranzacție reală, ireversibilă.")) {
-            return;
-        }
+        setShowSweepConfirm(true);
+    }
+
+    function confirmSweepNow() {
+        setShowSweepConfirm(false);
         setSweepMessage(null);
         setError(null);
         startSweeping(async () => {
@@ -390,6 +393,50 @@ export function SolanaClient({
                     </Button>
                 </div>
             </Card>
+
+            {showSweepConfirm && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
+                    <Card className="max-w-md w-full space-y-5 border-amber-400/30">
+                        <div className="flex items-start gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-500/10 text-amber-300">
+                                <AlertTriangle className="h-4 w-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-medium text-foreground">Confirmă trimiterea</h3>
+                                <p className="mt-1 text-xs text-faint">
+                                    Se trimite o tranzacție reală și ireversibilă pe blockchain-ul Solana.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-faint">Rămâne mereu</span>
+                                <span className="font-medium text-foreground">{form.sweepMinBalanceSol} SOL</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-faint">
+                                <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                                <span className="text-xs">Excedentul de peste minim, rotunjit în jos la 2 zecimale</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] pt-2">
+                                <span className="text-faint">Către</span>
+                                <code className="text-xs text-foreground break-all text-right">
+                                    {"error" in sweepDestination ? "—" : sweepDestination.address}
+                                </code>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <Button variant="ghost" size="sm" onClick={() => setShowSweepConfirm(false)}>
+                                Anulează
+                            </Button>
+                            <Button variant="primary" size="sm" onClick={confirmSweepNow}>
+                                <Send className="h-3.5 w-3.5" /> Trimite acum
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }
