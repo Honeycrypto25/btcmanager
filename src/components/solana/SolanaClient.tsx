@@ -13,7 +13,7 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { format } from "date-fns";
-import { Coins, Play, Save, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Coins, Play, Save, Clock, CheckCircle2, XCircle, AlertTriangle, Wallet } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertSolanaSettings, runSolanaDcaNow, type SolanaSettingsInput, type SolanaStats } from "@/app/actions/solana";
 
@@ -69,16 +69,17 @@ export function SolanaClient({
     initialLots,
     initialStats,
     solPriceUsd,
+    botWallet,
 }: {
     initialSettings: SettingsDTO | null;
     initialLots: LotDTO[];
     initialStats: SolanaStats;
     solPriceUsd: number | null;
+    botWallet: { address: string } | { error: string };
 }) {
     const [settings, setSettings] = useState<SettingsDTO | null>(initialSettings);
     const [form, setForm] = useState<SolanaSettingsInput>({
         enabled: initialSettings?.enabled ?? false,
-        walletAddress: initialSettings?.walletAddress ?? "",
         buyAmountUsd: initialSettings ? Number(initialSettings.buyAmountUsd) : 10,
         intervalHours: initialSettings?.intervalHours ?? 24,
         takeProfitPercent: initialSettings ? Number(initialSettings.takeProfitPercent) : 10,
@@ -144,7 +145,7 @@ export function SolanaClient({
     }
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+        <div className="space-y-6">
             <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
                     <Coins className="h-5 w-5" />
@@ -227,16 +228,22 @@ export function SolanaClient({
                     </label>
                 </div>
 
+                {"error" in botWallet ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                            <code>SOLANA_PRIVATE_KEY</code> nu e configurată încă în Vercel — setează-o, apoi revino aici. ({botWallet.error})
+                        </span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm">
+                        <Wallet className="h-4 w-4 text-muted" />
+                        <span className="text-faint">Portofel (derivat din cheia din Vercel):</span>
+                        <code className="text-foreground">{botWallet.address}</code>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Field label="Adresă portofel (public key)">
-                        <input
-                            type="text"
-                            value={form.walletAddress}
-                            onChange={(e) => setForm({ ...form, walletAddress: e.target.value })}
-                            placeholder="ex: 7xKX...gAsU"
-                            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
-                        />
-                    </Field>
                     <Field label="Sumă cumpărare per ciclu ($)">
                         <input
                             type="number"
@@ -293,7 +300,7 @@ export function SolanaClient({
                 )}
 
                 <div className="flex flex-wrap gap-3">
-                    <Button onClick={handleSave} disabled={saving} variant="primary">
+                    <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
                         <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează setările"}
                     </Button>
                     <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary">

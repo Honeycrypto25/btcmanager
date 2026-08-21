@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runSolanaDcaForUser } from "@/lib/solana/dca";
+import { loadBotKeypair } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
 async function requireUserId(): Promise<string> {
@@ -16,7 +17,6 @@ async function requireUserId(): Promise<string> {
 
 export interface SolanaSettingsInput {
     enabled: boolean;
-    walletAddress: string;
     buyAmountUsd: number;
     intervalHours: number;
     takeProfitPercent: number;
@@ -29,6 +29,23 @@ export async function getSolanaSettings() {
     return db.solanaSettings.findUnique({ where: { userId } });
 }
 
+/**
+ * The wallet address is never entered by hand — it's derived from
+ * SOLANA_PRIVATE_KEY (set in Vercel env vars) so there's no way for the
+ * stored address and the key that actually signs transactions to drift
+ * apart. Returns an error string instead of throwing so the settings page
+ * can show a clear "set the env var first" message.
+ */
+export async function getBotWalletAddress(): Promise<{ address: string } | { error: string }> {
+    await requireUserId();
+    try {
+        const keypair = loadBotKeypair();
+        return { address: keypair.publicKey.toBase58() };
+    } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+    }
+}
+
 export async function upsertSolanaSettings(input: SolanaSettingsInput) {
     const userId = await requireUserId();
 
@@ -38,16 +55,17 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
     if (input.buyAmountUsd <= 0) throw new Error("Suma de cumpărare trebuie să fie pozitivă.");
     if (input.intervalHours < 1) throw new Error("Intervalul trebuie să fie de cel puțin 1 oră.");
     if (input.takeProfitPercent <= 0) throw new Error("Procentul țintă trebuie să fie pozitiv.");
-    if (!input.walletAddress || input.walletAddress.length < 32) {
-        throw new Error("Adresă de portofel Solana invalidă.");
-    }
+
+    // Derived from the env var, not user input — see getBotWalletAddress().
+    const keypair = loadBotKeypair();
+    const walletAddress = keypair.publicKey.toBase58();
 
     const settings = await db.solanaSettings.upsert({
         where: { userId },
         create: {
             userId,
             enabled: input.enabled,
-            walletAddress: input.walletAddress,
+            walletAddress,
             buyAmountUsd: input.buyAmountUsd,
             intervalHours: input.intervalHours,
             takeProfitPercent: input.takeProfitPercent,
@@ -56,7 +74,7 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
         },
         update: {
             enabled: input.enabled,
-            walletAddress: input.walletAddress,
+            walletAddress,
             buyAmountUsd: input.buyAmountUsd,
             intervalHours: input.intervalHours,
             takeProfitPercent: input.takeProfitPercent,
