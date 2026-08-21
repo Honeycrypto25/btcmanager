@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import RoiClient from "./RoiClient";
+import { getExchangeRate } from "@/lib/fx";
 
 // Helper to get formatted period strings
 const getMonthStr = (date: Date) => date.toISOString().slice(0, 7); // YYYY-MM
@@ -33,6 +34,11 @@ export default async function RoiPage() {
     } catch (e) {
         console.error("Failed to fetch price, using fallback", e);
     }
+
+    // Current USD->GBP rate for the ROI evolution chart's £ toggle — same
+    // simplification used elsewhere in the app (getExchangeRate falls back
+    // to 1:1 on failure, and uses the current rate even for past dates).
+    const usdToGbp = await getExchangeRate("USD", "GBP");
 
     // 3. Process Data
     const monthlyMap = new Map<string, { invested: number, btc: number }>();
@@ -104,6 +110,7 @@ export default async function RoiPage() {
                 yearlyData={yearlyData}
                 currentPrice={currentPrice}
                 transactions={serializedTransactions}
+                usdToGbp={usdToGbp}
                 overall={{
                     totalInvested,
                     totalBtc,

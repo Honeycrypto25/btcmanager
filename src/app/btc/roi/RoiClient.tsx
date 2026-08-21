@@ -13,6 +13,7 @@ import {
     Percent
 } from "lucide-react";
 import PriceChart from "@/components/dashboard/PriceChart";
+import RoiEvolutionChart from "./RoiEvolutionChart";
 
 interface RoiData {
     period: string; // "2024" or "2024-01"
@@ -29,6 +30,7 @@ interface RoiClientProps {
     monthlyData: RoiData[];
     currentPrice: number;
     transactions: any[];
+    usdToGbp: number;
     overall: {
         totalInvested: number;
         totalBtc: number;
@@ -37,7 +39,7 @@ interface RoiClientProps {
     };
 }
 
-export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, overall }: RoiClientProps) {
+export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, usdToGbp, overall }: RoiClientProps) {
     const [view, setView] = useState<'yearly' | 'monthly'>('yearly');
     const [yearlyPage, setYearlyPage] = useState(1);
     const [monthlyPage, setMonthlyPage] = useState(1);
@@ -153,6 +155,8 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
 
             {/* Price Chart */}
             <PriceChart transactions={transactions} />
+
+            <RoiEvolutionChart transactions={transactions} usdToGbp={usdToGbp} />
 
             {/* Data Table */}
             <Card className="overflow-hidden p-0 border-border">
