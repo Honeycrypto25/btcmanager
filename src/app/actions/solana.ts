@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
+import { runSolanaSweepForUser } from "@/lib/solana/sweep";
 import { loadBotKeypair } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
@@ -22,6 +23,8 @@ export interface SolanaSettingsInput {
     takeProfitPercent: number;
     sellAmountUsd: number;
     slippageBps?: number;
+    sweepEnabled: boolean;
+    sweepMinBalanceSol: number;
 }
 
 export async function getSolanaSettings() {
@@ -55,6 +58,7 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
     if (input.buyAmountUsd <= 0) throw new Error("Suma de cumpărare trebuie să fie pozitivă.");
     if (input.intervalHours < 1) throw new Error("Intervalul trebuie să fie de cel puțin 1 oră.");
     if (input.takeProfitPercent <= 0) throw new Error("Procentul țintă trebuie să fie pozitiv.");
+    if (input.sweepMinBalanceSol < 0) throw new Error("Minimul păstrat la retragere nu poate fi negativ.");
 
     // Derived from the env var, not user input — see getBotWalletAddress().
     const keypair = loadBotKeypair();
@@ -71,6 +75,8 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
             takeProfitPercent: input.takeProfitPercent,
             sellAmountUsd: input.sellAmountUsd,
             slippageBps: input.slippageBps ?? 50,
+            sweepEnabled: input.sweepEnabled,
+            sweepMinBalanceSol: input.sweepMinBalanceSol,
         },
         update: {
             enabled: input.enabled,
@@ -80,6 +86,8 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
             takeProfitPercent: input.takeProfitPercent,
             sellAmountUsd: input.sellAmountUsd,
             slippageBps: input.slippageBps ?? 50,
+            sweepEnabled: input.sweepEnabled,
+            sweepMinBalanceSol: input.sweepMinBalanceSol,
         },
     });
 
@@ -108,6 +116,33 @@ export async function reconcileSolanaOrdersNow() {
     revalidatePath("/solana");
     revalidatePath("/solana/stats");
     return result;
+}
+
+/**
+ * Destination address is display-only here — read straight from the env
+ * var (never the database), truncated so the settings page can confirm
+ * "yes, SOLANA_SWEEP_DESTINATION is configured, and it looks like this"
+ * without the page needing write access to where funds go.
+ */
+export async function getSweepDestinationInfo(): Promise<{ address: string } | { error: string }> {
+    await requireUserId();
+    const raw = process.env.SOLANA_SWEEP_DESTINATION;
+    if (!raw) return { error: "SOLANA_SWEEP_DESTINATION nu este setat în Vercel." };
+    return { address: raw.trim() };
+}
+
+/** Manual "Trimite acum" — same transfer logic as the monthly cron, but ignores the "already swept this month" gate. Used to verify the setup once before relying on the automatic schedule. */
+export async function runSolanaSweepNow() {
+    const userId = await requireUserId();
+    const result = await runSolanaSweepForUser(userId, true);
+    revalidatePath("/solana");
+    revalidatePath("/solana/stats");
+    return result;
+}
+
+export async function listSolanaSweeps() {
+    const userId = await requireUserId();
+    return db.solanaSweep.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
 }
 
 export interface SolanaStats {

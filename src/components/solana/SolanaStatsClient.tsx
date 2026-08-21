@@ -18,7 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO } from "./shared";
+import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 
 const PAGE_SIZE = 10;
@@ -33,10 +33,12 @@ const STATUS_FILTER_OPTIONS = [
 export function SolanaStatsClient({
     lots: allLots,
     solPriceUsd,
+    sweeps,
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
     solPriceUsd: number | null;
+    sweeps: SweepDTO[];
 }) {
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
@@ -176,6 +178,30 @@ export function SolanaStatsClient({
                 count: g.count,
             }));
     }, [allLots]);
+
+    // Same fixed trailing 14-month window as monthlyData above, but for
+    // SOL actually sent out to the sweep destination — only SUCCESS rows
+    // count (a FAILED attempt moved nothing).
+    const monthlySweepData = useMemo(() => {
+        const now = new Date();
+        const months: { key: string; label: string }[] = [];
+        for (let i = 13; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push({ key: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
+        }
+
+        const byMonth = new Map<string, number>();
+        for (const sweep of sweeps) {
+            if (sweep.status !== "SUCCESS") continue;
+            const key = format(new Date(sweep.createdAt), "yyyy-MM");
+            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(sweep.amountSol));
+        }
+
+        return months.map(({ key, label }) => ({
+            month: label,
+            sol: Math.round((byMonth.get(key) ?? 0) * 10000) / 10000,
+        }));
+    }, [sweeps]);
 
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
@@ -389,6 +415,25 @@ export function SolanaStatsClient({
                 )}
             </Card>
 
+            <Card>
+                <h2 className="mb-1 text-sm font-medium text-foreground">Trimiteri lunare către portofelul de retragere</h2>
+                <p className="mb-4 text-xs text-faint">
+                    Ultimele 14 luni, doar retrageri reușite — SOL trimis efectiv peste minimul păstrat în portofelul botului.
+                </p>
+                <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={monthlySweepData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <Tooltip
+                            contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                            formatter={(v) => `${Number(v).toFixed(4)} SOL`}
+                        />
+                        <Bar dataKey="sol" name="SOL retras" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </Card>
+
             {chartData.length === 0 && (
                 <Card>
                     <p className="text-sm text-muted">Niciun lot corespunde filtrelor curente — nu sunt suficiente date pentru grafice.</p>
@@ -427,6 +472,12 @@ export function SolanaStatsClient({
             <Card className="overflow-x-auto">
                 <h2 className="mb-4 text-sm font-medium text-foreground">Ordine de vânzare — finalizate ({finalLots.length})</h2>
                 <LotsTable lots={finalLots} emptyMessage="Niciun ordin de vânzare finalizat încă." />
+            </Card>
+
+            <Card className="overflow-x-auto">
+                <h2 className="mb-1 text-sm font-medium text-foreground">Retrageri lunare — istoric ({sweeps.length})</h2>
+                <p className="mb-4 text-xs text-faint">Fiecare încercare de retragere automată sau manuală, reușită sau nu.</p>
+                <SweepsTable sweeps={sweeps} />
             </Card>
         </div>
     );
@@ -581,6 +632,58 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                 </tbody>
             </table>
             <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={lots.length} pageStart={pageStart} />
+        </>
+    );
+}
+
+function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
+    const [page, setPage] = useState(1);
+    if (sweeps.length === 0) return <p className="text-sm text-muted">Nicio retragere încă.</p>;
+    const totalPages = Math.max(1, Math.ceil(sweeps.length / PAGE_SIZE));
+    const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
+    const pageItems = sweeps.slice(pageStart, pageStart + PAGE_SIZE);
+    return (
+        <>
+            <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                    <tr className="text-xs uppercase tracking-wider text-faint">
+                        <th className="pb-2 pr-4">Data</th>
+                        <th className="pb-2 pr-4">Status</th>
+                        <th className="pb-2 pr-4">Balanță înainte</th>
+                        <th className="pb-2 pr-4">Sumă trimisă</th>
+                        <th className="pb-2 pr-4">Sursă</th>
+                        <th className="pb-2 pr-4">Eroare</th>
+                        <th className="pb-2">Tranzacție</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {pageItems.map((sweep) => (
+                        <tr key={sweep.id} className="border-t border-white/[0.06]">
+                            <td className="py-2 pr-4 text-muted">{format(new Date(sweep.createdAt), "d MMM, HH:mm")}</td>
+                            <td className="py-2 pr-4">
+                                <span
+                                    className={cn(
+                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                                        sweep.status === "SUCCESS"
+                                            ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/30"
+                                            : "text-red-300 bg-red-500/10 border-red-400/30"
+                                    )}
+                                >
+                                    {sweep.status === "SUCCESS" ? "Trimis" : "Eșuat"}
+                                </span>
+                            </td>
+                            <td className="py-2 pr-4 text-foreground">{Number(sweep.balanceBeforeSol).toFixed(4)} SOL</td>
+                            <td className="py-2 pr-4 text-foreground">{Number(sweep.amountSol).toFixed(4)} SOL</td>
+                            <td className="py-2 pr-4 text-faint">{sweep.manual ? "manual" : "automat"}</td>
+                            <td className="py-2 pr-4 text-red-300">{sweep.errorMessage ?? "—"}</td>
+                            <td className="py-2 text-faint">
+                                {sweep.txSignature ? <SolscanLink signature={sweep.txSignature} label="Vezi ↗" /> : "—"}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={sweeps.length} pageStart={pageStart} />
         </>
     );
 }

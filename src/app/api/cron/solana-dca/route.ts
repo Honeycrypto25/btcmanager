@@ -14,6 +14,11 @@ import { runSolanaDcaForAllUsers } from "@/lib/solana/dca";
  * No price polling happens here either way: the take-profit sell is a
  * Jupiter Trigger order that Jupiter's own infrastructure executes
  * independently once the price target is hit.
+ *
+ * runSolanaDcaForAllUsers() also checks each user's monthly auto-sweep
+ * (send SOL above a configured minimum to a cold wallet) on every run —
+ * it has its own "already swept this calendar month" gate, so running
+ * this daily doesn't sweep daily.
  */
 export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");

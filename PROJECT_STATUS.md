@@ -78,6 +78,18 @@ and a document vault with expiry reminders.
   unless/until upgrading to Pro, since shorter intervals aren't actually
   checked more often than once a day on Hobby.
 
+  The same cron also runs a monthly auto-sweep, off by default
+  (`sweepEnabled` in `SolanaSettings`): on the 2nd of each month (UTC),
+  it sends whatever SOL sits above `sweepMinBalanceSol` (floored to 2
+  decimals, so the minimum is always respected) to a cold wallet.
+  Requires `SOLANA_SWEEP_DESTINATION` as a Vercel env var — deliberately
+  NOT stored in the database, so redirecting where funds go needs Vercel
+  dashboard access rather than just a compromised web session. Every
+  attempt (success or failure) is logged to `SolanaSweep` for a full
+  audit trail, visible on `/solana/stats`. A "Trimite acum" button on
+  `/solana` lets you test the transfer manually (bypasses the monthly
+  gate, has a confirm() prompt first).
+
 ## Recent fixes (most recent session)
 
 - Fixed OCR total-amount extraction on fuel receipts (was picking a

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { loadBotKeypair } from "./wallet";
+import { runSolanaSweepForUser } from "./sweep";
 import {
     createTriggerSellOrder,
     executeSwap,
@@ -233,10 +234,25 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
 
 /** Entry point for the cron endpoint — runs every enabled user's cycle. */
 export async function runSolanaDcaForAllUsers(): Promise<DcaRunResult[]> {
-    const enabledSettings = await db.solanaSettings.findMany({ where: { enabled: true } });
+    // Sweep has its own independent toggle (sweepEnabled) — a user could
+    // want auto-sweep running even with DCA buying paused, or vice versa —
+    // so this pulls in anyone opted into either, and only calls each
+    // routine when its own flag is on.
+    const settingsRows = await db.solanaSettings.findMany({
+        where: { OR: [{ enabled: true }, { sweepEnabled: true }] },
+    });
     const results: DcaRunResult[] = [];
-    for (const s of enabledSettings) {
-        results.push(await runSolanaDcaForUser(s.userId));
+    for (const s of settingsRows) {
+        if (s.enabled) {
+            results.push(await runSolanaDcaForUser(s.userId));
+        }
+        if (s.sweepEnabled) {
+            try {
+                await runSolanaSweepForUser(s.userId);
+            } catch (err) {
+                console.error(`Solana sweep failed for user ${s.userId}`, err);
+            }
+        }
     }
     return results;
 }

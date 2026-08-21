@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getBotWalletAddress, getSolanaSettings } from "@/app/actions/solana";
+import { getBotWalletAddress, getSolanaSettings, getSweepDestinationInfo } from "@/app/actions/solana";
 import { SolanaClient } from "@/components/solana/SolanaClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 
@@ -12,10 +12,11 @@ export default async function SolanaPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const [settings, solPriceUsd, botWallet] = await Promise.all([
+    const [settings, solPriceUsd, botWallet, sweepDestination] = await Promise.all([
         getSolanaSettings(),
         getSolPriceUsd().catch(() => null),
         getBotWalletAddress(),
+        getSweepDestinationInfo(),
     ]);
 
     return (
@@ -24,6 +25,7 @@ export default async function SolanaPage() {
                 initialSettings={JSON.parse(JSON.stringify(settings))}
                 solPriceUsd={solPriceUsd}
                 botWallet={botWallet}
+                sweepDestination={sweepDestination}
             />
         </DashboardLayout>
     );

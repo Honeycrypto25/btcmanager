@@ -52,6 +52,7 @@ model User {
   financialGoals       FinancialGoal[]
   solanaSettings       SolanaSettings?
   solanaLots           SolanaLot[]
+  solanaSweeps         SolanaSweep[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -746,8 +747,44 @@ model SolanaSettings {
   lastRunStatus String? // "ok" | "skipped" | "error"
   lastRunError  String? @db.Text
 
+  // --- Monthly auto-sweep to a cold wallet ---
+  // Off by default — must be explicitly turned on after verifying with the
+  // manual "Trimite acum" test. The destination address is deliberately
+  // NOT stored here: it lives only as the SOLANA_SWEEP_DESTINATION Vercel
+  // env var, so redirecting where funds go requires Vercel dashboard
+  // access, not just a compromised web session (same reasoning as keeping
+  // the private key out of the database).
+  sweepEnabled       Boolean @default(false)
+  sweepMinBalanceSol Decimal @default(0.2) @db.Decimal(10, 4) // always left behind in the hot wallet
+
+  lastSweepAt     DateTime?
+  lastSweepStatus String? // "ok" | "skipped" | "error"
+  lastSweepError  String? @db.Text
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One row per executed (or attempted) monthly sweep — the excess SOL above
+// sweepMinBalanceSol, sent to SOLANA_SWEEP_DESTINATION. Kept even for
+// failed attempts (status=FAILED, txSignature null) so the history is a
+// complete audit trail, not just successes.
+model SolanaSweep {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status            String // "SUCCESS" | "FAILED"
+  balanceBeforeSol  Decimal  @db.Decimal(20, 9) // on-chain wallet balance right before the transfer
+  amountSol         Decimal  @db.Decimal(20, 9) // amount actually sent (0 for a failed/skipped attempt)
+  destination       String // snapshot of SOLANA_SWEEP_DESTINATION at the time — env var could change later
+  txSignature       String?
+  errorMessage      String? @db.Text
+  manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 enum SolanaLotStatus {

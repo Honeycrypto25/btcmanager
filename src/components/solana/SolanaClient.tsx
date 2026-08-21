@@ -3,9 +3,9 @@
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3 } from "lucide-react";
+import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { upsertSolanaSettings, runSolanaDcaNow, type SolanaSettingsInput } from "@/app/actions/solana";
+import { upsertSolanaSettings, runSolanaDcaNow, runSolanaSweepNow, type SolanaSettingsInput } from "@/app/actions/solana";
 import { formatUsd, type SettingsDTO } from "./shared";
 
 /** Vercel Cron for /api/cron/solana-dca runs daily at 09:00 UTC (see vercel.json) — this just mirrors that schedule for display. */
@@ -20,10 +20,12 @@ export function SolanaClient({
     initialSettings,
     solPriceUsd,
     botWallet,
+    sweepDestination,
 }: {
     initialSettings: SettingsDTO | null;
     solPriceUsd: number | null;
     botWallet: { address: string } | { error: string };
+    sweepDestination: { address: string } | { error: string };
 }) {
     const [settings, setSettings] = useState<SettingsDTO | null>(initialSettings);
     const [form, setForm] = useState<SolanaSettingsInput>({
@@ -33,11 +35,15 @@ export function SolanaClient({
         takeProfitPercent: initialSettings ? Number(initialSettings.takeProfitPercent) : 10,
         sellAmountUsd: initialSettings ? Number(initialSettings.sellAmountUsd) : 10,
         slippageBps: initialSettings?.slippageBps ?? 50,
+        sweepEnabled: initialSettings?.sweepEnabled ?? false,
+        sweepMinBalanceSol: initialSettings ? Number(initialSettings.sweepMinBalanceSol) : 0.2,
     });
     const [editing, setEditing] = useState(!initialSettings);
     const [saving, startSaving] = useTransition();
     const [running, startRunning] = useTransition();
+    const [sweeping, startSweeping] = useTransition();
     const [runMessage, setRunMessage] = useState<string | null>(null);
+    const [sweepMessage, setSweepMessage] = useState<string | null>(null);
     const [savedMessage, setSavedMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -65,10 +71,31 @@ export function SolanaClient({
                 takeProfitPercent: Number(settings.takeProfitPercent),
                 sellAmountUsd: Number(settings.sellAmountUsd),
                 slippageBps: settings.slippageBps,
+                sweepEnabled: settings.sweepEnabled,
+                sweepMinBalanceSol: Number(settings.sweepMinBalanceSol),
             });
         }
         setError(null);
         setEditing(false);
+    }
+
+    function handleSweepNow() {
+        if (!window.confirm("Trimite acum excedentul de SOL peste minimul configurat, către portofelul de retragere? Este o tranzacție reală, ireversibilă.")) {
+            return;
+        }
+        setSweepMessage(null);
+        setError(null);
+        startSweeping(async () => {
+            try {
+                const result = await runSolanaSweepNow();
+                if (result.action === "sent") setSweepMessage(`Trimis ${result.amountSol} SOL — pagina se va reîmprospăta.`);
+                else if (result.action === "skipped") setSweepMessage(`Sărit: ${result.reason}`);
+                else setError(result.reason ?? "Eroare necunoscută.");
+                if (result.action === "sent") window.location.reload();
+            } catch (e) {
+                setError(e instanceof Error ? e.message : "Eroare la trimitere.");
+            }
+        });
     }
 
     function handleRunNow() {
@@ -272,6 +299,72 @@ export function SolanaClient({
                     Portofelul trebuie să aibă în prealabil USDC (pentru cumpărare) și puțin SOL (pentru fee-uri de rețea).
                     Cheia privată se citește din variabila de mediu <code>SOLANA_PRIVATE_KEY</code> din Vercel — nu e stocată în baza de date.
                 </p>
+            </Card>
+
+            {/* Retragere automată lunară */}
+            <Card className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-medium text-foreground">Retragere automată lunară</h2>
+                    <label className={cn("flex items-center gap-2 text-sm", editing ? "text-muted" : "text-faint")}>
+                        <input
+                            type="checkbox"
+                            checked={form.sweepEnabled}
+                            disabled={!editing}
+                            onChange={(e) => setForm({ ...form, sweepEnabled: e.target.checked })}
+                            className="h-4 w-4 accent-primary rounded border-white/20 bg-transparent disabled:opacity-50"
+                        />
+                        Activ
+                    </label>
+                </div>
+                <p className="text-xs text-faint">
+                    În fiecare zi de 2 a lunii, tot ce depășește minimul de mai jos se trimite automat către portofelul de retragere — restul rămâne pentru cumpărări/fee-uri viitoare. Suma trimisă e rotunjită în jos la 2 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
+                </p>
+
+                {"error" in sweepDestination ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                            <code>SOLANA_SWEEP_DESTINATION</code> nu e configurată încă în Vercel — setează-o, apoi revino aici. Retragerea rămâne dezactivată până atunci, indiferent de comutatorul de mai sus.
+                        </span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm">
+                        <ShieldAlert className="h-4 w-4 text-muted" />
+                        <span className="text-faint">Portofel de retragere (din Vercel, needitabil aici):</span>
+                        <code className="text-foreground">{sweepDestination.address}</code>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Minim SOL păstrat mereu în portofelul botului">
+                        <input
+                            type="number"
+                            step="0.01"
+                            value={form.sweepMinBalanceSol}
+                            disabled={!editing}
+                            onChange={(e) => setForm({ ...form, sweepMinBalanceSol: parseFloat(e.target.value) || 0 })}
+                            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
+                        />
+                    </Field>
+                </div>
+
+                <div className="flex flex-col gap-0.5 text-xs text-faint">
+                    <span>
+                        Ultima retragere: {settings?.lastSweepAt ? format(new Date(settings.lastSweepAt), "d MMM, HH:mm") : "niciodată încă"}
+                        {settings?.lastSweepStatus ? ` · ${settings.lastSweepStatus}` : ""}
+                    </span>
+                    {settings?.lastSweepError && <span className="text-red-300">{settings.lastSweepError}</span>}
+                </div>
+
+                {sweepMessage && <p className="text-sm text-muted">{sweepMessage}</p>}
+
+                <Button
+                    onClick={handleSweepNow}
+                    disabled={sweeping || !settings || "error" in sweepDestination}
+                    variant="secondary"
+                >
+                    <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
+                </Button>
             </Card>
         </div>
     );

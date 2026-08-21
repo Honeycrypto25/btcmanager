@@ -39,6 +39,23 @@ export interface SettingsDTO {
     lastRunAt: string | null;
     lastRunStatus: string | null;
     lastRunError: string | null;
+    sweepEnabled: boolean;
+    sweepMinBalanceSol: string;
+    lastSweepAt: string | null;
+    lastSweepStatus: string | null;
+    lastSweepError: string | null;
+}
+
+export interface SweepDTO {
+    id: string;
+    status: string;
+    balanceBeforeSol: string;
+    amountSol: string;
+    destination: string;
+    txSignature: string | null;
+    errorMessage: string | null;
+    manual: boolean;
+    createdAt: string;
 }
 
 export function formatUsd(n: number): string {
