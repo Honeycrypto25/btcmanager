@@ -4,27 +4,23 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getBotWalletAddress, getSolanaSettings } from "@/app/actions/solana";
-import { SolanaClient } from "@/components/solana/SolanaClient";
+import { getSolanaStats, listSolanaLots } from "@/app/actions/solana";
+import { SolanaStatsClient } from "@/components/solana/SolanaStatsClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 
-export default async function SolanaPage() {
+export default async function SolanaStatsPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const [settings, solPriceUsd, botWallet] = await Promise.all([
-        getSolanaSettings(),
+    const [lots, stats, solPriceUsd] = await Promise.all([
+        listSolanaLots(),
+        getSolanaStats(),
         getSolPriceUsd().catch(() => null),
-        getBotWalletAddress(),
     ]);
 
     return (
         <DashboardLayout>
-            <SolanaClient
-                initialSettings={JSON.parse(JSON.stringify(settings))}
-                solPriceUsd={solPriceUsd}
-                botWallet={botWallet}
-            />
+            <SolanaStatsClient lots={JSON.parse(JSON.stringify(lots))} stats={stats} solPriceUsd={solPriceUsd} />
         </DashboardLayout>
     );
 }

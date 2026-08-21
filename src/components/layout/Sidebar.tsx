@@ -69,6 +69,7 @@ const navEntries: NavEntry[] = [
         section: 'Solana',
         items: [
             { name: 'DCA automat', href: '/solana', icon: Coins },
+            { name: 'Statistici', href: '/solana/stats', icon: BarChart3 },
         ],
     },
     {
