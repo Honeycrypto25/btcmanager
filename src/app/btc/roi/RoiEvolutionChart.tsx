@@ -160,13 +160,23 @@ export default function RoiEvolutionChart({ transactions, usdToGbp }: RoiEvoluti
         return [min - padding, max + padding];
     }, [chartData, mode]);
 
-    // Where zero falls within [0,1] of the plot height (0 = top/all-green, 1 = bottom/all-red) — feeds the gradient stop offsets below.
+    // Where zero falls within [0,1] of the gradient, for the stroke/fill
+    // split below. Important: this must use the RAW (unpadded) data extent,
+    // not the padded yDomain used for the visible axis — the <linearGradient>
+    // below defaults to gradientUnits="objectBoundingBox", meaning its 0..1
+    // range maps to the bounding box of the drawn Area path itself, which
+    // (thanks to baseValue={0}) spans exactly [min(0, dataMin), max(0,
+    // dataMax)] — NOT the padded axis range. Using the padded domain here
+    // was the bug: it shifted the color split away from the true zero
+    // crossing, making segments that were still negative render green.
     const zeroOffset = useMemo(() => {
-        const [min, max] = yDomain;
+        const vals = chartData.map((r) => valueForMode(r, mode));
+        const min = Math.min(0, ...vals);
+        const max = Math.max(0, ...vals);
         if (max <= 0) return 0;
         if (min >= 0) return 1;
         return max / (max - min);
-    }, [yDomain]);
+    }, [chartData, mode]);
 
     if (sorted.length === 0) {
         return (
