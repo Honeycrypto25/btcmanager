@@ -155,16 +155,49 @@ export interface TriggerOrder {
     trades: TriggerOrderTrade[];
 }
 
-/** Looks up a single order's current state (active or history) by key, for reconciling a SolanaLot. */
-export async function getTriggerOrderStatus(wallet: string, orderKey: string): Promise<TriggerOrder | null> {
-    for (const orderStatus of ["active", "history"] as const) {
-        const qs = new URLSearchParams({ user: wallet, orderStatus });
-        const res = await jupiterFetch<{ orders: TriggerOrder[] }>(
-            `${JUPITER_API_BASE}/trigger/v1/getTriggerOrders?${qs.toString()}`
-        );
+interface GetTriggerOrdersResponse {
+    orders: TriggerOrder[];
+    totalPages: number;
+    page: number;
+}
+
+/**
+ * Fetches every currently-active (Open) trigger order for a wallet, across
+ * all pages (10 orders/page), in a bounded, small number of requests —
+ * used to reconcile ALL open lots against Jupiter in one batched pass
+ * instead of one lookup per lot. Keyed by orderKey for O(1) matching.
+ */
+export async function getActiveTriggerOrders(wallet: string): Promise<Map<string, TriggerOrder>> {
+    const byKey = new Map<string, TriggerOrder>();
+    let page = 1;
+    let totalPages = 1;
+    do {
+        const qs = new URLSearchParams({ user: wallet, orderStatus: "active", page: String(page) });
+        const res = await jupiterFetch<GetTriggerOrdersResponse>(`${JUPITER_API_BASE}/trigger/v1/getTriggerOrders?${qs.toString()}`);
+        for (const order of res.orders) byKey.set(order.orderKey, order);
+        totalPages = res.totalPages || 1;
+        page++;
+    } while (page <= totalPages);
+    return byKey;
+}
+
+/**
+ * Looks up a single order's final state in the (paginated) history —
+ * used only for orders that just dropped out of the active list, i.e.
+ * actually need their fill/cancel details. NOT meant to be called per
+ * lot on every run; see getActiveTriggerOrders for the batched check.
+ */
+export async function getHistoricalTriggerOrder(wallet: string, orderKey: string): Promise<TriggerOrder | null> {
+    let page = 1;
+    let totalPages = 1;
+    do {
+        const qs = new URLSearchParams({ user: wallet, orderStatus: "history", page: String(page) });
+        const res = await jupiterFetch<GetTriggerOrdersResponse>(`${JUPITER_API_BASE}/trigger/v1/getTriggerOrders?${qs.toString()}`);
         const found = res.orders.find((o) => o.orderKey === orderKey);
         if (found) return found;
-    }
+        totalPages = res.totalPages || 1;
+        page++;
+    } while (page <= totalPages);
     return null;
 }
 

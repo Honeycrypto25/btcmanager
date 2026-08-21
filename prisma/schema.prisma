@@ -790,6 +790,13 @@ model SolanaLot {
   sellFeeUsd      Decimal?  @db.Decimal(10, 4)
   sellTxSignature String?
 
+  // Last time reconcileOpenLots() checked this lot's order against
+  // Jupiter — set on every daily cron run for every OPEN lot (cheap now
+  // that it's a batched lookup, not one API call per lot), regardless of
+  // whether the status actually changed. Shown in the UI so it's obvious
+  // the bot is still watching, not just what the last known status was.
+  lastCheckedAt DateTime?
+
   // SOL from this lot that is not part of the sell order (or not yet sold)
   // — stays in the wallet as a long-term holding.
   solRemaining Decimal @db.Decimal(20, 9)

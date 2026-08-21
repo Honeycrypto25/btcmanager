@@ -4,9 +4,10 @@ import { loadBotKeypair } from "./wallet";
 import {
     createTriggerSellOrder,
     executeSwap,
+    getActiveTriggerOrders,
+    getHistoricalTriggerOrder,
     getSolPriceUsd,
     getSwapQuote,
-    getTriggerOrderStatus,
 } from "./jupiter";
 import { MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "./constants";
 
@@ -26,18 +27,41 @@ export interface DcaRunResult {
 }
 
 /**
- * Reconciles any of this user's OPEN lots against Jupiter's Trigger API —
- * if the take-profit order has filled (or was cancelled) since we last
- * checked, updates the lot's status, proceeds and realized P&L. Runs once
- * per cycle, right before deciding whether a new buy is due.
+ * Reconciles ALL of this user's OPEN lots against Jupiter's Trigger API in
+ * one batched pass: a single (paginated) call fetches every currently-
+ * active order for the wallet, so lots still genuinely open cost nothing
+ * beyond that one fetch. Only lots whose order has DROPPED OUT of the
+ * active list (i.e. actually filled or got cancelled) get an individual,
+ * targeted history lookup for their fill details — that's normally 0-1
+ * lots per run, not the full set. Every OPEN lot gets `lastCheckedAt`
+ * stamped regardless, so the UI can show "still being watched" even when
+ * nothing changed. Runs once per cycle, right before deciding whether a
+ * new buy is due.
  */
 async function reconcileOpenLots(userId: string, walletAddress: string) {
     const openLots = await db.solanaLot.findMany({ where: { userId, status: "OPEN" } });
+    if (openLots.length === 0) return;
+
+    const activeOrders = await getActiveTriggerOrders(walletAddress);
+    const now = new Date();
 
     for (const lot of openLots) {
         if (!lot.jupiterOrderKey) continue;
-        const order = await getTriggerOrderStatus(walletAddress, lot.jupiterOrderKey);
-        if (!order) continue;
+
+        if (activeOrders.has(lot.jupiterOrderKey)) {
+            // Still open on Jupiter's side — nothing to update except the checked timestamp.
+            await db.solanaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now } });
+            continue;
+        }
+
+        // No longer active — it must have filled or been cancelled. Only now
+        // is an individual (more expensive) history lookup worth doing.
+        const order = await getHistoricalTriggerOrder(walletAddress, lot.jupiterOrderKey);
+        if (!order) {
+            // Not found anywhere yet (e.g. propagation delay right after creation) — just mark checked, try again next run.
+            await db.solanaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now } });
+            continue;
+        }
 
         if (order.status === "Completed") {
             const fill = order.trades[0];
@@ -53,22 +77,24 @@ async function reconcileOpenLots(userId: string, walletAddress: string) {
                 where: { id: lot.id },
                 data: {
                     status: "FILLED",
-                    soldAt: fill ? new Date(fill.confirmedAt) : new Date(),
+                    soldAt: fill ? new Date(fill.confirmedAt) : now,
                     solSold,
                     sellProceedsUsd: proceedsUsd,
                     sellFeeUsd: feeUsd,
                     sellTxSignature: fill?.txId,
                     realizedPnlUsd,
                     solRemaining: Number(lot.solAcquired) - solSold,
+                    lastCheckedAt: now,
                 },
             });
         } else if (order.status === "Cancelled") {
             await db.solanaLot.update({
                 where: { id: lot.id },
-                data: { status: "CANCELLED", solRemaining: lot.solAcquired },
+                data: { status: "CANCELLED", solRemaining: lot.solAcquired, lastCheckedAt: now },
             });
+        } else {
+            await db.solanaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now } });
         }
-        // "Open" — nothing to do, still waiting on the price target.
     }
 }
 

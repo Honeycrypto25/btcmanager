@@ -23,6 +23,7 @@ export interface LotDTO {
     sellTxSignature: string | null;
     realizedPnlUsd: string | null;
     solRemaining: string;
+    lastCheckedAt: string | null;
     notes: string | null;
 }
 

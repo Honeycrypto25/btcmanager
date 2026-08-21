@@ -6,6 +6,7 @@ import {
     ComposedChart,
     Line,
     Bar,
+    BarChart,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -13,23 +14,64 @@ import {
     Legend,
     ResponsiveContainer,
 } from "recharts";
-import { format } from "date-fns";
-import { ArrowLeft, Coins } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { ArrowLeft, Coins, Filter } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import type { SolanaStats } from "@/app/actions/solana";
 import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO } from "./shared";
 
 const PAGE_SIZE = 10;
 
+const STATUS_FILTER_OPTIONS = [
+    { value: "PENDING_SELL_ORDER", label: "Ordin în curs" },
+    { value: "OPEN", label: "Ordin activ" },
+    { value: "FILLED", label: "Vândut" },
+    { value: "CANCELLED", label: "Anulat" },
+] as const;
+
 export function SolanaStatsClient({
-    lots,
-    stats,
+    lots: allLots,
     solPriceUsd,
 }: {
     lots: LotDTO[];
-    stats: SolanaStats;
+    stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
     solPriceUsd: number | null;
 }) {
+    const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
+
+    const lots = useMemo(() => {
+        return allLots.filter((lot) => {
+            if (statusFilter.size > 0 && !statusFilter.has(lot.status)) return false;
+            const boughtAt = new Date(lot.boughtAt).getTime();
+            if (dateFrom && boughtAt < new Date(dateFrom).getTime()) return false;
+            if (dateTo && boughtAt > new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) return false;
+            return true;
+        });
+    }, [allLots, statusFilter, dateTo, dateFrom]);
+
+    const stats = useMemo(() => {
+        let totalInvestedUsd = 0;
+        let totalRealizedProceedsUsd = 0;
+        let totalRealizedPnlUsd = 0;
+        let totalFeesUsd = 0;
+        let solHeld = 0;
+        let openOrders = 0;
+        for (const lot of lots) {
+            if (lot.status === "FAILED") continue;
+            totalInvestedUsd += Number(lot.buyAmountUsd);
+            totalFeesUsd += Number(lot.buyFeeUsd);
+            solHeld += Number(lot.solRemaining);
+            if (lot.status === "OPEN") openOrders++;
+            if (lot.status === "FILLED") {
+                totalRealizedProceedsUsd += Number(lot.sellProceedsUsd ?? 0);
+                totalRealizedPnlUsd += Number(lot.realizedPnlUsd ?? 0);
+                totalFeesUsd += Number(lot.sellFeeUsd ?? 0);
+            }
+        }
+        return { totalInvestedUsd, totalRealizedProceedsUsd, totalRealizedPnlUsd, totalFeesUsd, solHeld, openOrders };
+    }, [lots]);
+
     const chartData = useMemo(() => {
         const sorted = [...lots].sort((a, b) => new Date(a.boughtAt).getTime() - new Date(b.boughtAt).getTime());
         const rows: { date: string; buyPrice: number; targetPrice: number | null; invested: number; realized: number }[] = [];
@@ -51,8 +93,28 @@ export function SolanaStatsClient({
         return rows;
     }, [lots]);
 
+    const monthlyData = useMemo(() => {
+        const byMonth = new Map<string, number>();
+        for (const lot of lots) {
+            const key = format(new Date(lot.boughtAt), "yyyy-MM");
+            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.solAcquired));
+        }
+        return [...byMonth.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, sol]) => ({ month: format(new Date(`${key}-01`), "MMM yyyy"), sol: Math.round(sol * 10000) / 10000 }));
+    }, [lots]);
+
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
+
+    function toggleStatus(value: string) {
+        setStatusFilter((prev) => {
+            const next = new Set(prev);
+            if (next.has(value)) next.delete(value);
+            else next.add(value);
+            return next;
+        });
+    }
 
     return (
         <div className="space-y-6">
@@ -72,6 +134,75 @@ export function SolanaStatsClient({
                     </p>
                 </div>
             </div>
+
+            {/* Filters */}
+            <Card className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Filter className="h-4 w-4" /> Filtre
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {STATUS_FILTER_OPTIONS.map((opt) => {
+                        const active = statusFilter.has(opt.value);
+                        return (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => toggleStatus(opt.value)}
+                                className={cn(
+                                    "rounded-full border px-3 py-1 text-xs transition-colors",
+                                    active
+                                        ? "border-primary/50 bg-primary/15 text-primary"
+                                        : "border-white/10 bg-white/[0.03] text-faint hover:text-muted"
+                                )}
+                            >
+                                {opt.label}
+                            </button>
+                        );
+                    })}
+                    {statusFilter.size > 0 && (
+                        <button type="button" onClick={() => setStatusFilter(new Set())} className="text-xs text-faint underline decoration-dotted hover:text-muted">
+                            Șterge filtrul de status
+                        </button>
+                    )}
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="block space-y-1.5">
+                        <span className="text-xs text-faint">De la data</span>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                        />
+                    </label>
+                    <label className="block space-y-1.5">
+                        <span className="text-xs text-faint">Până la data</span>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                        />
+                    </label>
+                    {(dateFrom || dateTo) && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setDateFrom("");
+                                setDateTo("");
+                            }}
+                            className="pb-2.5 text-xs text-faint underline decoration-dotted hover:text-muted"
+                        >
+                            Șterge intervalul de date
+                        </button>
+                    )}
+                </div>
+                {(statusFilter.size > 0 || dateFrom || dateTo) && (
+                    <p className="text-xs text-faint">
+                        {lots.length} din {allLots.length} loturi corespund filtrelor — toate cardurile, graficele și tabelele de mai jos reflectă doar selecția curentă.
+                    </p>
+                )}
+            </Card>
 
             {/* Stats */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -128,9 +259,27 @@ export function SolanaStatsClient({
                 </Card>
             )}
 
+            {monthlyData.length > 0 && (
+                <Card>
+                    <h2 className="mb-4 text-sm font-medium text-foreground">SOL acumulat pe lună</h2>
+                    <ResponsiveContainer width="100%" height={240}>
+                        <BarChart data={monthlyData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                            <Tooltip
+                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                                formatter={(v) => `${Number(v).toFixed(4)} SOL`}
+                            />
+                            <Bar dataKey="sol" name="SOL cumpărat" fill="rgba(214,162,76,0.7)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </Card>
+            )}
+
             {chartData.length === 0 && (
                 <Card>
-                    <p className="text-sm text-muted">Niciun lot încă — nu sunt suficiente date pentru grafice.</p>
+                    <p className="text-sm text-muted">Niciun lot corespunde filtrelor curente — nu sunt suficiente date pentru grafice.</p>
                 </Card>
             )}
 
@@ -255,7 +404,7 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
     const pageItems = lots.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[960px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
@@ -266,6 +415,7 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                         <th className="pb-2 pr-4">Vândut</th>
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">SOL rămas</th>
+                        <th className="pb-2 pr-4">Verificat</th>
                         <th className="pb-2">Tranzacție</th>
                     </tr>
                 </thead>
@@ -289,6 +439,11 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                                     {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
                                 </td>
                                 <td className="py-2 pr-4 text-foreground">{Number(lot.solRemaining).toFixed(4)}</td>
+                                <td className="py-2 pr-4 text-faint" title={lot.lastCheckedAt ? new Date(lot.lastCheckedAt).toLocaleString("ro-RO") : undefined}>
+                                    {lot.lastCheckedAt
+                                        ? formatDistanceToNow(new Date(lot.lastCheckedAt), { addSuffix: true })
+                                        : "încă neverificat"}
+                                </td>
                                 <td className="py-2 text-faint">
                                     {lot.sellTxSignature ? (
                                         <SolscanLink signature={lot.sellTxSignature} label="Vânzare ↗" />
