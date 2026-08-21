@@ -114,16 +114,30 @@ export function SolanaStatsClient({
         return rows;
     }, [lots]);
 
+    // Fixed trailing 14-month window, independent of the filter bar above, and
+    // counting only finalized cycles (FILLED / CANCELLED / FAILED) — a pending
+    // lot's sell hasn't happened yet, so how much SOL ultimately stays
+    // "accumulated" vs. gets sold for profit isn't known until it resolves.
     const monthlyData = useMemo(() => {
+        const now = new Date();
+        const months: { key: string; label: string }[] = [];
+        for (let i = 13; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push({ key: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
+        }
+
         const byMonth = new Map<string, number>();
-        for (const lot of lots) {
+        for (const lot of allLots) {
+            if (!FINAL_STATUSES.has(lot.status)) continue;
             const key = format(new Date(lot.boughtAt), "yyyy-MM");
             byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.solAcquired));
         }
-        return [...byMonth.entries()]
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([key, sol]) => ({ month: format(new Date(`${key}-01`), "MMM yyyy"), sol: Math.round(sol * 10000) / 10000 }));
-    }, [lots]);
+
+        return months.map(({ key, label }) => ({
+            month: label,
+            sol: Math.round((byMonth.get(key) ?? 0) * 10000) / 10000,
+        }));
+    }, [allLots]);
 
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
@@ -282,7 +296,10 @@ export function SolanaStatsClient({
 
             {monthlyData.length > 0 && (
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">SOL acumulat pe lună</h2>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">SOL acumulat pe lună</h2>
+                    <p className="mb-4 text-xs text-faint">
+                        Ultimele 14 luni, doar cicluri finalizate (vândute sau anulate) — loturile în așteptare nu sunt incluse încă, fiindcă nu se știe cât SOL rămâne până la finalizarea vânzării.
+                    </p>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={monthlyData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
