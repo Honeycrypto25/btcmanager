@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { runSolanaDcaForUser } from "@/lib/solana/dca";
+import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
 import { loadBotKeypair } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
@@ -97,6 +97,16 @@ export async function runSolanaDcaNow() {
     const userId = await requireUserId();
     const result = await runSolanaDcaForUser(userId);
     revalidatePath("/solana");
+    revalidatePath("/solana/stats");
+    return result;
+}
+
+/** Manual "check orders now" — reconciles pending sell orders against Jupiter on demand, without buying or waiting for the next scheduled cron pass. */
+export async function reconcileSolanaOrdersNow() {
+    const userId = await requireUserId();
+    const result = await reconcileSolanaOrdersForUser(userId);
+    revalidatePath("/solana");
+    revalidatePath("/solana/stats");
     return result;
 }
 

@@ -15,9 +15,10 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { format, formatDistanceToNow } from "date-fns";
-import { ArrowLeft, Coins, Filter } from "lucide-react";
+import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO } from "./shared";
+import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 
 const PAGE_SIZE = 10;
 
@@ -39,6 +40,26 @@ export function SolanaStatsClient({
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
+    const [checking, setChecking] = useState(false);
+    const [checkMessage, setCheckMessage] = useState<string | null>(null);
+    const [checkError, setCheckError] = useState<string | null>(null);
+
+    async function handleCheckNow() {
+        setChecking(true);
+        setCheckMessage(null);
+        setCheckError(null);
+        try {
+            const result = await reconcileSolanaOrdersNow();
+            const parts = [`${result.checked} verificate`];
+            if (result.filled > 0) parts.push(`${result.filled} vândute`);
+            if (result.cancelled > 0) parts.push(`${result.cancelled} anulate`);
+            setCheckMessage(result.checked === 0 ? "Niciun ordin activ de verificat." : parts.join(", "));
+        } catch (err) {
+            setCheckError(err instanceof Error ? err.message : "Verificarea a eșuat.");
+        } finally {
+            setChecking(false);
+        }
+    }
 
     const lots = useMemo(() => {
         return allLots.filter((lot) => {
@@ -298,7 +319,17 @@ export function SolanaStatsClient({
                it can stay pending for a long time (or forever, if price never hits target)
                after the purchase above already completed. */}
             <Card className="overflow-x-auto">
-                <h2 className="mb-4 text-sm font-medium text-foreground">Ordine de vânzare — în așteptare ({pendingLots.length})</h2>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-sm font-medium text-foreground">Ordine de vânzare — în așteptare ({pendingLots.length})</h2>
+                    <div className="flex items-center gap-3">
+                        {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
+                        {checkError && <span className="text-xs text-red-300">{checkError}</span>}
+                        <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
+                            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", checking && "animate-spin")} />
+                            {checking ? "Se verifică..." : "Verifică acum"}
+                        </Button>
+                    </div>
+                </div>
                 <LotsTable lots={pendingLots} emptyMessage="Niciun ordin de vânzare în așteptare momentan." />
             </Card>
 

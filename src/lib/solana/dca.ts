@@ -38,9 +38,16 @@ export interface DcaRunResult {
  * nothing changed. Runs once per cycle, right before deciding whether a
  * new buy is due.
  */
-async function reconcileOpenLots(userId: string, walletAddress: string) {
+interface ReconcileResult {
+    checked: number;
+    filled: number;
+    cancelled: number;
+}
+
+async function reconcileOpenLots(userId: string, walletAddress: string): Promise<ReconcileResult> {
     const openLots = await db.solanaLot.findMany({ where: { userId, status: "OPEN" } });
-    if (openLots.length === 0) return;
+    const result: ReconcileResult = { checked: openLots.length, filled: 0, cancelled: 0 };
+    if (openLots.length === 0) return result;
 
     const activeOrders = await getActiveTriggerOrders(walletAddress);
     const now = new Date();
@@ -87,15 +94,31 @@ async function reconcileOpenLots(userId: string, walletAddress: string) {
                     lastCheckedAt: now,
                 },
             });
+            result.filled++;
         } else if (order.status === "Cancelled") {
             await db.solanaLot.update({
                 where: { id: lot.id },
                 data: { status: "CANCELLED", solRemaining: lot.solAcquired, lastCheckedAt: now },
             });
+            result.cancelled++;
         } else {
             await db.solanaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now } });
         }
     }
+
+    return result;
+}
+
+/**
+ * Manual "check now" — reconciles this user's open sell orders against
+ * Jupiter without touching the buy side (no new purchase, no interval
+ * check). Lets the user confirm on demand that an order actually landed
+ * or filled, instead of waiting for the next scheduled cron pass.
+ */
+export async function reconcileSolanaOrdersForUser(userId: string): Promise<ReconcileResult> {
+    const settings = await db.solanaSettings.findUnique({ where: { userId } });
+    if (!settings) return { checked: 0, filled: 0, cancelled: 0 };
+    return reconcileOpenLots(userId, settings.walletAddress);
 }
 
 /**
