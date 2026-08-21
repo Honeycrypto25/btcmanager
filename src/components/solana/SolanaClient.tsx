@@ -89,6 +89,7 @@ export function SolanaClient({
     const [saving, startSaving] = useTransition();
     const [running, startRunning] = useTransition();
     const [runMessage, setRunMessage] = useState<string | null>(null);
+    const [savedMessage, setSavedMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const lots = initialLots;
@@ -118,10 +119,12 @@ export function SolanaClient({
 
     function handleSave() {
         setError(null);
+        setSavedMessage(null);
         startSaving(async () => {
             try {
                 const saved = await upsertSolanaSettings(form);
                 setSettings(JSON.parse(JSON.stringify(saved)));
+                setSavedMessage(`Salvat — ${new Date().toLocaleTimeString("ro-RO")}.`);
             } catch (e) {
                 setError(e instanceof Error ? e.message : "Eroare la salvare.");
             }
@@ -222,7 +225,7 @@ export function SolanaClient({
                             type="checkbox"
                             checked={form.enabled}
                             onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
-                            className="h-4 w-4 rounded border-white/20 bg-transparent"
+                            className="h-4 w-4 accent-primary rounded border-white/20 bg-transparent"
                         />
                         Activ
                     </label>
@@ -290,6 +293,11 @@ export function SolanaClient({
                 </div>
 
                 {error && <p className="text-sm text-red-300">{error}</p>}
+                {savedMessage && (
+                    <p className="flex items-center gap-1.5 text-sm text-emerald-300">
+                        <CheckCircle2 className="h-4 w-4" /> {savedMessage} (Activ: {form.enabled ? "da" : "nu"})
+                    </p>
+                )}
                 {runMessage && <p className="text-sm text-muted">{runMessage}</p>}
 
                 {settings?.lastRunAt && (
