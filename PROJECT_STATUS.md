@@ -90,6 +90,35 @@ and a document vault with expiry reminders.
   `/solana` lets you test the transfer manually (bypasses the monthly
   gate, has a confirm() prompt first).
 
+- **Base / ETH** (`/base`) — same self-custody automated DCA bot as
+  Solana, 1:1, adapted for the Base L2 (chain id 8453). Buys a configured
+  USD amount of WETH every `intervalHours` via 1inch's Classic Swap API
+  (Aggregation Router v6), then signs a gasless 1inch Limit Order
+  Protocol v4 order to sell a configured USD slice at
+  `+takeProfitPercent` — a 1inch resolver fills it later, no price
+  polling from this app. `/api/cron/base-dca` runs daily
+  (`10 9 * * *`, offset from the Solana cron) for the same Hobby-plan
+  reason. Requires `BASE_PRIVATE_KEY` (0x-prefixed key of the dedicated
+  bot wallet), `ONEINCH_API_KEY` (required, unlike Jupiter's optional
+  key — get one at portal.1inch.dev) as Vercel env vars; optional
+  `BASE_RPC_URL` (defaults to the public `mainnet.base.org` RPC). The
+  wallet needs USDC (for buys) and a small amount of native ETH (for gas
+  — a separate asset from the WETH being accumulated, unlike Solana
+  where SOL pays its own fees). ERC-20s need an on-chain `approve()`
+  before a contract can move them; `src/lib/evm/oneinch.ts` checks
+  allowance and approves once (max uint256) lazily on first use.
+
+  Same monthly auto-sweep pattern (`sweepEnabled` in `EvmSettings`, 2nd
+  of the month UTC, floored to 6 decimals), sweeping accumulated WETH —
+  never the native ETH gas float — to `BASE_SWEEP_DESTINATION` (again a
+  Vercel env var only, never the database). Logged to `EvmSweep`,
+  visible on `/base/stats`, with the same styled-modal "Trimite acum"
+  test button as Solana. One notable gap versus Solana: 1inch's
+  Orderbook API doesn't expose a fill's transaction hash or exact fill
+  time, so `EvmLot.sellTxHash`/`soldAt` are best-effort (order hash
+  shown instead; soldAt is "first time we noticed", not the true fill
+  moment).
+
 ## Recent fixes (most recent session)
 
 - Fixed OCR total-amount extraction on fuel receipts (was picking a

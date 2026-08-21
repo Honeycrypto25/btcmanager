@@ -53,6 +53,9 @@ model User {
   solanaSettings       SolanaSettings?
   solanaLots           SolanaLot[]
   solanaSweeps         SolanaSweep[]
+  evmSettings          EvmSettings?
+  evmLots              EvmLot[]
+  evmSweeps            EvmSweep[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -839,6 +842,167 @@ model SolanaLot {
   solRemaining Decimal @db.Decimal(20, 9)
 
   // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of solSold + buyFeeUsd share)
+  // Null until the sell fills.
+  realizedPnlUsd Decimal? @db.Decimal(12, 4)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, boughtAt])
+}
+
+// --- Base (ETH L2) DCA bot ---
+// Same self-custody, single-dedicated-wallet model as the Solana bot above,
+// adapted for an EVM chain: the private key never touches this database —
+// it lives only as an env var on Vercel (BASE_PRIVATE_KEY), read at
+// cron-execution time by src/lib/evm. Everything here is bookkeeping/config
+// only.
+//
+// Two important differences from the Solana bot, both a consequence of Base
+// being an EVM chain with ERC-20 tokens rather than native-SOL trading:
+// 1. Gas is paid in native ETH, a SEPARATE asset from the WETH being
+//    accumulated — unlike Solana where SOL is both the investment and the
+//    fee currency. The wallet needs a small standing ETH balance for gas;
+//    that's a manual top-up, not something this app tracks or sweeps.
+// 2. ERC-20s require an on-chain `approve()` before a contract can move
+//    them. src/lib/evm/oneinch.ts checks allowance and approves (once,
+//    effectively forever via max uint256) lazily on first use — not
+//    tracked here since it's derivable on-chain at any time.
+//
+// Flow: a Vercel Cron hits /api/cron/base-dca daily. The handler checks
+// each enabled EvmSettings row — if `intervalHours` have passed since
+// `lastRunAt`, it buys `buyAmountUsd` of WETH via 1inch's Classic Swap API
+// (an immediate on-chain swap, exactly like the Solana buy leg), then
+// signs (off-chain, gasless) a 1inch Limit Order Protocol v4 order to sell
+// `sellAmountUsd` worth of the WETH just bought once the price rises by
+// `takeProfitPercent`. A 1inch resolver fills that order later — this app
+// does not poll price in between, same as the Solana Trigger order.
+model EvmSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  // Public address only — never the private key. Shown in the UI so the
+  // user can verify/fund the right wallet; also used to query 1inch/RPC.
+  walletAddress String
+
+  buyAmountUsd      Decimal @db.Decimal(10, 2) // e.g. 10.00 — spent each cycle
+  intervalHours     Int     @default(24)
+  takeProfitPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 for "sell at +10%"
+  sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of WETH sold per lot at target
+  slippageBps       Int     @default(50) // 50 = 0.5%, applied to the buy swap only
+
+  lastRunAt     DateTime?
+  lastRunStatus String? // "ok" | "skipped" | "error"
+  lastRunError  String? @db.Text
+
+  // --- Monthly auto-sweep to a cold wallet ---
+  // Sweeps accumulated WETH (the investment) — never the native ETH gas
+  // float, which this app doesn't touch. Off by default — must be
+  // explicitly turned on after verifying with the manual "Trimite acum"
+  // test. The destination address is deliberately NOT stored here: it
+  // lives only as the BASE_SWEEP_DESTINATION Vercel env var, so
+  // redirecting where funds go requires Vercel dashboard access, not just
+  // a compromised web session (same reasoning as keeping the private key
+  // out of the database).
+  sweepEnabled        Boolean @default(false)
+  sweepMinBalanceWeth Decimal @default(0) @db.Decimal(20, 9) // always left behind in the hot wallet
+
+  lastSweepAt     DateTime?
+  lastSweepStatus String? // "ok" | "skipped" | "error"
+  lastSweepError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per executed (or attempted) monthly sweep — the excess WETH above
+// sweepMinBalanceWeth, sent to BASE_SWEEP_DESTINATION. Kept even for failed
+// attempts (status=FAILED, txHash null) so the history is a complete audit
+// trail, not just successes.
+model EvmSweep {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status            String // "SUCCESS" | "FAILED"
+  balanceBeforeWeth Decimal  @db.Decimal(30, 18) // on-chain WETH balance right before the transfer
+  amountWeth        Decimal  @db.Decimal(30, 18) // amount actually sent (0 for a failed/skipped attempt)
+  destination       String // snapshot of BASE_SWEEP_DESTINATION at the time — env var could change later
+  txHash            String?
+  errorMessage      String? @db.Text
+  manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum EvmLotStatus {
+  PENDING_SELL_ORDER // buy succeeded, sell order creation failed/not yet attempted
+  OPEN // sell limit order live on 1inch, waiting for price target
+  FILLED // sell limit order executed
+  CANCELLED // sell limit order cancelled (manually, via the UI) or expired
+  FAILED // the buy itself failed — no WETH acquired
+}
+
+// One row per DCA cycle ("lot") — links a buy to its take-profit sell so
+// P&L and fees can be computed per lot, independent of internal 1inch/
+// on-chain ids. Mirrors SolanaLot field-for-field where the concepts
+// carry over directly.
+model EvmLot {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status EvmLotStatus @default(PENDING_SELL_ORDER)
+
+  // --- Buy side (always set once the lot exists) ---
+  buyAmountUsd  Decimal  @db.Decimal(12, 4) // USD actually spent
+  wethAcquired  Decimal  @db.Decimal(30, 18) // WETH received from the swap
+  buyPriceUsd   Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / wethAcquired
+  buyFeeUsd     Decimal  @default(0) @db.Decimal(10, 4) // network gas (paid in ETH), converted to USD
+  buyTxHash     String?
+  boughtAt      DateTime @default(now())
+
+  // --- Sell limit order (set once the order is created) ---
+  // Placing a 1inch limit order is a gasless, off-chain signature — there
+  // is no creation transaction the way Solana's Trigger order had one, so
+  // sellOrderTxHash stays null; it's kept only in case a future variant of
+  // this flow places orders on-chain.
+  targetPriceUsd        Decimal? @db.Decimal(14, 4)
+  sellAmountWethPlanned  Decimal? @db.Decimal(30, 18) // WETH put up for sale in the order
+  oneInchOrderHash      String? // 1inch's own order hash — internal lot id above is what ties buy+sell together for P&L
+  sellOrderCreatedAt    DateTime?
+  sellOrderTxHash       String?
+
+  // --- Sell fill (set once a 1inch resolver fills the order) ---
+  // sellTxHash stays null even on a fill: the Orderbook API confirms a fill
+  // happened (remainingMakerAmount drops to 0) but doesn't expose which
+  // on-chain transaction did it, so there's no link to show — unlike the
+  // buy side, which is always our own transaction and always has a hash.
+  soldAt          DateTime?
+  wethSold        Decimal?  @db.Decimal(30, 18)
+  sellProceedsUsd Decimal?  @db.Decimal(14, 4)
+  sellFeeUsd      Decimal?  @db.Decimal(10, 4)
+  sellTxHash      String?
+
+  // Last time reconcileOpenLots() checked this lot's order against 1inch's
+  // orderbook — set on every daily cron run for every OPEN lot (cheap, a
+  // batched lookup rather than one API call per lot). Shown in the UI so
+  // it's obvious the bot is still watching.
+  lastCheckedAt DateTime?
+
+  // WETH from this lot that is not part of the sell order (or not yet
+  // sold) — stays in the wallet as a long-term holding.
+  wethRemaining Decimal @db.Decimal(30, 18)
+
+  // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of wethSold + buyFeeUsd share)
   // Null until the sell fills.
   realizedPnlUsd Decimal? @db.Decimal(12, 4)
 

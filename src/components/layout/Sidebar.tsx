@@ -29,7 +29,8 @@ import {
     PiggyBank,
     Target,
     Layers,
-    Coins
+    Coins,
+    Hexagon
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -70,6 +71,13 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'DCA automat', href: '/solana', icon: Coins },
             { name: 'Statistici', href: '/solana/stats', icon: BarChart3 },
+        ],
+    },
+    {
+        section: 'Base (ETH)',
+        items: [
+            { name: 'DCA automat', href: '/base', icon: Hexagon },
+            { name: 'Statistici', href: '/base/stats', icon: BarChart3 },
         ],
     },
     {
