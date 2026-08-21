@@ -71,10 +71,12 @@ and a document vault with expiry reminders.
   mainnet-beta RPC) and `JUPITER_API_KEY` (raises Jupiter's rate limit,
   not required at this volume). The wallet must be pre-funded with USDC
   (for buys) and a small amount of SOL (for network fees) — the bot does
-  not move fiat. **Requires a Vercel plan that supports hourly cron
-  schedules** (Hobby is limited to one run/day per cron as of recent
-  Vercel plan changes) — check vercel.com/docs/cron-jobs/usage-and-pricing
-  before relying on this in production.
+  not move fiat. The cron runs once/day (`0 9 * * *`) because Vercel's
+  Hobby plan rejects any cron scheduled more than once/day — an hourly
+  schedule was tried first and made deploys fail outright (see commit
+  history). Practical effect: keep `intervalHours` at 24 (or a multiple)
+  unless/until upgrading to Pro, since shorter intervals aren't actually
+  checked more often than once a day on Hobby.
 
 ## Recent fixes (most recent session)
 

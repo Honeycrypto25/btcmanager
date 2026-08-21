@@ -5,13 +5,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { runSolanaDcaForAllUsers } from "@/lib/solana/dca";
 
 /**
- * Runs hourly (see vercel.json). Deliberately more frequent than any
- * realistic `intervalHours` setting — runSolanaDcaForUser() itself decides
- * whether a buy is actually due, so this just needs to run often enough
- * that the configured interval is respected without needing a matching
- * cron schedule per user. No price polling happens here: the take-profit
- * sell is a Jupiter Trigger order that Jupiter's own infrastructure
- * executes independently once the price target is hit.
+ * Runs once a day (see vercel.json) — Vercel's Hobby plan rejects cron
+ * schedules that fire more than once/day, so this is the finest interval
+ * available without upgrading to Pro. Practical effect: `intervalHours`
+ * in the UI should be left at 24 (or a multiple of it) on Hobby, since a
+ * shorter interval is only actually checked once a day anyway. On a Pro
+ * plan this could be tightened to hourly for finer-grained intervals.
+ * No price polling happens here either way: the take-profit sell is a
+ * Jupiter Trigger order that Jupiter's own infrastructure executes
+ * independently once the price target is hit.
  */
 export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
