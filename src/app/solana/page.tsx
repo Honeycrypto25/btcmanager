@@ -12,7 +12,7 @@ export default async function SolanaPage() {
 
     return (
         <SolanaClient
-            initialSettings={settings}
+            initialSettings={JSON.parse(JSON.stringify(settings))}
             initialLots={JSON.parse(JSON.stringify(lots))}
             initialStats={stats}
             solPriceUsd={solPriceUsd}
