@@ -170,34 +170,45 @@ export function SolanaClient({
             </div>
 
             {/* Status */}
-            <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <span className="relative flex h-3 w-3">
+            <Card className="space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                        <span className="relative flex h-3 w-3">
+                            {settings?.enabled && (
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            )}
+                            <span className={cn("relative inline-flex h-3 w-3 rounded-full", settings?.enabled ? "bg-emerald-400" : "bg-white/20")} />
+                        </span>
+                        <div>
+                            <p className="text-sm font-medium text-foreground">
+                                {settings?.enabled ? "Bot activ" : "Bot inactiv"}
+                            </p>
+                            <p className="text-xs text-faint">
+                                {settings
+                                    ? `${settings.walletAddress.slice(0, 4)}...${settings.walletAddress.slice(-4)} · $${settings.buyAmountUsd}/${settings.intervalHours}h · țintă +${settings.takeProfitPercent}%`
+                                    : "Nesalvat încă"}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-0.5 text-xs text-faint sm:text-right">
+                        <span>
+                            Ultima rulare: {settings?.lastRunAt ? format(new Date(settings.lastRunAt), "d MMM, HH:mm") : "niciodată încă"}
+                            {settings?.lastRunStatus ? ` · ${settings.lastRunStatus}` : ""}
+                        </span>
                         {settings?.enabled && (
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span>Următoarea verificare automată: {format(nextCronRunUtc(), "d MMM, HH:mm")} UTC</span>
                         )}
-                        <span className={cn("relative inline-flex h-3 w-3 rounded-full", settings?.enabled ? "bg-emerald-400" : "bg-white/20")} />
-                    </span>
-                    <div>
-                        <p className="text-sm font-medium text-foreground">
-                            {settings?.enabled ? "Bot activ" : "Bot inactiv"}
-                        </p>
-                        <p className="text-xs text-faint">
-                            {settings
-                                ? `${settings.walletAddress.slice(0, 4)}...${settings.walletAddress.slice(-4)} · $${settings.buyAmountUsd}/${settings.intervalHours}h · țintă +${settings.takeProfitPercent}%`
-                                : "Nesalvat încă"}
-                        </p>
+                        {settings?.lastRunError && <span className="text-red-300">{settings.lastRunError}</span>}
                     </div>
                 </div>
-                <div className="flex flex-col gap-0.5 text-xs text-faint sm:text-right">
-                    <span>
-                        Ultima rulare: {settings?.lastRunAt ? format(new Date(settings.lastRunAt), "d MMM, HH:mm") : "niciodată încă"}
-                        {settings?.lastRunStatus ? ` · ${settings.lastRunStatus}` : ""}
-                    </span>
-                    {settings?.enabled && (
-                        <span>Următoarea verificare automată: {format(nextCronRunUtc(), "d MMM, HH:mm")} UTC</span>
-                    )}
-                    {settings?.lastRunError && <span className="text-red-300">{settings.lastRunError}</span>}
+
+                <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-3">
+                    <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary" size="sm">
+                        <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum, ca să verific că totul e în regulă"}
+                    </Button>
+                    {runMessage && <span className="text-sm text-muted">{runMessage}</span>}
+                    {error && <span className="text-sm text-red-300">{error}</span>}
+                    {!settings && <span className="text-xs text-faint">Salvează întâi setările mai jos.</span>}
                 </div>
             </Card>
 
