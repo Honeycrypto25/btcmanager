@@ -204,10 +204,13 @@ export async function getHistoricalTriggerOrder(wallet: string, orderKey: string
 // --- Price API (used only to compute target price / display, not for polling decisions) ---
 
 export async function getSolPriceUsd(): Promise<number> {
-    const res = await jupiterFetch<{ data: Record<string, { price: string }> }>(
-        `${JUPITER_API_BASE}/price/v2?ids=${SOL_MINT}`
+    // Price API v2 was deprecated (Aug 2025) and stopped reliably returning
+    // data — v3 has a different response shape: no `data` wrapper, and the
+    // field is `usdPrice` (number) instead of `price` (string).
+    const res = await jupiterFetch<Record<string, { usdPrice: number }>>(
+        `${JUPITER_API_BASE}/price/v3?ids=${SOL_MINT}`
     );
-    const entry = Object.values(res.data)[0];
+    const entry = res[SOL_MINT];
     if (!entry) throw new Error("Jupiter price API returned no data for SOL");
-    return parseFloat(entry.price);
+    return entry.usdPrice;
 }
