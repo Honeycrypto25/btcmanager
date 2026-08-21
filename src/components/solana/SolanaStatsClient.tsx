@@ -183,18 +183,7 @@ function PurchasesTable({ lots }: { lots: LotDTO[] }) {
                         <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
                         <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
                         <td className="py-2 text-faint">
-                            {lot.buyTxSignature ? (
-                                <a
-                                    href={`https://solscan.io/tx/${lot.buyTxSignature}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="underline decoration-dotted hover:text-foreground"
-                                >
-                                    {lot.buyTxSignature.slice(0, 6)}...
-                                </a>
-                            ) : (
-                                "—"
-                            )}
+                            {lot.buyTxSignature ? <SolscanLink signature={lot.buyTxSignature} label="Vezi ↗" /> : "—"}
                         </td>
                     </tr>
                 ))}
@@ -203,10 +192,23 @@ function PurchasesTable({ lots }: { lots: LotDTO[] }) {
     );
 }
 
+function SolscanLink({ signature, label }: { signature: string; label: string }) {
+    return (
+        <a
+            href={`https://solscan.io/tx/${signature}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-dotted hover:text-foreground"
+        >
+            {label}
+        </a>
+    );
+}
+
 function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: string }) {
     if (lots.length === 0) return <p className="text-sm text-muted">{emptyMessage}</p>;
     return (
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
                 <tr className="text-xs uppercase tracking-wider text-faint">
                     <th className="pb-2 pr-4">Data</th>
@@ -216,7 +218,8 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                     <th className="pb-2 pr-4">Preț țintă</th>
                     <th className="pb-2 pr-4">Vândut</th>
                     <th className="pb-2 pr-4">P&L</th>
-                    <th className="pb-2">SOL rămas</th>
+                    <th className="pb-2 pr-4">SOL rămas</th>
+                    <th className="pb-2">Tranzacție</th>
                 </tr>
             </thead>
             <tbody>
@@ -238,7 +241,16 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                             <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
                                 {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
                             </td>
-                            <td className="py-2 text-foreground">{Number(lot.solRemaining).toFixed(4)}</td>
+                            <td className="py-2 pr-4 text-foreground">{Number(lot.solRemaining).toFixed(4)}</td>
+                            <td className="py-2 text-faint">
+                                {lot.sellTxSignature ? (
+                                    <SolscanLink signature={lot.sellTxSignature} label="Vânzare ↗" />
+                                ) : lot.sellOrderTxSignature ? (
+                                    <SolscanLink signature={lot.sellOrderTxSignature} label="Creare ordin ↗" />
+                                ) : (
+                                    "—"
+                                )}
+                            </td>
                         </tr>
                     );
                 })}
