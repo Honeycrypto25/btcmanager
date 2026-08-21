@@ -335,7 +335,7 @@ export function EvmClient({
                     </label>
                 </div>
                 <p className="text-xs text-faint">
-                    În fiecare zi de 2 a lunii, tot WETH-ul acumulat ce depășește minimul de mai jos se trimite automat către portofelul de retragere — floatul de ETH pentru gas nu e niciodată atins. Suma trimisă e rotunjită în jos la 6 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
+                    În fiecare zi de 2 a lunii, tot WETH-ul acumulat ce depășește minimul de mai jos se trimite automat către portofelul de retragere — floatul de ETH pentru gas nu e niciodată atins, și nici WETH-ul deja promis unui ordin de vânzare activ (spre deosebire de Solana, un ordin 1inch nu blochează fondurile on-chain, deci scădem manual ce e rezervat înainte de a calcula excedentul). Suma trimisă e rotunjită în jos la 6 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
                 </p>
                 {settings && !editing && (
                     <p className="text-xs text-faint">

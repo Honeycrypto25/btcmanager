@@ -911,7 +911,7 @@ model EvmSettings {
   // a compromised web session (same reasoning as keeping the private key
   // out of the database).
   sweepEnabled        Boolean @default(false)
-  sweepMinBalanceWeth Decimal @default(0) @db.Decimal(20, 9) // always left behind in the hot wallet
+  sweepMinBalanceWeth Decimal @default(0) @db.Decimal(20, 9) // always left behind in the hot wallet, ON TOP OF whatever's reserved for open sell orders (see sweep.ts — unlike Solana, a 1inch order doesn't escrow funds on-chain)
 
   lastSweepAt     DateTime?
   lastSweepStatus String? // "ok" | "skipped" | "error"

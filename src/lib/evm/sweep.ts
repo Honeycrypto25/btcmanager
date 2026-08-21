@@ -26,7 +26,19 @@ export interface EvmSweepResult {
  * wethRemaining bookkeeping. The amount sent is floored to 6 decimals
  * (never rounded up), so the wallet always keeps at least
  * sweepMinBalanceWeth — usually a little more. Mirrors
- * runSolanaSweepForUser field-for-field.
+ * runSolanaSweepForUser field-for-field, with one deliberate difference:
+ * see reservedWeth below.
+ *
+ * IMPORTANT difference from Solana: a Jupiter Trigger order escrows the
+ * SOL on-chain the moment it's placed, so a wallet-balance sweep
+ * automatically can't touch it. A 1inch limit order is only a gasless,
+ * off-chain signature — the WETH it will sell stays completely liquid in
+ * the wallet until a resolver actually fills the order. Without
+ * accounting for that, a sweep could send away exactly the WETH an open
+ * order is counting on, and the order would then fail to fill (or fill
+ * short) once the price target is hit. reservedWeth below subtracts every
+ * OPEN lot's planned sell amount before computing what's actually free to
+ * sweep.
  *
  * `force` skips the "already swept this calendar month" gate — used by the
  * manual "Trimite acum" test button.
@@ -87,9 +99,17 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
     const balanceRaw: bigint = await weth.balanceOf(walletAddress);
     const balanceWeth = Number(formatUnits(balanceRaw, WETH_DECIMALS));
 
+    // WETH already promised to an open sell order — never sweepable, even
+    // though it's sitting in the wallet's own balance (see the doc comment
+    // above). Reads live from the DB rather than trusting a cached sum
+    // anywhere, same "always the real current state" principle as the
+    // on-chain balance check just above.
+    const openLots = await db.evmLot.findMany({ where: { userId, status: "OPEN" } });
+    const reservedWeth = openLots.reduce((sum, lot) => sum + Number(lot.sellAmountWethPlanned ?? 0), 0);
+
     const minBalance = Number(settings.sweepMinBalanceWeth);
-    const excess = balanceWeth - minBalance;
-    // Floor to 6 decimals — never round up, so the wallet never dips below minBalance.
+    const excess = balanceWeth - reservedWeth - minBalance;
+    // Floor to 6 decimals — never round up, so the wallet never dips below minBalance (or into reserved funds).
     const amountWeth = Math.floor(excess * 1_000_000) / 1_000_000;
 
     if (amountWeth <= 0) {
@@ -97,7 +117,10 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
             where: { userId },
             data: { lastSweepAt: new Date(), lastSweepStatus: "skipped", lastSweepError: null },
         });
-        return { action: "skipped", reason: `balance ${balanceWeth.toFixed(6)} WETH is at or below the ${minBalance} WETH minimum` };
+        return {
+            action: "skipped",
+            reason: `balance ${balanceWeth.toFixed(6)} WETH minus ${reservedWeth.toFixed(6)} WETH reserved for open orders is at or below the ${minBalance} WETH minimum`,
+        };
     }
 
     const amountRaw = parseUnits(amountWeth.toFixed(WETH_DECIMALS), WETH_DECIMALS);
