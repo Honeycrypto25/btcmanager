@@ -895,7 +895,7 @@ model EvmSettings {
   intervalHours     Int     @default(24)
   takeProfitPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 for "sell at +10%"
   sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of WETH sold per lot at target
-  slippageBps       Int     @default(50) // 50 = 0.5%, applied to the buy swap only
+  slippageBps       Int     @default(300) // 300 = 3% — Base USDC/WETH routes see enough price impact at ~$20 trade sizes that 50-150bps reverted in practice; see commit history
 
   lastRunAt     DateTime?
   lastRunStatus String? // "ok" | "skipped" | "error"

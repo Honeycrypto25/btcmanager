@@ -34,7 +34,7 @@ export function EvmClient({
         intervalHours: initialSettings?.intervalHours ?? 24,
         takeProfitPercent: initialSettings ? Number(initialSettings.takeProfitPercent) : 10,
         sellAmountUsd: initialSettings ? Number(initialSettings.sellAmountUsd) : 10,
-        slippageBps: initialSettings?.slippageBps ?? 50,
+        slippageBps: initialSettings?.slippageBps ?? 300,
         sweepEnabled: initialSettings?.sweepEnabled ?? false,
         sweepMinBalanceWeth: initialSettings ? Number(initialSettings.sweepMinBalanceWeth) : 0,
     });
@@ -274,7 +274,7 @@ export function EvmClient({
                             type="number"
                             value={form.slippageBps}
                             disabled={!editing}
-                            onChange={(e) => setForm({ ...form, slippageBps: parseInt(e.target.value) || 50 })}
+                            onChange={(e) => setForm({ ...form, slippageBps: parseInt(e.target.value) || 300 })}
                             className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
                         />
                     </Field>
@@ -301,6 +301,9 @@ export function EvmClient({
                 <p className="text-xs text-faint">
                     Portofelul trebuie să aibă în prealabil USDC (pentru cumpărare) și puțin ETH (pentru gas — spre deosebire de Solana, gas-ul e plătit dintr-un token separat de WETH-ul acumulat).
                     Cheia privată se citește din variabila de mediu <code>BASE_PRIVATE_KEY</code> din Vercel — nu e stocată în baza de date.
+                </p>
+                <p className="text-xs text-faint">
+                    La testare, 50-150 bps slippage a picat la o cumpărare de $20 (impact de preț pe ruta aleasă de 1inch) — 300 bps a mers. De-aia e valoarea implicită acum; poți încerca să o cobori dacă vezi că mereu se execută confortabil sub prag.
                 </p>
             </Card>
 
