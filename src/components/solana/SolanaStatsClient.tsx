@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
     ComposedChart,
@@ -18,6 +18,8 @@ import { ArrowLeft, Coins } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import type { SolanaStats } from "@/app/actions/solana";
 import { formatUsd, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO } from "./shared";
+
+const PAGE_SIZE = 10;
 
 export function SolanaStatsClient({
     lots,
@@ -160,35 +162,75 @@ export function SolanaStatsClient({
 }
 
 function PurchasesTable({ lots }: { lots: LotDTO[] }) {
+    const [page, setPage] = useState(1);
     if (lots.length === 0) return <p className="text-sm text-muted">Nicio achiziție încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
+    const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+    const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
+    const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
-        <table className="w-full min-w-[640px] text-left text-sm">
-            <thead>
-                <tr className="text-xs uppercase tracking-wider text-faint">
-                    <th className="pb-2 pr-4">Data</th>
-                    <th className="pb-2 pr-4">Sumă</th>
-                    <th className="pb-2 pr-4">SOL primit</th>
-                    <th className="pb-2 pr-4">Preț efectiv</th>
-                    <th className="pb-2 pr-4">Fee</th>
-                    <th className="pb-2">Tranzacție</th>
-                </tr>
-            </thead>
-            <tbody>
-                {sorted.map((lot) => (
-                    <tr key={lot.id} className="border-t border-white/[0.06]">
-                        <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
-                        <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
-                        <td className="py-2 pr-4 text-foreground">{Number(lot.solAcquired).toFixed(4)} SOL</td>
-                        <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
-                        <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
-                        <td className="py-2 text-faint">
-                            {lot.buyTxSignature ? <SolscanLink signature={lot.buyTxSignature} label="Vezi ↗" /> : "—"}
-                        </td>
+        <>
+            <table className="w-full min-w-[640px] text-left text-sm">
+                <thead>
+                    <tr className="text-xs uppercase tracking-wider text-faint">
+                        <th className="pb-2 pr-4">Data</th>
+                        <th className="pb-2 pr-4">Sumă</th>
+                        <th className="pb-2 pr-4">SOL primit</th>
+                        <th className="pb-2 pr-4">Preț efectiv</th>
+                        <th className="pb-2 pr-4">Fee</th>
+                        <th className="pb-2">Tranzacție</th>
                     </tr>
-                ))}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {pageItems.map((lot) => (
+                        <tr key={lot.id} className="border-t border-white/[0.06]">
+                            <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
+                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
+                            <td className="py-2 pr-4 text-foreground">{Number(lot.solAcquired).toFixed(4)} SOL</td>
+                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                            <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
+                            <td className="py-2 text-faint">
+                                {lot.buyTxSignature ? <SolscanLink signature={lot.buyTxSignature} label="Vezi ↗" /> : "—"}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={sorted.length} pageStart={pageStart} />
+        </>
+    );
+}
+
+function Pager({
+    page,
+    setPage,
+    totalItems,
+    pageStart,
+}: {
+    page: number;
+    setPage: React.Dispatch<React.SetStateAction<number>>;
+    totalItems: number;
+    pageStart: number;
+}) {
+    const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+    if (totalItems <= PAGE_SIZE) return null;
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+            <p className="text-xs text-faint">
+                Afișare {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, totalItems)} din {totalItems}
+            </p>
+            <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                    Anterior
+                </Button>
+                <span className="px-2 text-xs text-faint">
+                    Pagina {page} din {totalPages}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                    Următor
+                </Button>
+            </div>
+        </div>
     );
 }
 
@@ -206,56 +248,63 @@ function SolscanLink({ signature, label }: { signature: string; label: string })
 }
 
 function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: string }) {
+    const [page, setPage] = useState(1);
     if (lots.length === 0) return <p className="text-sm text-muted">{emptyMessage}</p>;
+    const totalPages = Math.max(1, Math.ceil(lots.length / PAGE_SIZE));
+    const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
+    const pageItems = lots.slice(pageStart, pageStart + PAGE_SIZE);
     return (
-        <table className="w-full min-w-[860px] text-left text-sm">
-            <thead>
-                <tr className="text-xs uppercase tracking-wider text-faint">
-                    <th className="pb-2 pr-4">Data</th>
-                    <th className="pb-2 pr-4">Status</th>
-                    <th className="pb-2 pr-4">Cumpărat</th>
-                    <th className="pb-2 pr-4">Preț cumpărare</th>
-                    <th className="pb-2 pr-4">Preț țintă</th>
-                    <th className="pb-2 pr-4">Vândut</th>
-                    <th className="pb-2 pr-4">P&L</th>
-                    <th className="pb-2 pr-4">SOL rămas</th>
-                    <th className="pb-2">Tranzacție</th>
-                </tr>
-            </thead>
-            <tbody>
-                {lots.map((lot) => {
-                    const meta = statusMeta[lot.status] ?? statusMeta.PENDING_SELL_ORDER;
-                    const Icon = meta.icon;
-                    return (
-                        <tr key={lot.id} className="border-t border-white/[0.06]">
-                            <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
-                            <td className="py-2 pr-4">
-                                <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs", meta.className)}>
-                                    <Icon className="h-3 w-3" /> {meta.label}
-                                </span>
-                            </td>
-                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
-                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
-                            <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
-                            <td className="py-2 pr-4 text-foreground">{lot.sellProceedsUsd ? formatUsd(Number(lot.sellProceedsUsd)) : "—"}</td>
-                            <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
-                                {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
-                            </td>
-                            <td className="py-2 pr-4 text-foreground">{Number(lot.solRemaining).toFixed(4)}</td>
-                            <td className="py-2 text-faint">
-                                {lot.sellTxSignature ? (
-                                    <SolscanLink signature={lot.sellTxSignature} label="Vânzare ↗" />
-                                ) : lot.sellOrderTxSignature ? (
-                                    <SolscanLink signature={lot.sellOrderTxSignature} label="Creare ordin ↗" />
-                                ) : (
-                                    "—"
-                                )}
-                            </td>
-                        </tr>
-                    );
-                })}
-            </tbody>
-        </table>
+        <>
+            <table className="w-full min-w-[860px] text-left text-sm">
+                <thead>
+                    <tr className="text-xs uppercase tracking-wider text-faint">
+                        <th className="pb-2 pr-4">Data</th>
+                        <th className="pb-2 pr-4">Status</th>
+                        <th className="pb-2 pr-4">Cumpărat</th>
+                        <th className="pb-2 pr-4">Preț cumpărare</th>
+                        <th className="pb-2 pr-4">Preț țintă</th>
+                        <th className="pb-2 pr-4">Vândut</th>
+                        <th className="pb-2 pr-4">P&L</th>
+                        <th className="pb-2 pr-4">SOL rămas</th>
+                        <th className="pb-2">Tranzacție</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {pageItems.map((lot) => {
+                        const meta = statusMeta[lot.status] ?? statusMeta.PENDING_SELL_ORDER;
+                        const Icon = meta.icon;
+                        return (
+                            <tr key={lot.id} className="border-t border-white/[0.06]">
+                                <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
+                                <td className="py-2 pr-4">
+                                    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs", meta.className)}>
+                                        <Icon className="h-3 w-3" /> {meta.label}
+                                    </span>
+                                </td>
+                                <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
+                                <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                                <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
+                                <td className="py-2 pr-4 text-foreground">{lot.sellProceedsUsd ? formatUsd(Number(lot.sellProceedsUsd)) : "—"}</td>
+                                <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
+                                    {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
+                                </td>
+                                <td className="py-2 pr-4 text-foreground">{Number(lot.solRemaining).toFixed(4)}</td>
+                                <td className="py-2 text-faint">
+                                    {lot.sellTxSignature ? (
+                                        <SolscanLink signature={lot.sellTxSignature} label="Vânzare ↗" />
+                                    ) : lot.sellOrderTxSignature ? (
+                                        <SolscanLink signature={lot.sellOrderTxSignature} label="Creare ordin ↗" />
+                                    ) : (
+                                        "—"
+                                    )}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={lots.length} pageStart={pageStart} />
+        </>
     );
 }
 
