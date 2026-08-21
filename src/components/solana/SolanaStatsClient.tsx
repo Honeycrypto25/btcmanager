@@ -132,18 +132,74 @@ export function SolanaStatsClient({
                 </Card>
             )}
 
-            {/* Pending lots */}
+            {/* Purchases — every lot's buy leg. Always a done, confirmed transaction the
+               moment a lot exists (a lot is only created after the swap succeeds), so
+               these are distinct from — and always ahead of — the sell side below. */}
             <Card className="overflow-x-auto">
-                <h2 className="mb-4 text-sm font-medium text-foreground">Loturi în așteptare ({pendingLots.length})</h2>
-                <LotsTable lots={pendingLots} emptyMessage="Niciun lot în așteptare momentan." />
+                <h2 className="mb-1 text-sm font-medium text-foreground">Achiziții finalizate ({lots.length})</h2>
+                <p className="mb-4 text-xs text-faint">
+                    Fiecare cumpărare e o tranzacție deja confirmată pe blockchain — independent de ce se întâmplă cu ordinul de vânzare de mai jos.
+                </p>
+                <PurchasesTable lots={lots} />
             </Card>
 
-            {/* Finalized lots */}
+            {/* Sell (trigger) orders — the other half of each lot, tracked separately since
+               it can stay pending for a long time (or forever, if price never hits target)
+               after the purchase above already completed. */}
             <Card className="overflow-x-auto">
-                <h2 className="mb-4 text-sm font-medium text-foreground">Loturi finalizate ({finalLots.length})</h2>
-                <LotsTable lots={finalLots} emptyMessage="Niciun lot finalizat încă." />
+                <h2 className="mb-4 text-sm font-medium text-foreground">Ordine de vânzare — în așteptare ({pendingLots.length})</h2>
+                <LotsTable lots={pendingLots} emptyMessage="Niciun ordin de vânzare în așteptare momentan." />
+            </Card>
+
+            <Card className="overflow-x-auto">
+                <h2 className="mb-4 text-sm font-medium text-foreground">Ordine de vânzare — finalizate ({finalLots.length})</h2>
+                <LotsTable lots={finalLots} emptyMessage="Niciun ordin de vânzare finalizat încă." />
             </Card>
         </div>
+    );
+}
+
+function PurchasesTable({ lots }: { lots: LotDTO[] }) {
+    if (lots.length === 0) return <p className="text-sm text-muted">Nicio achiziție încă.</p>;
+    const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
+    return (
+        <table className="w-full min-w-[640px] text-left text-sm">
+            <thead>
+                <tr className="text-xs uppercase tracking-wider text-faint">
+                    <th className="pb-2 pr-4">Data</th>
+                    <th className="pb-2 pr-4">Sumă</th>
+                    <th className="pb-2 pr-4">SOL primit</th>
+                    <th className="pb-2 pr-4">Preț efectiv</th>
+                    <th className="pb-2 pr-4">Fee</th>
+                    <th className="pb-2">Tranzacție</th>
+                </tr>
+            </thead>
+            <tbody>
+                {sorted.map((lot) => (
+                    <tr key={lot.id} className="border-t border-white/[0.06]">
+                        <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
+                        <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
+                        <td className="py-2 pr-4 text-foreground">{Number(lot.solAcquired).toFixed(4)} SOL</td>
+                        <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                        <td className="py-2 pr-4 text-faint">{formatUsd(Number(lot.buyFeeUsd))}</td>
+                        <td className="py-2 text-faint">
+                            {lot.buyTxSignature ? (
+                                <a
+                                    href={`https://solscan.io/tx/${lot.buyTxSignature}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline decoration-dotted hover:text-foreground"
+                                >
+                                    {lot.buyTxSignature.slice(0, 6)}...
+                                </a>
+                            ) : (
+                                "—"
+                            )}
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
     );
 }
 

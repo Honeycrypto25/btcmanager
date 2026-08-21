@@ -54,7 +54,7 @@ interface SwapTxResponse {
 }
 
 /** Builds, signs, sends and confirms a swap transaction from a quote. Returns the tx signature. */
-export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair): Promise<string> {
+export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair): Promise<{ signature: string; feeLamports: number }> {
     const { swapTransaction } = await jupiterFetch<SwapTxResponse>(`${JUPITER_API_BASE}/swap/v1/swap`, {
         method: "POST",
         body: JSON.stringify({
@@ -79,7 +79,12 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
     if (confirmation.value.err) {
         throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
     }
-    return signature;
+
+    // Read back the actual network fee paid (base fee + any priority fee), for accurate cost tracking.
+    const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+    const feeLamports = txInfo?.meta?.fee ?? 0;
+
+    return { signature, feeLamports };
 }
 
 // --- Trigger API (used for the take-profit sell order) ---

@@ -111,10 +111,12 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
             amount: toRawAmount(buyAmountUsd, USDC_DECIMALS),
             slippageBps: settings.slippageBps,
         });
-        const buyTxSignature = await executeSwap(quote, keypair);
+        const { signature: buyTxSignature, feeLamports } = await executeSwap(quote, keypair);
 
         const solAcquired = fromRawAmount(quote.outAmount, SOL_DECIMALS);
         const buyPriceUsd = buyAmountUsd / solAcquired;
+        // Network fee is paid in SOL — convert to USD at the price we just bought at (close enough; it's a few thousand lamports, well under a cent either way).
+        const buyFeeUsd = (feeLamports / 10 ** SOL_DECIMALS) * buyPriceUsd;
 
         const lot = await db.solanaLot.create({
             data: {
@@ -123,6 +125,7 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
                 buyAmountUsd,
                 solAcquired,
                 buyPriceUsd,
+                buyFeeUsd,
                 buyTxSignature,
                 solRemaining: solAcquired,
             },
