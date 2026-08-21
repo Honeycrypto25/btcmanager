@@ -28,7 +28,8 @@ import {
     BellRing,
     PiggyBank,
     Target,
-    Layers
+    Layers,
+    Coins
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut } from 'next-auth/react';
@@ -62,6 +63,12 @@ const navEntries: NavEntry[] = [
             { name: 'Overview unificat', href: '/investments', icon: Layers },
             { name: 'Vanguard', href: '/vanguard', icon: PiggyBank },
             { name: 'Goals', href: '/goals', icon: Target },
+        ],
+    },
+    {
+        section: 'Solana',
+        items: [
+            { name: 'DCA automat', href: '/solana', icon: Coins },
         ],
     },
     {

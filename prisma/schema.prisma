@@ -50,6 +50,8 @@ model User {
   vanguardAccounts     VanguardAccount[]
   vanguardHoldings     VanguardHolding[]
   financialGoals       FinancialGoal[]
+  solanaSettings       SolanaSettings?
+  solanaLots           SolanaLot[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -706,4 +708,101 @@ model FinancialGoal {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+
+// --- Solana DCA bot ---
+// Self-custody, single dedicated wallet per user. The private key never
+// touches this database — it lives only as an env var on Vercel
+// (SOLANA_PRIVATE_KEY), read at cron-execution time by src/lib/solana.
+// Everything here is bookkeeping/config only.
+//
+// Flow: a Vercel Cron hits /api/cron/solana-dca every hour. The handler
+// checks each enabled SolanaSettings row — if `intervalHours` have passed
+// since `lastRunAt`, it buys `buyAmountUsd` of SOL via Jupiter's Swap API,
+// then immediately places a Jupiter Trigger (limit) order to sell
+// `sellAmountUsd` worth of the SOL just bought once the price rises by
+// `takeProfitPercent`. Jupiter's own keeper network executes that order
+// later — this app does not poll price in between.
+
+model SolanaSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  // Public key only — never the private key. Shown in the UI so the user
+  // can verify/fund the right wallet; also used to query Jupiter/RPC.
+  walletAddress String
+
+  buyAmountUsd      Decimal @db.Decimal(10, 2) // e.g. 10.00 — spent each cycle
+  intervalHours     Int     @default(24)
+  takeProfitPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 for "sell at +10%"
+  sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of SOL sold per lot at target
+  slippageBps       Int     @default(50) // 50 = 0.5%, applied to the buy swap only
+
+  lastRunAt     DateTime?
+  lastRunStatus String? // "ok" | "skipped" | "error"
+  lastRunError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SolanaLotStatus {
+  PENDING_SELL_ORDER // buy succeeded, sell trigger order creation failed/not yet attempted
+  OPEN // sell trigger order live on Jupiter, waiting for price target
+  FILLED // sell trigger order executed
+  CANCELLED // sell trigger order cancelled (manually, via the UI)
+  FAILED // the buy itself failed — no SOL acquired
+}
+
+// One row per DCA cycle ("lot") — links a buy to its take-profit sell so
+// P&L and fees can be computed per lot, independent of internal Jupiter/
+// on-chain ids (see lotId comment on jupiterOrderId below).
+model SolanaLot {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status SolanaLotStatus @default(PENDING_SELL_ORDER)
+
+  // --- Buy side (always set once the lot exists) ---
+  buyAmountUsd   Decimal  @db.Decimal(12, 4) // USD actually spent
+  solAcquired    Decimal  @db.Decimal(20, 9) // SOL received from the swap
+  buyPriceUsd    Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / solAcquired
+  buyFeeUsd      Decimal  @default(0) @db.Decimal(10, 4) // network + Jupiter fee, converted to USD
+  buyTxSignature String?
+  boughtAt       DateTime @default(now())
+
+  // --- Sell trigger order (set once the order is created) ---
+  targetPriceUsd     Decimal? @db.Decimal(14, 4)
+  sellAmountSolPlanned Decimal? @db.Decimal(20, 9) // SOL put up for sale in the order
+  jupiterOrderKey    String? // Jupiter's own order id — internal lot id above is what ties buy+sell together for P&L
+  sellOrderCreatedAt DateTime?
+  sellOrderTxSignature String?
+
+  // --- Sell fill (set once Jupiter's keeper fills the order) ---
+  soldAt          DateTime?
+  solSold         Decimal?  @db.Decimal(20, 9)
+  sellProceedsUsd Decimal?  @db.Decimal(14, 4)
+  sellFeeUsd      Decimal?  @db.Decimal(10, 4)
+  sellTxSignature String?
+
+  // SOL from this lot that is not part of the sell order (or not yet sold)
+  // — stays in the wallet as a long-term holding.
+  solRemaining Decimal @db.Decimal(20, 9)
+
+  // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of solSold + buyFeeUsd share)
+  // Null until the sell fills.
+  realizedPnlUsd Decimal? @db.Decimal(12, 4)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, boughtAt])
 }

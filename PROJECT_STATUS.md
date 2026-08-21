@@ -59,6 +59,22 @@ and a document vault with expiry reminders.
 - **Tasks** (`/tasks`) — internal dev roadmap tracker (`DevTask` model),
   auto-seeds/advances status on page load; treat as the source of truth
   for "what phase are we in."
+- **Solana** (`/solana`) — self-custody automated DCA bot. Buys a
+  configured USD amount of SOL every `intervalHours` (via Jupiter Swap
+  API) from a dedicated wallet, then immediately places a Jupiter Trigger
+  (limit) order to sell a configured USD slice at `+takeProfitPercent` —
+  Jupiter's own keeper network fills that order later, no price polling
+  from this app. `/api/cron/solana-dca` runs hourly and no-ops until each
+  user's interval is actually due. Requires `SOLANA_PRIVATE_KEY` (base58
+  secret key of the dedicated bot wallet — never the main wallet) as a
+  Vercel env var; optional `SOLANA_RPC_URL` (defaults to the public
+  mainnet-beta RPC) and `JUPITER_API_KEY` (raises Jupiter's rate limit,
+  not required at this volume). The wallet must be pre-funded with USDC
+  (for buys) and a small amount of SOL (for network fees) — the bot does
+  not move fiat. **Requires a Vercel plan that supports hourly cron
+  schedules** (Hobby is limited to one run/day per cron as of recent
+  Vercel plan changes) — check vercel.com/docs/cron-jobs/usage-and-pricing
+  before relying on this in production.
 
 ## Recent fixes (most recent session)
 

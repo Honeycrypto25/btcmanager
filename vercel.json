@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/report-monthly",
       "schedule": "0 7 1 * *"
+    },
+    {
+      "path": "/api/cron/solana-dca",
+      "schedule": "0 * * * *"
     }
   ]
 }
