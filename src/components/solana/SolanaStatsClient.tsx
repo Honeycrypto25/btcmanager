@@ -352,12 +352,12 @@ export function SolanaStatsClient({
                 </Card>
             )}
 
-            {durationByPercentData.length > 0 && (
-                <Card>
-                    <h2 className="mb-1 text-sm font-medium text-foreground">Timp mediu până la execuție, pe procent țintă</h2>
-                    <p className="mb-4 text-xs text-faint">
-                        Doar cicluri finalizate cu vânzare — de la plasarea ordinului limită până la execuție. Ajută să vezi ce procent țintă se execută cel mai repede din istoric (numărul de cicluri per bară contează — o medie din 1-2 cicluri nu e încă relevantă).
-                    </p>
+            <Card>
+                <h2 className="mb-1 text-sm font-medium text-foreground">Timp mediu până la execuție, pe procent țintă</h2>
+                <p className="mb-4 text-xs text-faint">
+                    Doar cicluri finalizate cu vânzare — de la plasarea ordinului limită până la execuție. Ajută să vezi ce procent țintă se execută cel mai repede din istoric (numărul de cicluri per bară contează — o medie din 1-2 cicluri nu e încă relevantă).
+                </p>
+                {durationByPercentData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={durationByPercentData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -373,8 +373,12 @@ export function SolanaStatsClient({
                             <Bar dataKey="avgHours" name="Timp mediu" fill="rgba(45,212,191,0.6)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
-                </Card>
-            )}
+                ) : (
+                    <p className="text-sm text-muted">
+                        Niciun ciclu finalizat încă — graficul se populează automat de îndată ce primul ordin de vânzare se execută.
+                    </p>
+                )}
+            </Card>
 
             {chartData.length === 0 && (
                 <Card>
