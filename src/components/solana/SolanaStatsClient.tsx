@@ -12,6 +12,7 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
+    ReferenceLine,
     ResponsiveContainer,
 } from "recharts";
 import { format, formatDistanceToNow } from "date-fns";
@@ -304,6 +305,14 @@ export function SolanaStatsClient({
                                 formatter={(v) => formatUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
+                            {solPriceUsd && (
+                                <ReferenceLine
+                                    y={solPriceUsd}
+                                    stroke="#e5e7eb"
+                                    strokeDasharray="2 3"
+                                    label={{ value: `Preț curent: ${formatUsd(solPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
+                                />
+                            )}
                             <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
                             <Line type="monotone" dataKey="targetPrice" name="Preț țintă" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                         </ComposedChart>
