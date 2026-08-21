@@ -301,10 +301,22 @@ export function SolanaClient({
                 </p>
             </Card>
 
-            {/* Retragere automată lunară */}
+            {/* Retragere automată lunară — parte din același formular/salvare ca secțiunea Setări de mai sus, blocată de același comutator Editează */}
             <Card className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-medium text-foreground">Retragere automată lunară</h2>
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-sm font-medium text-foreground">Retragere automată lunară</h2>
+                        {settings && !editing && (
+                            <Button onClick={() => setEditing(true)} variant="outline" size="sm">
+                                <Pencil className="h-3.5 w-3.5" /> Editează
+                            </Button>
+                        )}
+                        {editing && settings && (
+                            <Button onClick={handleCancelEdit} variant="ghost" size="sm">
+                                <X className="h-3.5 w-3.5" /> Anulează
+                            </Button>
+                        )}
+                    </div>
                     <label className={cn("flex items-center gap-2 text-sm", editing ? "text-muted" : "text-faint")}>
                         <input
                             type="checkbox"
@@ -319,6 +331,11 @@ export function SolanaClient({
                 <p className="text-xs text-faint">
                     În fiecare zi de 2 a lunii, tot ce depășește minimul de mai jos se trimite automat către portofelul de retragere — restul rămâne pentru cumpărări/fee-uri viitoare. Suma trimisă e rotunjită în jos la 2 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
                 </p>
+                {settings && !editing && (
+                    <p className="text-xs text-faint">
+                        Blocat împreună cu Setările de mai sus — apasă „Editează” (aici sau acolo) ca să activezi retragerea sau să schimbi minimul.
+                    </p>
+                )}
 
                 {"error" in sweepDestination ? (
                     <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
@@ -358,13 +375,20 @@ export function SolanaClient({
 
                 {sweepMessage && <p className="text-sm text-muted">{sweepMessage}</p>}
 
-                <Button
-                    onClick={handleSweepNow}
-                    disabled={sweeping || !settings || "error" in sweepDestination}
-                    variant="secondary"
-                >
-                    <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
-                </Button>
+                <div className="flex flex-wrap gap-3">
+                    {editing && (
+                        <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
+                            <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează"}
+                        </Button>
+                    )}
+                    <Button
+                        onClick={handleSweepNow}
+                        disabled={sweeping || !settings || "error" in sweepDestination}
+                        variant="secondary"
+                    >
+                        <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
+                    </Button>
+                </div>
             </Card>
         </div>
     );
