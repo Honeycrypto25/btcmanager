@@ -26,10 +26,13 @@ dashboard-ul de bază, plus câteva minute în plus per bot de crypto dacă vrea
   opțional.
 
 Notă despre planul Vercel: aplicația are 6 job-uri programate (cron) —
-sincronizare T212, prețuri Vanguard, rapoarte, plus boții DCA. Planul gratuit
-**Hobby** al Vercel permite doar 2 cron job-uri active. Dacă vrei toate
-funcțiile, ai nevoie de planul **Pro** (plătit) — altfel șterge din
-`vercel.json` job-urile de care nu ai nevoie, înainte de primul deploy.
+sincronizare T212, prețuri Vanguard, rapoarte, plus boții DCA. De la
+20 ianuarie 2026, planul gratuit **Hobby** permite până la 100 de cron-uri
+per proiect — nu mai e o problemă de număr. Singura restricție rămasă pe
+Hobby: fiecare cron poate rula cel mult o dată pe zi, cu precizia garantată
+doar la nivel de oră (nu la minutul exact) — toate cele 6 din acest proiect
+sunt deja o dată pe zi sau mai rar, deci se încadrează fără probleme, fără
+să ai nevoie de planul Pro.
 
 ## 1. Deploy inițial
 
