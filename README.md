@@ -1,3 +1,17 @@
+# Portfolio Dashboard
+
+Dashboard personal de finanțe — conturi bancare, portofel BTC, boți DCA
+(Solana + Base), Trading212, Vanguard, mașină, chitanțe.
+
+## Vrei propria ta instanță?
+
+Vezi [SETUP.md](./SETUP.md) pentru ghidul complet de instalare pe cont
+propriu (Vercel + Neon + variabilele necesare) — sau apasă direct:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FHoneycrypto25%2Fbtcmanager&project-name=my-portfolio-dashboard&repository-name=my-portfolio-dashboard)
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
