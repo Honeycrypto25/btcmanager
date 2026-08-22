@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { computeReminderUrgency } from "@/lib/vehicles/stats";
 
@@ -23,6 +24,7 @@ export interface ReminderInput {
 }
 
 export async function createReminder(input: ReminderInput) {
+    await requireAdmin();
     const userId = await requireUserId();
 
     if (input.vehicleId) {
@@ -50,6 +52,7 @@ export async function createReminder(input: ReminderInput) {
 }
 
 export async function dismissReminder(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.reminder.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -63,6 +66,7 @@ export async function dismissReminder(id: string) {
 }
 
 export async function reopenReminder(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.reminder.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -76,6 +80,7 @@ export async function reopenReminder(id: string) {
 }
 
 export async function deleteReminder(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.reminder.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

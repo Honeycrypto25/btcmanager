@@ -9,6 +9,7 @@ import { generateTotpSecret, generateQrCodeUrl, verifyTotpToken } from "@/lib/to
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const user = await db.user.findUnique({
         where: { email: session.user.email },
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
         const { token } = await req.json();
@@ -83,6 +85,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
         const { token } = await req.json();

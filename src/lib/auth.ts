@@ -8,6 +8,29 @@ function hashOtp(otp: string): string {
     return crypto.createHash("sha256").update(otp).digest("hex");
 }
 
+function getAdminEmails(): string[] {
+    return process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()).filter(Boolean) || [];
+}
+
+/**
+ * Resolves whether an email may log in at all, and with what access.
+ * Admin (ADMIN_EMAILS env var) always wins and gets full access. Otherwise
+ * checks the ViewerAccess table (managed from /admin) for a read-only,
+ * per-section grant — this is how the wife/friends flow works, without
+ * needing a redeploy or env var change for every person added.
+ */
+async function resolveAccess(email: string): Promise<{ allowed: boolean; isAdmin: boolean; allowedSections: string[] }> {
+    const normalized = email.toLowerCase();
+    if (getAdminEmails().includes(normalized)) {
+        return { allowed: true, isAdmin: true, allowedSections: [] };
+    }
+    const viewer = await db.viewerAccess.findUnique({ where: { email: normalized } });
+    if (viewer) {
+        return { allowed: true, isAdmin: false, allowedSections: viewer.sections };
+    }
+    return { allowed: false, isAdmin: false, allowedSections: [] };
+}
+
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(db),
     secret: process.env.NEXTAUTH_SECRET,
@@ -37,11 +60,9 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("User not found");
                 }
 
-                // Check Admin whitelist
-                const adminEmails = process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()) || [];
-                const isAllowed = adminEmails.includes(user.email!.toLowerCase());
-
-                if (!isAllowed) {
+                // Check whitelist (admin or granted viewer)
+                const access = await resolveAccess(user.email!);
+                if (!access.allowed) {
                     throw new Error("AccessDenied");
                 }
 
@@ -71,6 +92,8 @@ export const authOptions: NextAuthOptions = {
                     image: user.image,
                     role: user.role,
                     twoFactorEnabled: user.twoFactorEnabled,
+                    isAdmin: access.isAdmin,
+                    allowedSections: access.allowedSections,
                 };
             },
         }),
@@ -79,16 +102,16 @@ export const authOptions: NextAuthOptions = {
         async signIn({ user }) {
             if (!user.email) return false;
 
-            const adminEmails = process.env.ADMIN_EMAILS?.split(",").map(e => e.trim().toLowerCase()) || [];
-            const isAllowed = adminEmails.includes(user.email.toLowerCase());
-
-            return isAllowed;
+            const access = await resolveAccess(user.email);
+            return access.allowed;
         },
         async jwt({ token, user, trigger, session }) {
             if (user) {
                 token.id = user.id;
                 token.role = (user as any).role;
                 token.requires2fa = (user as any).twoFactorEnabled;
+                token.isAdmin = (user as any).isAdmin;
+                token.allowedSections = (user as any).allowedSections;
             }
             return token;
         },
@@ -98,6 +121,8 @@ export const authOptions: NextAuthOptions = {
                 (session.user as any).role = token.role;
                 // Check if 2FA is enabled and if it has been verified for this session
                 (session.user as any).requires2fa = token.requires2fa;
+                (session.user as any).isAdmin = token.isAdmin;
+                (session.user as any).allowedSections = token.allowedSections;
             }
             return session;
         },

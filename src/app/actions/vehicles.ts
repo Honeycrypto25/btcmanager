@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import {
     computeFuelStats,
@@ -36,6 +37,7 @@ export interface VehicleInput {
 }
 
 export async function createVehicle(input: VehicleInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const vehicle = await db.vehicle.create({
         data: {
@@ -55,6 +57,7 @@ export async function createVehicle(input: VehicleInput) {
 }
 
 export async function updateVehicle(id: string, input: VehicleInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.vehicle.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -78,6 +81,7 @@ export async function updateVehicle(id: string, input: VehicleInput) {
 }
 
 export async function deleteVehicle(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.vehicle.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -119,6 +123,7 @@ async function requireOwnedVehicle(userId: string, vehicleId: string) {
 }
 
 export async function createFuelEntry(input: FuelEntryInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     await requireOwnedVehicle(userId, input.vehicleId);
 
@@ -151,6 +156,7 @@ export async function createFuelEntry(input: FuelEntryInput) {
 }
 
 export async function deleteFuelEntry(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.fuelEntry.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -268,6 +274,7 @@ export interface MaintenanceInput {
 }
 
 export async function createMaintenanceRecord(input: MaintenanceInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     await requireOwnedVehicle(userId, input.vehicleId);
 
@@ -290,6 +297,7 @@ export async function createMaintenanceRecord(input: MaintenanceInput) {
 }
 
 export async function deleteMaintenanceRecord(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.maintenanceRecord.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

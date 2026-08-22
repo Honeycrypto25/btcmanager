@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { runEvmDcaForUser, reconcileEvmOrdersForUser } from "@/lib/evm/dca";
 import { runEvmSweepForUser } from "@/lib/evm/sweep";
@@ -49,6 +50,7 @@ export async function getBotWalletAddress(): Promise<{ address: string } | { err
 }
 
 export async function upsertEvmSettings(input: EvmSettingsInput) {
+    await requireAdmin();
     const userId = await requireUserId();
 
     if (input.sellAmountUsd < MIN_LIMIT_ORDER_USD) {
@@ -143,6 +145,7 @@ export async function listEvmLots() {
 
 /** Manual "run now" — same code path as the cron, gated by the same interval check. */
 export async function runEvmDcaNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await runEvmDcaForUser(userId);
     revalidatePath("/base");
@@ -152,6 +155,7 @@ export async function runEvmDcaNow() {
 
 /** Manual "check orders now" — reconciles pending sell orders against 1inch on demand. */
 export async function reconcileEvmOrdersNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await reconcileEvmOrdersForUser(userId);
     revalidatePath("/base");
@@ -174,6 +178,7 @@ export async function getSweepDestinationInfo(): Promise<{ address: string } | {
 
 /** Manual "Trimite acum" — same transfer logic as the monthly cron, but ignores the "already swept this month" gate. */
 export async function runEvmSweepNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await runEvmSweepForUser(userId, true);
     revalidatePath("/base");

@@ -33,16 +33,21 @@ import {
     Hexagon
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 
 type NavLeaf = { name: string; href: string; icon: React.ElementType };
-type NavSection = { section: string; items: NavLeaf[] };
+type NavSection = { section: string; items: NavLeaf[]; sectionKey?: string };
 type NavEntry = NavLeaf | NavSection;
+
+// Which permission key (see SECTION_KEYS in src/lib/permissions.ts) gates
+// each sidebar group. Groups without a key here are admin-only (Overview,
+// Tasks, Admin) and are hidden entirely from viewers.
 
 const navEntries: NavEntry[] = [
     { name: 'Overview', href: '/', icon: Globe },
     {
         section: 'Bitcoin',
+        sectionKey: 'btc',
         items: [
             { name: 'Dashboard', href: '/btc', icon: LayoutDashboard },
             { name: 'Wallets', href: '/btc/wallets', icon: Wallet },
@@ -54,12 +59,14 @@ const navEntries: NavEntry[] = [
     },
     {
         section: 'Trading 212',
+        sectionKey: 't212',
         items: [
             { name: 'Dashboard', href: '/t212', icon: BarChart3 },
         ],
     },
     {
         section: 'Investiții',
+        sectionKey: 'investments',
         items: [
             { name: 'Overview unificat', href: '/investments', icon: Layers },
             { name: 'Vanguard', href: '/vanguard', icon: PiggyBank },
@@ -68,6 +75,7 @@ const navEntries: NavEntry[] = [
     },
     {
         section: 'Solana',
+        sectionKey: 'solana',
         items: [
             { name: 'DCA automat', href: '/solana', icon: Coins },
             { name: 'Statistici', href: '/solana/stats', icon: BarChart3 },
@@ -75,6 +83,7 @@ const navEntries: NavEntry[] = [
     },
     {
         section: 'Base (ETH)',
+        sectionKey: 'base',
         items: [
             { name: 'DCA automat', href: '/base', icon: Hexagon },
             { name: 'Statistici', href: '/base/stats', icon: BarChart3 },
@@ -82,6 +91,7 @@ const navEntries: NavEntry[] = [
     },
     {
         section: 'Self Employed',
+        sectionKey: 'selfEmployed',
         items: [
             { name: 'Overview', href: '/self-employed', icon: Briefcase },
             { name: 'Income', href: '/self-employed/income', icon: TrendingUp },
@@ -94,6 +104,7 @@ const navEntries: NavEntry[] = [
     },
     {
         section: 'Vehicule & Documente',
+        sectionKey: 'vehicles',
         items: [
             { name: 'Vehicule', href: '/vehicles', icon: Car },
             { name: 'Documente', href: '/documents', icon: Folder },
@@ -111,6 +122,25 @@ interface SidebarProps {
 
 export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
     const pathname = usePathname();
+    const { data: session } = useSession();
+    const isAdmin = Boolean((session?.user as any)?.isAdmin);
+    const allowedSections: string[] = Array.isArray((session?.user as any)?.allowedSections)
+        ? (session!.user as any).allowedSections
+        : [];
+
+    // Admin sees everything, unfiltered. A viewer only sees: (a) leaf links
+    // with no section (none currently — Overview/Tasks/Admin are filtered
+    // out below by name) and (b) sections in their allow-list.
+    const visibleEntries = session
+        ? navEntries.filter((entry) => {
+              if ('href' in entry) {
+                  // Standalone leaves (Overview, Tasks, Admin) are admin-only.
+                  return isAdmin;
+              }
+              if (!entry.sectionKey) return isAdmin;
+              return isAdmin || allowedSections.includes(entry.sectionKey);
+          })
+        : [];
 
     const renderLeaf = (item: NavLeaf, close: () => void) => {
         const isActive = pathname === item.href;
@@ -171,7 +201,7 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
                         </button>
                     </div>
 
-                    {navEntries.map((entry) => {
+                    {visibleEntries.map((entry) => {
                         if ('href' in entry) {
                             return (
                                 <nav key={entry.href} className="space-y-0.5">

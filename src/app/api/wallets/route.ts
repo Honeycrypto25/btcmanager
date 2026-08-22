@@ -43,6 +43,7 @@ function isValidBitcoinAddress(address: string): boolean {
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) return unauthorized(req);
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
         const { name, address } = await req.json();
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) return unauthorized(req);
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
         const { searchParams } = new URL(req.url);
@@ -88,6 +90,7 @@ export async function DELETE(req: NextRequest) {
 export async function PUT(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) return unauthorized(req);
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
         const { searchParams } = new URL(req.url);

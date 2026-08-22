@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 
 async function requireUserId(): Promise<string> {
@@ -21,6 +22,7 @@ export interface VanguardAccountInput {
 }
 
 export async function createVanguardAccount(input: VanguardAccountInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const account = await db.vanguardAccount.create({
         data: { userId, name: input.name, accountType: input.accountType || null, currency: input.currency || "GBP" },
@@ -31,6 +33,7 @@ export async function createVanguardAccount(input: VanguardAccountInput) {
 }
 
 export async function deleteVanguardAccount(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.vanguardAccount.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -63,6 +66,7 @@ async function requireOwnedAccount(userId: string, accountId: string) {
 }
 
 export async function createVanguardHolding(input: VanguardHoldingInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     await requireOwnedAccount(userId, input.accountId);
 
@@ -86,6 +90,7 @@ export async function createVanguardHolding(input: VanguardHoldingInput) {
 /** Updates just the current value (+ optionally units/cost basis) — the
  * routine "check in on my portfolio" action, since there's no live feed. */
 export async function updateVanguardHoldingValue(id: string, currentValue: number, units?: number) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.vanguardHolding.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -100,6 +105,7 @@ export async function updateVanguardHoldingValue(id: string, currentValue: numbe
 }
 
 export async function deleteVanguardHolding(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.vanguardHolding.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

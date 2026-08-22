@@ -9,6 +9,7 @@ import { syncVanguardPrices } from "@/lib/vanguard-price-sync";
 export async function POST() {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const result = await syncVanguardPrices();
 

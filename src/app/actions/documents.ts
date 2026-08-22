@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { deleteDocumentObject } from "@/lib/r2/documents";
 
@@ -26,6 +27,7 @@ export interface DocumentDetailsInput {
 /** The Document row itself is created by the upload API route (needs the
  * file + R2 key together). This updates the editable metadata afterwards. */
 export async function updateDocumentDetails(id: string, input: DocumentDetailsInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.document.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -58,6 +60,7 @@ export async function updateDocumentDetails(id: string, input: DocumentDetailsIn
  * a document as past-retention in the UI, it never triggers deletion on
  * its own. */
 export async function deleteDocument(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.document.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

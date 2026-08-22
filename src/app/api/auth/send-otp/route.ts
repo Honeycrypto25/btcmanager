@@ -26,16 +26,21 @@ export async function POST(req: Request) {
 
         const normalizedEmail = email.toLowerCase();
 
-        // 1. Check if user exists (or is authorized admin)
+        // 1. Check if user exists (or is authorized admin / granted viewer)
         const adminEmails = process.env.ADMIN_EMAILS?.split(",").map((e: any) => e.trim().toLowerCase()) || [];
-        const isWhitelisted = adminEmails.includes(normalizedEmail);
+        const isAdmin = adminEmails.includes(normalizedEmail);
 
         let user = await db.user.findUnique({
             where: { email: normalizedEmail },
         });
 
-        if (!isWhitelisted && !user) {
-            return NextResponse.json({ error: "Access Denied" }, { status: 403 });
+        if (!isAdmin && !user) {
+            // Not a known user yet and not the admin — only still allowed if
+            // this email has been granted read-only viewer access from /admin.
+            const viewer = await db.viewerAccess.findUnique({ where: { email: normalizedEmail } });
+            if (!viewer) {
+                return NextResponse.json({ error: "Access Denied" }, { status: 403 });
+            }
         }
 
         if (!user) {

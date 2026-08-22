@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 
 async function requireUserId(): Promise<string> {
@@ -23,6 +24,7 @@ export interface GoalInput {
 }
 
 export async function createGoal(input: GoalInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const goal = await db.financialGoal.create({
         data: {
@@ -43,6 +45,7 @@ export async function createGoal(input: GoalInput) {
 /** Updates progress (currentAmount) — the routine "log my progress" action.
  * Auto-marks isAchieved when currentAmount reaches targetAmount. */
 export async function updateGoalProgress(id: string, currentAmount: number) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.financialGoal.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -56,6 +59,7 @@ export async function updateGoalProgress(id: string, currentAmount: number) {
 }
 
 export async function updateGoal(id: string, input: GoalInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.financialGoal.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -77,6 +81,7 @@ export async function updateGoal(id: string, input: GoalInput) {
 }
 
 export async function deleteGoal(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.financialGoal.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

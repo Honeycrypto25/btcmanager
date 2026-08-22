@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     const userId = (session?.user as any)?.id as string | undefined;
     if (!userId) return unauthorized();
+    if (!(session?.user as any)?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     if (!isR2Configured()) {
         return NextResponse.json(

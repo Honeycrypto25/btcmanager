@@ -1014,3 +1014,17 @@ model EvmLot {
   @@index([userId, status])
   @@index([userId, boughtAt])
 }
+
+// Read-only accounts for people who aren't the admin (e.g. spouse, friends).
+// Not part of NextAuth's User/Account/Session models on purpose — these
+// people never get a real "account", just an allow-listed email + which
+// dashboard sections they're allowed to see. Checked at login (alongside
+// ADMIN_EMAILS) and used to compute session.user.allowedSections.
+model ViewerAccess {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  label     String?  // optional friendly name, e.g. "Soția" — display only
+  sections  String[] // keys from SECTION_KEYS in src/lib/permissions.ts
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

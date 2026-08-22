@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { parseCsv, applyColumnMapping, computeRowHash, type ColumnMapping } from "@/lib/bank/csv";
 import { findBestMatch, scoreMatch, matchStatusForConfidence, type MatchableReceipt, type MatchableTransaction } from "@/lib/bank/matching";
@@ -23,6 +24,7 @@ export async function listBankAccounts() {
 }
 
 export async function createBankAccount(name: string, currency?: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const account = await db.bankAccount.create({ data: { userId, name, currency: currency || null } });
     revalidatePath("/self-employed/bank");
@@ -47,6 +49,7 @@ export interface ImportBankCsvInput {
 }
 
 export async function importBankCsv(input: ImportBankCsvInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const { headers, rows } = parseCsv(input.csvText);
     const { transactions, skipped } = applyColumnMapping(headers, rows, input.mapping);
@@ -169,6 +172,7 @@ async function runMatchingForTransactions(userId: string, transactionIds: string
  * exists for them, so matching has to be re-triggered from this direction
  * too, not just after a CSV import. */
 export async function matchReceiptAgainstTransactions(receiptId: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id: receiptId } });
     if (!receipt || receipt.userId !== userId) return;
@@ -224,6 +228,7 @@ export async function matchReceiptAgainstTransactions(receiptId: string) {
  * user — useful after uploading a batch of receipts that predates an
  * already-imported statement, or after rejecting a bad match. */
 export async function rerunMatching() {
+    await requireAdmin();
     const userId = await requireUserId();
     const unmatchedTx = await db.bankTransaction.findMany({
         where: { userId, matchStatus: "unmatched", debitCredit: "DEBIT" },
@@ -235,6 +240,7 @@ export async function rerunMatching() {
 }
 
 export async function confirmMatch(transactionId: string, receiptId: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
@@ -278,6 +284,7 @@ export async function listReceiptsForManualMatch() {
 }
 
 export async function rejectMatch(transactionId: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
@@ -305,6 +312,7 @@ export interface ConvertToIncomeInput {
 }
 
 export async function convertTransactionToIncome(transactionId: string, input?: ConvertToIncomeInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
@@ -340,6 +348,7 @@ export interface ConvertToExpenseInput {
 }
 
 export async function convertTransactionToExpense(transactionId: string, input: ConvertToExpenseInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
@@ -389,6 +398,7 @@ export async function convertTransactionToExpense(transactionId: string, input: 
 /** Marks a transaction as reviewed-but-personal, so it stops showing up as
  * an actionable item without creating an Income/Expense row for it. */
 export async function ignoreTransaction(transactionId: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");
@@ -405,6 +415,7 @@ export async function ignoreTransaction(transactionId: string) {
  * Silently skips any transaction that's already converted (income/expense/
  * ignored) rather than failing the whole batch. */
 export async function bulkIgnoreTransactions(transactionIds: string[]) {
+    await requireAdmin();
     const userId = await requireUserId();
     if (transactionIds.length === 0) return { count: 0 };
 
@@ -421,6 +432,7 @@ export async function bulkIgnoreTransactions(transactionIds: string[]) {
  * the user can tag a batch of rows (e.g. all personal-card spending) at
  * once instead of one at a time. */
 export async function bulkAssignAccount(transactionIds: string[], accountId: string | null) {
+    await requireAdmin();
     const userId = await requireUserId();
     if (transactionIds.length === 0) return { count: 0 };
 
@@ -440,6 +452,7 @@ export async function bulkAssignAccount(transactionIds: string[], accountId: str
 /** Undoes a conversion — deletes the Income/Expense row it created (if any)
  * and clears the transaction's converted markers so it can be re-converted. */
 export async function undoTransactionConversion(transactionId: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const tx = await db.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.userId !== userId) throw new Error("Not found");

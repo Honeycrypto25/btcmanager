@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { deleteReceiptObject, getReceiptObjectBuffer, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
@@ -34,6 +35,7 @@ export interface ReceiptDetailsInput {
  * (if one exists) to prefill category when the merchant is set for the
  * first time and no category has been chosen yet. */
 export async function updateReceiptDetails(id: string, input: ReceiptDetailsInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.receipt.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -90,6 +92,7 @@ export interface ReceiptVehicleLinkInput {
  * fuelQuantityLitres are both set, this receipt is picked up by
  * actions/vehicles.ts getFuelStats() alongside the fuel journal entries. */
 export async function updateReceiptVehicleLink(id: string, input: ReceiptVehicleLinkInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.receipt.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -126,6 +129,7 @@ export async function updateReceiptVehicleLink(id: string, input: ReceiptVehicle
 /** Deletes the receipt row AND its R2 objects. Only ever called explicitly
  * by the user — receipts are never auto-deleted (see retention policy). */
 export async function deleteReceipt(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.receipt.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -152,6 +156,7 @@ export async function listReceipts(filter?: { taxYear?: string; status?: string 
  * time) — covers both HEIC (browser-compatibility preview) and JPEG/PNG
  * (storage-size-optimization preview). */
 export async function backfillReceiptPreview(id: string): Promise<{ ok: boolean; message: string }> {
+    await requireAdmin();
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
@@ -206,6 +211,7 @@ async function findMerchantRule(userId: string, merchant: string) {
  * mapping so future receipts from the same merchant prefill automatically.
  * Simple substring rule, not machine learning, per spec. */
 export async function saveMerchantRule(matchText: string, merchantNormalized: string, category: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const rule = await db.merchantRule.upsert({
         where: { userId_matchText: { userId, matchText: matchText.toLowerCase() } },
@@ -221,6 +227,7 @@ export async function listMerchantRules() {
 }
 
 export async function deleteMerchantRule(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.merchantRule.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -232,6 +239,7 @@ export async function deleteMerchantRule(id: string) {
 // / AI (still architecture-only — see runAnalyzeReceiptWithAI stub below) ---
 
 export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; message: string; text?: string; parsed?: ParsedReceiptFields }> {
+    await requireAdmin();
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
@@ -276,6 +284,7 @@ export async function runOcrOnReceipt(id: string): Promise<{ ok: boolean; messag
 }
 
 export async function analyzeReceiptWithAI(_id: string): Promise<{ ok: false; message: string }> {
+    await requireAdmin();
     await requireUserId();
     return { ok: false, message: "Analiza AI nu este configurată încă. Adaugă datele manual — vezi pagina Tasks pentru status." };
 }
@@ -297,6 +306,7 @@ export interface ConvertedExpenseResult {
 }
 
 export async function convertReceiptToExpense(id: string): Promise<ConvertedExpenseResult> {
+    await requireAdmin();
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
@@ -365,6 +375,7 @@ export async function convertReceiptToExpense(id: string): Promise<ConvertedExpe
 /** Undoes a conversion -- deletes the Expense row it created and clears
  * the receipt's converted marker so it can be edited/re-converted. */
 export async function undoReceiptExpenseConversion(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");

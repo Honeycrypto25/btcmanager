@@ -25,6 +25,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { type } = await req.json().catch(() => ({ type: null }));
     if (type !== "weekly" && type !== "monthly") {

@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
 import { runSolanaSweepForUser } from "@/lib/solana/sweep";
@@ -50,6 +51,7 @@ export async function getBotWalletAddress(): Promise<{ address: string } | { err
 }
 
 export async function upsertSolanaSettings(input: SolanaSettingsInput) {
+    await requireAdmin();
     const userId = await requireUserId();
 
     if (input.sellAmountUsd < MIN_TRIGGER_ORDER_USD) {
@@ -145,6 +147,7 @@ export async function listSolanaLots() {
 
 /** Manual "run now" — same code path as the cron, gated by the same interval check. Useful to test the setup once, funded with a small amount. */
 export async function runSolanaDcaNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await runSolanaDcaForUser(userId);
     revalidatePath("/solana");
@@ -154,6 +157,7 @@ export async function runSolanaDcaNow() {
 
 /** Manual "check orders now" — reconciles pending sell orders against Jupiter on demand, without buying or waiting for the next scheduled cron pass. */
 export async function reconcileSolanaOrdersNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await reconcileSolanaOrdersForUser(userId);
     revalidatePath("/solana");
@@ -176,6 +180,7 @@ export async function getSweepDestinationInfo(): Promise<{ address: string } | {
 
 /** Manual "Trimite acum" — same transfer logic as the monthly cron, but ignores the "already swept this month" gate. Used to verify the setup once before relying on the automatic schedule. */
 export async function runSolanaSweepNow() {
+    await requireAdmin();
     const userId = await requireUserId();
     const result = await runSolanaSweepForUser(userId, true);
     revalidatePath("/solana");

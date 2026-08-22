@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { getUkTaxYear, listRecentUkTaxYears } from "@/lib/tax/uk-tax-year";
 
@@ -25,6 +26,7 @@ export interface IncomeInput {
 }
 
 export async function createIncome(input: IncomeInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const date = new Date(input.date);
 
@@ -47,6 +49,7 @@ export async function createIncome(input: IncomeInput) {
 }
 
 export async function updateIncome(id: string, input: IncomeInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const date = new Date(input.date);
 
@@ -72,6 +75,7 @@ export async function updateIncome(id: string, input: IncomeInput) {
 }
 
 export async function deleteIncome(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.selfEmployedIncome.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -126,6 +130,7 @@ export interface ExpenseInput {
 }
 
 export async function createExpense(input: ExpenseInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const date = new Date(input.date);
 
@@ -156,6 +161,7 @@ export async function createExpense(input: ExpenseInput) {
  * bank-derived expenses that default to a generic category) doesn't
  * require opening the full edit form. */
 export async function updateExpenseCategory(id: string, category: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.selfEmployedExpense.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");
@@ -171,6 +177,7 @@ export async function updateExpenseCategory(id: string, category: string) {
 }
 
 export async function updateExpense(id: string, input: ExpenseInput) {
+    await requireAdmin();
     const userId = await requireUserId();
     const date = new Date(input.date);
 
@@ -200,6 +207,7 @@ export async function updateExpense(id: string, input: ExpenseInput) {
 }
 
 export async function deleteExpense(id: string) {
+    await requireAdmin();
     const userId = await requireUserId();
     const existing = await db.selfEmployedExpense.findUnique({ where: { id } });
     if (!existing || existing.userId !== userId) throw new Error("Not found");

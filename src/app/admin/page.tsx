@@ -18,7 +18,9 @@ import {
     Link2,
     BarChart3,
     Mail,
-    Send
+    Send,
+    Users,
+    UserX
 } from "lucide-react";
 import axios from 'axios';
 
@@ -36,8 +38,29 @@ interface ReportsStatus {
     recipient: string | null;
 }
 
+interface ViewerAccessRow {
+    id: string;
+    email: string;
+    label: string | null;
+    sections: string[];
+}
+
+// Kept in sync by hand with SECTION_KEYS/SECTION_LABELS in
+// src/lib/permissions.ts — that module also exports server-only helpers
+// (getServerSession/authOptions), so it can't be imported into this
+// client component without pulling Node-only code into the browser bundle.
+const SECTION_OPTIONS: { key: string; label: string }[] = [
+    { key: 'btc', label: 'Bitcoin' },
+    { key: 't212', label: 'Trading 212' },
+    { key: 'investments', label: 'Investiții (Vanguard, Goals)' },
+    { key: 'solana', label: 'Solana DCA' },
+    { key: 'base', label: 'Base (ETH) DCA' },
+    { key: 'selfEmployed', label: 'Self Employed / Taxe' },
+    { key: 'vehicles', label: 'Vehicule & Documente' },
+];
+
 export default function AdminPage() {
-    const [activeTab, setActiveTab] = useState<'security' | 'integrations' | 'reports' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'features'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -61,6 +84,16 @@ export default function AdminPage() {
     const [sendingReport, setSendingReport] = useState<'weekly' | 'monthly' | null>(null);
     const [reportError, setReportError] = useState<string | null>(null);
     const [reportSuccess, setReportSuccess] = useState<string | null>(null);
+
+    // Viewer Access State
+    const [viewers, setViewers] = useState<ViewerAccessRow[]>([]);
+    const [viewersLoading, setViewersLoading] = useState(true);
+    const [viewerEmail, setViewerEmail] = useState('');
+    const [viewerLabel, setViewerLabel] = useState('');
+    const [viewerSections, setViewerSections] = useState<string[]>([]);
+    const [viewerSaving, setViewerSaving] = useState(false);
+    const [viewerError, setViewerError] = useState<string | null>(null);
+    const [editingViewerId, setEditingViewerId] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         try {
@@ -95,11 +128,80 @@ export default function AdminPage() {
         }
     };
 
+    const fetchViewers = async () => {
+        try {
+            const { data } = await axios.get('/api/admin/viewers');
+            setViewers(data);
+        } catch (err) {
+            console.error('Failed to fetch viewers');
+        } finally {
+            setViewersLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchStatus();
         fetchT212Status();
         fetchReportsStatus();
+        fetchViewers();
     }, []);
+
+    const toggleViewerSection = (key: string) => {
+        setViewerSections(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+    };
+
+    const startEditViewer = (viewer: ViewerAccessRow) => {
+        setEditingViewerId(viewer.id);
+        setViewerEmail(viewer.email);
+        setViewerLabel(viewer.label ?? '');
+        setViewerSections(viewer.sections);
+        setViewerError(null);
+    };
+
+    const resetViewerForm = () => {
+        setEditingViewerId(null);
+        setViewerEmail('');
+        setViewerLabel('');
+        setViewerSections([]);
+        setViewerError(null);
+    };
+
+    const handleSaveViewer = async () => {
+        setViewerError(null);
+        if (!viewerEmail.trim()) {
+            setViewerError('Introdu o adresă de email.');
+            return;
+        }
+        if (viewerSections.length === 0) {
+            setViewerError('Bifează cel puțin o secțiune.');
+            return;
+        }
+        setViewerSaving(true);
+        try {
+            await axios.post('/api/admin/viewers', {
+                email: viewerEmail.trim(),
+                label: viewerLabel.trim() || null,
+                sections: viewerSections,
+            });
+            resetViewerForm();
+            await fetchViewers();
+        } catch (err: any) {
+            setViewerError(err?.response?.data?.error || 'Nu am putut salva accesul.');
+        } finally {
+            setViewerSaving(false);
+        }
+    };
+
+    const handleDeleteViewer = async (id: string) => {
+        if (!confirm('Sigur revoci accesul acestei persoane?')) return;
+        try {
+            await axios.delete(`/api/admin/viewers?id=${id}`);
+            await fetchViewers();
+            if (editingViewerId === id) resetViewerForm();
+        } catch (err) {
+            console.error('Failed to delete viewer');
+        }
+    };
 
     const handleSendReport = async (type: 'weekly' | 'monthly') => {
         setSendingReport(type);
@@ -172,6 +274,7 @@ export default function AdminPage() {
             <div className="flex gap-4 border-b border-border pb-1">
                 {[
                     { id: 'security', name: 'Security & Auth', icon: ShieldCheck },
+                    { id: 'access', name: 'Acces vizualizare', icon: Users },
                     { id: 'integrations', name: 'Integrations', icon: Link2 },
                     { id: 'reports', name: 'Reports', icon: Mail },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
@@ -242,6 +345,118 @@ export default function AdminPage() {
                             <h3 className="text-xl font-bold text-foreground tracking-tight">API Key Management</h3>
                         </div>
                         <p className="text-sm text-muted font-medium">Coming soon: Manage your external service API keys and permissions securely from this panel.</p>
+                    </Card>
+                </div>
+            )}
+
+            {activeTab === 'access' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <Card className="p-6 md:p-8 space-y-6">
+                        <div>
+                            <h3 className="text-xl font-bold text-foreground tracking-tight mb-1">
+                                {editingViewerId ? 'Editează accesul' : 'Adaugă acces de vizualizare'}
+                            </h3>
+                            <p className="text-sm text-muted font-medium">
+                                Persoana adăugată aici (ex. soția sau un prieten) se poate autentifica cu emailul ei
+                                și primește un cod OTP, dar vede doar secțiunile bifate mai jos — și nu poate
+                                modifica, șterge sau declanșa nimic, indiferent de secțiune.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold uppercase tracking-widest text-muted">Email</label>
+                                <input
+                                    type="email"
+                                    value={viewerEmail}
+                                    onChange={(e) => setViewerEmail(e.target.value)}
+                                    placeholder="sotia@example.com"
+                                    className="w-full rounded-xl border border-border bg-white/[0.03] px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary/40"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold uppercase tracking-widest text-muted">Nume (opțional)</label>
+                                <input
+                                    type="text"
+                                    value={viewerLabel}
+                                    onChange={(e) => setViewerLabel(e.target.value)}
+                                    placeholder="Soția"
+                                    className="w-full rounded-xl border border-border bg-white/[0.03] px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary/40"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-muted">Ce poate vedea</label>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                {SECTION_OPTIONS.map(opt => (
+                                    <label
+                                        key={opt.key}
+                                        className={cn(
+                                            "flex items-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm cursor-pointer transition-colors",
+                                            viewerSections.includes(opt.key)
+                                                ? "border-primary/40 bg-primary/5 text-foreground"
+                                                : "border-border text-muted hover:text-foreground"
+                                        )}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={viewerSections.includes(opt.key)}
+                                            onChange={() => toggleViewerSection(opt.key)}
+                                            className="accent-primary"
+                                        />
+                                        {opt.label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {viewerError && (
+                            <div className="flex items-center gap-2 text-sm text-red-400">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                {viewerError}
+                            </div>
+                        )}
+
+                        <div className="flex items-center gap-3">
+                            <Button variant="primary" onClick={handleSaveViewer} disabled={viewerSaving}>
+                                {viewerSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                                {editingViewerId ? 'Salvează' : 'Adaugă acces'}
+                            </Button>
+                            {editingViewerId && (
+                                <Button variant="secondary" onClick={resetViewerForm}>Anulează</Button>
+                            )}
+                        </div>
+                    </Card>
+
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <h3 className="text-xl font-bold text-foreground tracking-tight">Persoane cu acces</h3>
+                        {viewersLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted"><Loader2 className="w-4 h-4 animate-spin" /> Se încarcă...</div>
+                        ) : viewers.length === 0 ? (
+                            <p className="text-sm text-muted">Nimeni nu are acces de vizualizare încă.</p>
+                        ) : (
+                            <div className="divide-y divide-border">
+                                {viewers.map(viewer => (
+                                    <div key={viewer.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <p className="font-medium text-foreground">
+                                                {viewer.label ? `${viewer.label} — ` : ''}{viewer.email}
+                                            </p>
+                                            <p className="text-xs text-muted mt-0.5">
+                                                {viewer.sections.map(s => SECTION_OPTIONS.find(o => o.key === s)?.label ?? s).join(', ')}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <Button variant="secondary" size="sm" onClick={() => startEditViewer(viewer)}>Editează</Button>
+                                            <Button variant="danger" size="sm" onClick={() => handleDeleteViewer(viewer.id)}>
+                                                <UserX className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </Card>
                 </div>
             )}
