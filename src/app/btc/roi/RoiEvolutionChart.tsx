@@ -29,6 +29,7 @@ interface ChartRow {
     roiPercentage: number;
     roiUsd: number;
     roiGbp: number;
+    btcPrice: number;
 }
 
 function formatUsd(val: number): string {
@@ -64,6 +65,10 @@ function CustomTooltip({ active, payload, mode }: { active?: boolean; payload?: 
                 <span className={cn("text-xs font-num font-medium", value >= 0 ? "text-green-500" : "text-red-500")}>
                     {formatForMode(value, mode)}
                 </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-faint">Preț BTC</span>
+                <span className="text-xs font-num font-medium text-foreground">{formatUsd(row.btcPrice)}</span>
             </div>
         </div>
     );
@@ -131,7 +136,7 @@ export default function RoiEvolutionChart({ transactions, usdToGbp }: RoiEvoluti
                 const currentValue = cumBtc * price;
                 const roiUsd = currentValue - cumInvested;
                 const roiPercentage = cumInvested > 0 ? (roiUsd / cumInvested) * 100 : 0;
-                return { date, roiPercentage, roiUsd, roiGbp: roiUsd * usdToGbp };
+                return { date, roiPercentage, roiUsd, roiGbp: roiUsd * usdToGbp, btcPrice: price };
             });
     }, [sorted, marketPrice, earliestTxTime, usdToGbp]);
 
