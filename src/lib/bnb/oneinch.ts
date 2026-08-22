@@ -17,6 +17,7 @@ import {
     BNB_CHAIN_ID,
     ONEINCH_SWAP_API_BASE,
     USDT_ADDRESS,
+    USDT_DECIMALS,
     WBNB_ADDRESS,
 } from "./constants";
 
