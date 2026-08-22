@@ -3,7 +3,7 @@ import { getOverviewData, getCalendarWeekStats, getCalendarMonthStats } from "@/
 import { buildReportHtml } from "@/lib/email/report-template";
 import { getExchangeRate } from "@/lib/fx";
 import { getBtcEvolution, getT212Evolution, getVanguardEvolution } from "@/lib/overview-evolution";
-import { getSolanaDcaReportData, getEvmDcaReportData } from "@/lib/email/dca-report-data";
+import { getSolanaDcaReportData, getEvmDcaReportData, getBnbDcaReportData } from "@/lib/email/dca-report-data";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -46,9 +46,10 @@ async function getReportExtras() {
     // Each DCA read is isolated behind its own catch, same reasoning as the
     // outer try/catch below — a Solana RPC hiccup or a missing BASE_PRIVATE_KEY
     // should never take down the whole report, just that one card.
-    const [solanaDca, evmDca] = await Promise.all([
+    const [solanaDca, evmDca, bnbDca] = await Promise.all([
         getSolanaDcaReportData().catch(() => null),
         getEvmDcaReportData().catch(() => null),
+        getBnbDcaReportData().catch(() => null),
     ]);
 
     try {
@@ -63,9 +64,10 @@ async function getReportExtras() {
             evolution: { btc: btcEvo, t212: t212Evo, vanguard: vanguardEvo.evolution },
             solanaDca,
             evmDca,
+            bnbDca,
         };
     } catch {
-        return { vanguard: null, evolution: null, solanaDca, evmDca };
+        return { vanguard: null, evolution: null, solanaDca, evmDca, bnbDca };
     }
 }
 
@@ -80,7 +82,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
         // Săptămâna calendaristică ÎNCHEIATĂ cel mai recent (luni-duminică),
         // nu ultimele 7 zile de la momentul rulării.
         const { start, end, ...windowStats } = await getCalendarWeekStats(1);
-        const { vanguard, evolution, solanaDca, evmDca } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca, bnbDca } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "weekly",
@@ -92,6 +94,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
             evolution,
             solanaDca,
             evmDca,
+            bnbDca,
         });
 
         const result = await resend.emails.send({
@@ -121,7 +124,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
         // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
         // raportul, tot pe ziua 1, să ruleze).
         const { start, ...windowStats } = await getCalendarMonthStats(1);
-        const { vanguard, evolution, solanaDca, evmDca } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca, bnbDca } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "monthly",
@@ -133,6 +136,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
             evolution,
             solanaDca,
             evmDca,
+            bnbDca,
         });
 
         const result = await resend.emails.send({

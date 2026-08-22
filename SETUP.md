@@ -88,7 +88,7 @@ Dacă primești "Access Denied" — verifică exact ce ai scris în
 `ADMIN_EMAILS` (fără spații, litere mici) și că ai redeployat după ce ai
 adăugat variabila.
 
-## 5. (Opțional) Boții DCA — Solana și/sau Base
+## 5. (Opțional) Boții DCA — Solana, Base și/sau BNB Chain
 
 **Foarte important: creează portofele NOI, dedicate exclusiv botului.**
 Niciodată cheia privată a unui portofel personal existent — dacă ceva merge
@@ -103,10 +103,14 @@ limitată la ce ai pus special în bot, nu la toate economiile tale.
   cheia în `BASE_PRIVATE_KEY`, RPC de la Alchemy/Infura, plus o cheie API de
   la [portal.1inch.dev](https://portal.1inch.dev) în `ONEINCH_API_KEY`.
   Trimite USDC-on-Base în portofel.
+- **BNB Chain**: reutilizează același portofel EVM și aceeași cheie de la
+  Base (`BASE_PRIVATE_KEY`, `ONEINCH_API_KEY`) — o cheie privată EVM merge
+  identic pe orice chain. Pune doar `BNB_RPC_URL` și `BNB_SWEEP_DESTINATION`.
+  Trimite USDT + puțin BNB (gas) în același portofel, pe BNB Chain.
 
-După ce pui variabilele, redeployează, apoi din aplicație: `/solana` sau
-`/base` → configurează suma, intervalul, procentul de profit țintă →
-activează.
+După ce pui variabilele, redeployează, apoi din aplicație: `/solana`,
+`/base` sau `/bnb` → configurează suma, intervalul, procentul de profit
+țintă → activează.
 
 ## 6. Verificare finală
 

@@ -28,6 +28,7 @@ const COLORS = {
     t212Soft: 'rgba(124,147,184,0.12)',
     solana: '#9945FF',
     base: '#0052FF',
+    bnb: '#F0B90B',
 };
 
 const FONT_DISPLAY = "'Space Grotesk', Helvetica, Arial, sans-serif";
@@ -194,8 +195,9 @@ export function buildReportHtml(opts: {
     /** Null when that bot has never been configured (no settings row) — the card is simply omitted, same as t212.connected / vanguard.accountCount. */
     solanaDca?: DcaReportAsset | null;
     evmDca?: DcaReportAsset | null;
+    bnbDca?: DcaReportAsset | null;
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
 
@@ -338,6 +340,7 @@ export function buildReportHtml(opts: {
             }) : ''}
             ${solanaDca ? dcaAssetCard(solanaDca, COLORS.solana) : ''}
             ${evmDca ? dcaAssetCard(evmDca, COLORS.base) : ''}
+            ${bnbDca ? dcaAssetCard(bnbDca, COLORS.bnb) : ''}
           </td>
         </tr>
 

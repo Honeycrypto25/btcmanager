@@ -56,6 +56,9 @@ model User {
   evmSettings          EvmSettings?
   evmLots              EvmLot[]
   evmSweeps            EvmSweep[]
+  bnbSettings          BnbSettings?
+  bnbLots              BnbLot[]
+  bnbSweeps            BnbSweep[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -1027,4 +1030,147 @@ model ViewerAccess {
   sections  String[] // keys from SECTION_KEYS in src/lib/permissions.ts
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Flow: a Vercel Cron hits /api/cron/bnb-dca daily. The handler checks
+// each enabled BnbSettings row — if `intervalHours` have passed since
+// `lastRunAt`, it buys `buyAmountUsd` of WBNB via 1inch's Classic Swap API
+// (an immediate on-chain swap, exactly like the Solana buy leg), then
+// signs (off-chain, gasless) a 1inch Limit Order Protocol v4 order to sell
+// `sellAmountUsd` worth of the WBNB just bought once the price rises by
+// `takeProfitPercent`. A 1inch resolver fills that order later — this app
+// does not poll price in between, same as the Solana Trigger order.
+model BnbSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  // Public address only — never the private key. Shown in the UI so the
+  // user can verify/fund the right wallet; also used to query 1inch/RPC.
+  walletAddress String
+
+  buyAmountUsd      Decimal @db.Decimal(10, 2) // e.g. 10.00 — spent each cycle
+  intervalHours     Int     @default(24)
+  takeProfitPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 for "sell at +10%"
+  sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of WBNB sold per lot at target
+  slippageBps       Int     @default(300) // 300 = 3% — kept at the same default as Base since BSC swaps see comparable price impact on small trade sizes
+
+  lastRunAt     DateTime?
+  lastRunStatus String? // "ok" | "skipped" | "error"
+  lastRunError  String? @db.Text
+
+  // --- Monthly auto-sweep to a cold wallet ---
+  // Sweeps accumulated WBNB (the investment) — never the native BNB gas
+  // float, which this app doesn't touch. Off by default — must be
+  // explicitly turned on after verifying with the manual "Trimite acum"
+  // test. The destination address is deliberately NOT stored here: it
+  // lives only as the BNB_SWEEP_DESTINATION Vercel env var, so
+  // redirecting where funds go requires Vercel dashboard access, not just
+  // a compromised web session (same reasoning as keeping the private key
+  // out of the database).
+  sweepEnabled        Boolean @default(false)
+  sweepMinBalanceBnb Decimal @default(0) @db.Decimal(20, 9) // always left behind in the hot wallet, ON TOP OF whatever's reserved for open sell orders (see sweep.ts — unlike Solana, a 1inch order doesn't escrow funds on-chain)
+
+  lastSweepAt     DateTime?
+  lastSweepStatus String? // "ok" | "skipped" | "error"
+  lastSweepError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per executed (or attempted) monthly sweep — the excess WBNB above
+// sweepMinBalanceBnb, sent to BNB_SWEEP_DESTINATION. Kept even for failed
+// attempts (status=FAILED, txHash null) so the history is a complete audit
+// trail, not just successes.
+model BnbSweep {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status            String // "SUCCESS" | "FAILED"
+  balanceBeforeBnb Decimal  @db.Decimal(30, 18) // on-chain WBNB balance right before the transfer
+  amountBnb        Decimal  @db.Decimal(30, 18) // amount actually sent (0 for a failed/skipped attempt)
+  destination       String // snapshot of BNB_SWEEP_DESTINATION at the time — env var could change later
+  txHash            String?
+  errorMessage      String? @db.Text
+  manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum BnbLotStatus {
+  PENDING_SELL_ORDER // buy succeeded, sell order creation failed/not yet attempted
+  OPEN // sell limit order live on 1inch, waiting for price target
+  FILLED // sell limit order executed
+  CANCELLED // sell limit order cancelled (manually, via the UI) or expired
+  FAILED // the buy itself failed — no WBNB acquired
+}
+
+// One row per DCA cycle ("lot") — links a buy to its take-profit sell so
+// P&L and fees can be computed per lot, independent of internal 1inch/
+// on-chain ids. Mirrors SolanaLot field-for-field where the concepts
+// carry over directly.
+model BnbLot {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status BnbLotStatus @default(PENDING_SELL_ORDER)
+
+  // --- Buy side (always set once the lot exists) ---
+  buyAmountUsd  Decimal  @db.Decimal(12, 4) // USD actually spent
+  bnbAcquired  Decimal  @db.Decimal(30, 18) // WBNB received from the swap
+  buyPriceUsd   Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / bnbAcquired
+  buyFeeUsd     Decimal  @default(0) @db.Decimal(10, 4) // network gas (paid in BNB), converted to USD
+  buyTxHash     String?
+  boughtAt      DateTime @default(now())
+
+  // --- Sell limit order (set once the order is created) ---
+  // Placing a 1inch limit order is a gasless, off-chain signature — there
+  // is no creation transaction the way Solana's Trigger order had one, so
+  // sellOrderTxHash stays null; it's kept only in case a future variant of
+  // this flow places orders on-chain.
+  targetPriceUsd        Decimal? @db.Decimal(14, 4)
+  sellAmountBnbPlanned  Decimal? @db.Decimal(30, 18) // WBNB put up for sale in the order
+  oneInchOrderHash      String? // 1inch's own order hash — internal lot id above is what ties buy+sell together for P&L
+  sellOrderCreatedAt    DateTime?
+  sellOrderTxHash       String?
+
+  // --- Sell fill (set once a 1inch resolver fills the order) ---
+  // sellTxHash stays null even on a fill: the Orderbook API confirms a fill
+  // happened (remainingMakerAmount drops to 0) but doesn't expose which
+  // on-chain transaction did it, so there's no link to show — unlike the
+  // buy side, which is always our own transaction and always has a hash.
+  soldAt          DateTime?
+  bnbSold        Decimal?  @db.Decimal(30, 18)
+  sellProceedsUsd Decimal?  @db.Decimal(14, 4)
+  sellFeeUsd      Decimal?  @db.Decimal(10, 4)
+  sellTxHash      String?
+
+  // Last time reconcileOpenLots() checked this lot's order against 1inch's
+  // orderbook — set on every daily cron run for every OPEN lot (cheap, a
+  // batched lookup rather than one API call per lot). Shown in the UI so
+  // it's obvious the bot is still watching.
+  lastCheckedAt DateTime?
+
+  // WBNB from this lot that is not part of the sell order (or not yet
+  // sold) — stays in the wallet as a long-term holding.
+  bnbRemaining Decimal @db.Decimal(30, 18)
+
+  // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of bnbSold + buyFeeUsd share)
+  // Null until the sell fills.
+  realizedPnlUsd Decimal? @db.Decimal(12, 4)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, boughtAt])
 }

@@ -4,6 +4,8 @@ import { getSolPriceUsd } from "@/lib/solana/jupiter";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
 import { loadBotKeypair, getUsdcBalance as getSolanaUsdcBalance } from "@/lib/solana/wallet";
 import { loadBotWallet, getUsdcBalance as getEvmUsdcBalance } from "@/lib/evm/wallet";
+import { getBnbPriceUsd } from "@/lib/bnb/oneinch";
+import { loadBotWallet as loadBnbBotWallet, getUsdtBalance as getBnbUsdtBalance } from "@/lib/bnb/wallet";
 
 export interface DcaReportAsset {
     label: string;
@@ -104,6 +106,46 @@ export async function getEvmDcaReportData(): Promise<DcaReportAsset | null> {
         heldAmount: wethHeld,
         heldUnit: "WETH",
         heldValueUsd: wethPriceUsd !== null ? wethHeld * wethPriceUsd : null,
+        totalInvestedUsd,
+        totalRealizedPnlUsd,
+        daysOfFuel,
+    };
+}
+
+export async function getBnbDcaReportData(): Promise<DcaReportAsset | null> {
+    const settings = await db.bnbSettings.findFirst();
+    if (!settings) return null;
+
+    const lots = await db.bnbLot.findMany();
+    let totalInvestedUsd = 0;
+    let totalRealizedPnlUsd = 0;
+    let bnbHeld = 0;
+    for (const lot of lots) {
+        if (lot.status === "FAILED") continue;
+        totalInvestedUsd += Number(lot.buyAmountUsd);
+        bnbHeld += Number(lot.bnbRemaining);
+        if (lot.status === "FILLED") totalRealizedPnlUsd += Number(lot.realizedPnlUsd ?? 0);
+    }
+
+    const bnbPriceUsd = await getBnbPriceUsd().catch(() => null);
+
+    let daysOfFuel: number | null = null;
+    try {
+        const wallet = loadBnbBotWallet();
+        const usdtBalance = await getBnbUsdtBalance(await wallet.getAddress());
+        const buyAmountUsd = Number(settings.buyAmountUsd);
+        if (buyAmountUsd > 0) {
+            daysOfFuel = Math.floor(usdtBalance / buyAmountUsd) * (settings.intervalHours / 24);
+        }
+    } catch {
+        // BASE_PRIVATE_KEY not set, or RPC unreachable — omit the fuel line rather than fail the whole report.
+    }
+
+    return {
+        label: "BNB Chain DCA",
+        heldAmount: bnbHeld,
+        heldUnit: "WBNB",
+        heldValueUsd: bnbPriceUsd !== null ? bnbHeld * bnbPriceUsd : null,
         totalInvestedUsd,
         totalRealizedPnlUsd,
         daysOfFuel,
