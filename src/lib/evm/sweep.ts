@@ -3,6 +3,7 @@ import { Contract, formatUnits, parseUnits } from "ethers";
 import { db } from "@/lib/db";
 import { loadConnectedBotWallet } from "./wallet";
 import { WETH_ADDRESS, WETH_DECIMALS } from "./constants";
+import { notifySweep } from "@/lib/email/tx-notify";
 
 const ERC20_ABI = [
     "function balanceOf(address owner) view returns (uint256)",
@@ -154,6 +155,16 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
             }),
         ]);
 
+        await notifySweep({
+            chain: "Base (ETH)",
+            tokenSymbol: "WETH",
+            status: "SUCCESS",
+            amount: amountWeth,
+            destination,
+            manual: force,
+            txUrl: `https://basescan.org/tx/${tx.hash}`,
+        });
+
         return { action: "sent", amountWeth };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -174,6 +185,17 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
                 data: { lastSweepAt: new Date(), lastSweepStatus: "error", lastSweepError: message },
             }),
         ]);
+
+        await notifySweep({
+            chain: "Base (ETH)",
+            tokenSymbol: "WETH",
+            status: "FAILED",
+            amount: balanceWeth,
+            destination,
+            manual: force,
+            errorMessage: message,
+        });
+
         return { action: "error", reason: message };
     }
 }

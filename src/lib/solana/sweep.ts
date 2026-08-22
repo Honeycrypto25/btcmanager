@@ -2,6 +2,7 @@ import "server-only";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { db } from "@/lib/db";
 import { loadBotKeypair, getRpcUrl } from "./wallet";
+import { notifySweep } from "@/lib/email/tx-notify";
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
@@ -146,6 +147,16 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
             }),
         ]);
 
+        await notifySweep({
+            chain: "Solana",
+            tokenSymbol: "SOL",
+            status: "SUCCESS",
+            amount: amountSol,
+            destination: destinationRaw.trim(),
+            manual: force,
+            txUrl: `https://solscan.io/tx/${signature}`,
+        });
+
         return { action: "sent", amountSol };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -166,6 +177,17 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
                 data: { lastSweepAt: new Date(), lastSweepStatus: "error", lastSweepError: message },
             }),
         ]);
+
+        await notifySweep({
+            chain: "Solana",
+            tokenSymbol: "SOL",
+            status: "FAILED",
+            amount: balanceSol,
+            destination: destinationRaw.trim(),
+            manual: force,
+            errorMessage: message,
+        });
+
         return { action: "error", reason: message };
     }
 }

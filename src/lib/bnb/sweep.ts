@@ -3,6 +3,7 @@ import { Contract, formatUnits, parseUnits } from "ethers";
 import { db } from "@/lib/db";
 import { loadConnectedBotWallet } from "./wallet";
 import { WBNB_ADDRESS, WBNB_DECIMALS } from "./constants";
+import { notifySweep } from "@/lib/email/tx-notify";
 
 const ERC20_ABI = [
     "function balanceOf(address owner) view returns (uint256)",
@@ -154,6 +155,16 @@ export async function runBnbSweepForUser(userId: string, force = false): Promise
             }),
         ]);
 
+        await notifySweep({
+            chain: "BNB Chain",
+            tokenSymbol: "WBNB",
+            status: "SUCCESS",
+            amount: amountBnb,
+            destination,
+            manual: force,
+            txUrl: `https://bscscan.com/tx/${tx.hash}`,
+        });
+
         return { action: "sent", amountBnb };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -174,6 +185,17 @@ export async function runBnbSweepForUser(userId: string, force = false): Promise
                 data: { lastSweepAt: new Date(), lastSweepStatus: "error", lastSweepError: message },
             }),
         ]);
+
+        await notifySweep({
+            chain: "BNB Chain",
+            tokenSymbol: "WBNB",
+            status: "FAILED",
+            amount: balanceBnb,
+            destination,
+            manual: force,
+            errorMessage: message,
+        });
+
         return { action: "error", reason: message };
     }
 }

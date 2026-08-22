@@ -11,6 +11,7 @@ import {
     getWethPriceUsd,
 } from "./oneinch";
 import { MIN_LIMIT_ORDER_USD, USDC_ADDRESS, USDC_DECIMALS, WETH_ADDRESS, WETH_DECIMALS } from "./constants";
+import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
 
 /** How long a placed take-profit order stays valid for before it expires unfilled. 90 days — generous, since there's no cost to leaving it open (gasless to place). */
 const ORDER_EXPIRATION_SECONDS = 90 * 24 * 60 * 60;
@@ -100,6 +101,15 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
                 },
             });
             result.filled++;
+            await notifyOrderFilled({
+                chain: "Base (ETH)",
+                tokenSymbol: "WETH",
+                tokenSold: wethSold,
+                sellProceedsUsd: proceedsUsd,
+                realizedPnlUsd,
+                sellFeeUsd: 0,
+                // 1inch's Orderbook API doesn't expose which tx filled the order (see comment above), so no link.
+            });
         } else {
             const reason = order.orderInvalidReason?.join(", ") ?? "cancelled or expired";
             await db.evmLot.update({
@@ -200,6 +210,18 @@ export async function runEvmDcaForUser(userId: string): Promise<EvmDcaRunResult>
                     oneInchOrderHash: orderHash,
                     sellOrderCreatedAt: new Date(),
                 },
+            });
+
+            await notifyOrderPlaced({
+                chain: "Base (ETH)",
+                tokenSymbol: "WETH",
+                buyAmountUsd,
+                tokenAcquired: wethAcquired,
+                buyPriceUsd,
+                targetPriceUsd,
+                takeProfitPercent: Number(settings.takeProfitPercent),
+                sellAmountPlanned: sellAmountWeth,
+                buyTxUrl: `https://basescan.org/tx/${buyTxHash}`,
             });
         } catch (sellErr) {
             // Buy already succeeded and is on-chain — don't lose that. Leave the

@@ -11,6 +11,7 @@ import {
     getBnbPriceUsd,
 } from "./oneinch";
 import { MIN_LIMIT_ORDER_USD, USDT_ADDRESS, USDT_DECIMALS, WBNB_ADDRESS, WBNB_DECIMALS } from "./constants";
+import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
 
 /** How long a placed take-profit order stays valid for before it expires unfilled. 90 days — generous, since there's no cost to leaving it open (gasless to place). */
 const ORDER_EXPIRATION_SECONDS = 90 * 24 * 60 * 60;
@@ -100,6 +101,15 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
                 },
             });
             result.filled++;
+            await notifyOrderFilled({
+                chain: "BNB Chain",
+                tokenSymbol: "WBNB",
+                tokenSold: bnbSold,
+                sellProceedsUsd: proceedsUsd,
+                realizedPnlUsd,
+                sellFeeUsd: 0,
+                // 1inch's Orderbook API doesn't expose which tx filled the order (see comment above), so no link.
+            });
         } else {
             const reason = order.orderInvalidReason?.join(", ") ?? "cancelled or expired";
             await db.bnbLot.update({
@@ -200,6 +210,18 @@ export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult>
                     oneInchOrderHash: orderHash,
                     sellOrderCreatedAt: new Date(),
                 },
+            });
+
+            await notifyOrderPlaced({
+                chain: "BNB Chain",
+                tokenSymbol: "WBNB",
+                buyAmountUsd,
+                tokenAcquired: bnbAcquired,
+                buyPriceUsd,
+                targetPriceUsd,
+                takeProfitPercent: Number(settings.takeProfitPercent),
+                sellAmountPlanned: sellAmountBnb,
+                buyTxUrl: `https://bscscan.com/tx/${buyTxHash}`,
             });
         } catch (sellErr) {
             // Buy already succeeded and is on-chain — don't lose that. Leave the

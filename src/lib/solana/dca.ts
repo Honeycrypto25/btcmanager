@@ -11,6 +11,7 @@ import {
     getSwapQuote,
 } from "./jupiter";
 import { MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "./constants";
+import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
 
 function toRawAmount(amount: number, decimals: number): string {
     return Math.round(amount * 10 ** decimals).toString();
@@ -107,6 +108,15 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
                 },
             });
             result.filled++;
+            await notifyOrderFilled({
+                chain: "Solana",
+                tokenSymbol: "SOL",
+                tokenSold: solSold,
+                sellProceedsUsd: proceedsUsd,
+                realizedPnlUsd,
+                sellFeeUsd: feeUsd,
+                sellTxUrl: fill?.txId ? `https://solscan.io/tx/${fill.txId}` : undefined,
+            });
         } else if (order.status === "Cancelled") {
             await db.solanaLot.update({
                 where: { id: lot.id },
@@ -215,6 +225,18 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
                     sellOrderCreatedAt: new Date(),
                     sellOrderTxSignature: txSignature,
                 },
+            });
+
+            await notifyOrderPlaced({
+                chain: "Solana",
+                tokenSymbol: "SOL",
+                buyAmountUsd,
+                tokenAcquired: solAcquired,
+                buyPriceUsd,
+                targetPriceUsd,
+                takeProfitPercent: Number(settings.takeProfitPercent),
+                sellAmountPlanned: sellAmountSol,
+                buyTxUrl: `https://solscan.io/tx/${buyTxSignature}`,
             });
         } catch (sellErr) {
             // Buy already succeeded and is on-chain — don't lose that. Leave the
