@@ -1,5 +1,6 @@
 import type { OverviewData, PeriodRow } from "@/components/overview/OverviewClient";
 import type { AssetEvolution } from "@/lib/overview-evolution";
+import type { DcaReportAsset } from "@/lib/email/dca-report-data";
 
 interface WindowStats {
     btcInvested: number;
@@ -25,6 +26,8 @@ const COLORS = {
     redSoft: 'rgba(229,96,90,0.12)',
     t212: '#7c93b8',
     t212Soft: 'rgba(124,147,184,0.12)',
+    solana: '#9945FF',
+    base: '#0052FF',
 };
 
 const FONT_DISPLAY = "'Space Grotesk', Helvetica, Arial, sans-serif";
@@ -120,6 +123,25 @@ function assetCard(opts: {
   </table>`;
 }
 
+function dcaAssetCard(asset: DcaReportAsset, accentColor: string): string {
+    const heldValueText = asset.heldValueUsd !== null ? fmt(asset.heldValueUsd) : '—';
+    const fuelText = asset.daysOfFuel !== null ? `${Math.max(0, Math.floor(asset.daysOfFuel))} days of fuel left` : null;
+    const extraParts = [`${asset.heldAmount.toFixed(5)} ${asset.heldUnit} held`, fuelText].filter(Boolean);
+    const realizedPercent = asset.totalInvestedUsd > 0 ? (asset.totalRealizedPnlUsd / asset.totalInvestedUsd) * 100 : 0;
+    return assetCard({
+        name: asset.label,
+        accentColor,
+        investedLabel: 'Total bought',
+        investedValue: fmt(asset.totalInvestedUsd),
+        valueLabel: 'Held today',
+        currentValue: heldValueText,
+        pnlText: `${asset.totalRealizedPnlUsd >= 0 ? '+' : ''}${fmt(asset.totalRealizedPnlUsd)} realized so far`,
+        pnlPercentText: pct(realizedPercent),
+        pnlHex: pnlColor(asset.totalRealizedPnlUsd),
+        extraLine: extraParts.join('<br/>'),
+    });
+}
+
 function monthsTable(rows: PeriodRow[]): string {
     const recent = rows.slice(0, 6);
     if (recent.length === 0) return '';
@@ -169,8 +191,11 @@ export function buildReportHtml(opts: {
      * week/month" figure to show for it — see lib/overview-evolution.ts). */
     vanguard?: ReportVanguardTotals | null;
     evolution?: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null;
+    /** Null when that bot has never been configured (no settings row) — the card is simply omitted, same as t212.connected / vanguard.accountCount. */
+    solanaDca?: DcaReportAsset | null;
+    evmDca?: DcaReportAsset | null;
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
 
@@ -311,6 +336,8 @@ export function buildReportHtml(opts: {
                 pnlHex: pnlColor(vanguard.pnlPercent),
                 extraLine: evoText(evolution?.vanguard) || undefined,
             }) : ''}
+            ${solanaDca ? dcaAssetCard(solanaDca, COLORS.solana) : ''}
+            ${evmDca ? dcaAssetCard(evmDca, COLORS.base) : ''}
           </td>
         </tr>
 

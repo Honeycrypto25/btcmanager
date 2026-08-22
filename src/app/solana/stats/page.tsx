@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getSolanaStats, listSolanaLots, listSolanaSweeps } from "@/app/actions/solana";
+import { getSolanaStats, listSolanaLots, listSolanaSweeps, getSolanaFuelStatus } from "@/app/actions/solana";
 import { SolanaStatsClient } from "@/components/solana/SolanaStatsClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 
@@ -12,11 +12,12 @@ export default async function SolanaStatsPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const [lots, stats, solPriceUsd, sweeps] = await Promise.all([
+    const [lots, stats, solPriceUsd, sweeps, fuelStatus] = await Promise.all([
         listSolanaLots(),
         getSolanaStats(),
         getSolPriceUsd().catch(() => null),
         listSolanaSweeps(),
+        getSolanaFuelStatus(),
     ]);
 
     return (
@@ -26,6 +27,7 @@ export default async function SolanaStatsPage() {
                 stats={stats}
                 solPriceUsd={solPriceUsd}
                 sweeps={JSON.parse(JSON.stringify(sweeps))}
+                fuelStatus={fuelStatus}
             />
         </DashboardLayout>
     );

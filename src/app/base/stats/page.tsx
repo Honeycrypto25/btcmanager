@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getEvmStats, listEvmLots, listEvmSweeps } from "@/app/actions/evm";
+import { getEvmStats, listEvmLots, listEvmSweeps, getEvmFuelStatus } from "@/app/actions/evm";
 import { EvmStatsClient } from "@/components/evm/EvmStatsClient";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
 
@@ -12,11 +12,12 @@ export default async function BaseStatsPage() {
     const session = await getServerSession(authOptions);
     if (!session) redirect("/auth/signin");
 
-    const [lots, stats, wethPriceUsd, sweeps] = await Promise.all([
+    const [lots, stats, wethPriceUsd, sweeps, fuelStatus] = await Promise.all([
         listEvmLots(),
         getEvmStats(),
         getWethPriceUsd().catch(() => null),
         listEvmSweeps(),
+        getEvmFuelStatus(),
     ]);
 
     return (
@@ -26,6 +27,7 @@ export default async function BaseStatsPage() {
                 stats={stats}
                 wethPriceUsd={wethPriceUsd}
                 sweeps={JSON.parse(JSON.stringify(sweeps))}
+                fuelStatus={fuelStatus}
             />
         </DashboardLayout>
     );

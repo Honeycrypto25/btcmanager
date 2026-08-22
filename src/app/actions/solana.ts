@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
 import { runSolanaSweepForUser } from "@/lib/solana/sweep";
-import { loadBotKeypair } from "@/lib/solana/wallet";
+import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
 async function requireUserId(): Promise<string> {
@@ -93,6 +93,49 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
 
     revalidatePath("/solana");
     return settings;
+}
+
+export interface FuelStatus {
+    usdcBalance: number;
+    buyAmountUsd: number;
+    intervalHours: number;
+    daysRemaining: number;
+    projected: { label: string; usdc: number }[];
+}
+
+/**
+ * "Fuel" = the bot wallet's real USDC balance, expressed in days of buys it
+ * can still fund at the current buyAmountUsd/intervalHours settings — reads
+ * live on-chain rather than any app-side bookkeeping, same principle as the
+ * sweep balance check. Projected series stops at 0 USDC or 20 cycles,
+ * whichever comes first, just to keep the chart a sane size.
+ */
+export async function getSolanaFuelStatus(): Promise<FuelStatus | { error: string }> {
+    const userId = await requireUserId();
+    const settings = await db.solanaSettings.findUnique({ where: { userId } });
+    if (!settings) return { error: "Configurează mai întâi setările botului." };
+    try {
+        const keypair = loadBotKeypair();
+        const usdcBalance = await getUsdcBalance(keypair.publicKey.toBase58());
+        const buyAmountUsd = Number(settings.buyAmountUsd);
+        const intervalHours = settings.intervalHours;
+        const cyclesRemaining = buyAmountUsd > 0 ? Math.floor(usdcBalance / buyAmountUsd) : 0;
+        const daysRemaining = cyclesRemaining * (intervalHours / 24);
+
+        const projected: { label: string; usdc: number }[] = [];
+        const maxCycles = Math.min(cyclesRemaining, 20);
+        for (let i = 0; i <= maxCycles; i++) {
+            const at = new Date(Date.now() + i * intervalHours * 60 * 60 * 1000);
+            projected.push({
+                label: at.toLocaleDateString("ro-RO", { day: "numeric", month: "short" }),
+                usdc: Math.max(0, usdcBalance - i * buyAmountUsd),
+            });
+        }
+
+        return { usdcBalance, buyAmountUsd, intervalHours, daysRemaining, projected };
+    } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+    }
 }
 
 export async function listSolanaLots() {

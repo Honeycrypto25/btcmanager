@@ -1,6 +1,6 @@
 import "server-only";
-import { JsonRpcProvider, Wallet } from "ethers";
-import { getRpcUrl } from "./constants";
+import { Contract, JsonRpcProvider, Wallet, formatUnits } from "ethers";
+import { getRpcUrl, USDC_ADDRESS, USDC_DECIMALS } from "./constants";
 
 /**
  * Loads the bot's dedicated EVM wallet from BASE_PRIVATE_KEY (a standard
@@ -33,4 +33,15 @@ export function getProvider(): JsonRpcProvider {
 /** The bot wallet, connected to a live provider — ready to sign and send transactions. */
 export function loadConnectedBotWallet(): Wallet {
     return loadBotWallet().connect(getProvider());
+}
+
+/** Reads the bot wallet's real on-chain USDC balance (the "fuel" for future buys). */
+export async function getUsdcBalance(walletAddress: string): Promise<number> {
+    const contract = new Contract(
+        USDC_ADDRESS,
+        ["function balanceOf(address owner) view returns (uint256)"],
+        getProvider()
+    );
+    const raw: bigint = await contract.balanceOf(walletAddress);
+    return Number(formatUnits(raw, USDC_DECIMALS));
 }

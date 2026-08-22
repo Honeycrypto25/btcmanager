@@ -3,6 +3,7 @@ import { getOverviewData, getCalendarWeekStats, getCalendarMonthStats } from "@/
 import { buildReportHtml } from "@/lib/email/report-template";
 import { getExchangeRate } from "@/lib/fx";
 import { getBtcEvolution, getT212Evolution, getVanguardEvolution } from "@/lib/overview-evolution";
+import { getSolanaDcaReportData, getEvmDcaReportData } from "@/lib/email/dca-report-data";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -42,6 +43,14 @@ function rangeLabel(start: Date, end: Date): string {
  * report from sending with at least the BTC/T212 figures it already had.
  */
 async function getReportExtras() {
+    // Each DCA read is isolated behind its own catch, same reasoning as the
+    // outer try/catch below — a Solana RPC hiccup or a missing BASE_PRIVATE_KEY
+    // should never take down the whole report, just that one card.
+    const [solanaDca, evmDca] = await Promise.all([
+        getSolanaDcaReportData().catch(() => null),
+        getEvmDcaReportData().catch(() => null),
+    ]);
+
     try {
         const gbpToUsd = await getExchangeRate("GBP", "USD");
         const [btcEvo, t212Evo, vanguardEvo] = await Promise.all([
@@ -52,9 +61,11 @@ async function getReportExtras() {
         return {
             vanguard: vanguardEvo.totals,
             evolution: { btc: btcEvo, t212: t212Evo, vanguard: vanguardEvo.evolution },
+            solanaDca,
+            evmDca,
         };
     } catch {
-        return { vanguard: null, evolution: null };
+        return { vanguard: null, evolution: null, solanaDca, evmDca };
     }
 }
 
@@ -69,7 +80,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
         // Săptămâna calendaristică ÎNCHEIATĂ cel mai recent (luni-duminică),
         // nu ultimele 7 zile de la momentul rulării.
         const { start, end, ...windowStats } = await getCalendarWeekStats(1);
-        const { vanguard, evolution } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "weekly",
@@ -79,6 +90,8 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
             dashboardUrl: getDashboardUrl(),
             vanguard,
             evolution,
+            solanaDca,
+            evmDca,
         });
 
         const result = await resend.emails.send({
@@ -108,7 +121,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
         // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
         // raportul, tot pe ziua 1, să ruleze).
         const { start, ...windowStats } = await getCalendarMonthStats(1);
-        const { vanguard, evolution } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca } = await getReportExtras();
 
         const html = buildReportHtml({
             periodType: "monthly",
@@ -118,6 +131,8 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
             dashboardUrl: getDashboardUrl(),
             vanguard,
             evolution,
+            solanaDca,
+            evmDca,
         });
 
         const result = await resend.emails.send({

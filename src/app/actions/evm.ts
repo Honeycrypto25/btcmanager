@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { runEvmDcaForUser, reconcileEvmOrdersForUser } from "@/lib/evm/dca";
 import { runEvmSweepForUser } from "@/lib/evm/sweep";
-import { loadBotWallet } from "@/lib/evm/wallet";
+import { loadBotWallet, getUsdcBalance } from "@/lib/evm/wallet";
 import { MIN_LIMIT_ORDER_USD } from "@/lib/evm/constants";
 
 async function requireUserId(): Promise<string> {
@@ -92,6 +92,48 @@ export async function upsertEvmSettings(input: EvmSettingsInput) {
 
     revalidatePath("/base");
     return settings;
+}
+
+export interface FuelStatus {
+    usdcBalance: number;
+    buyAmountUsd: number;
+    intervalHours: number;
+    daysRemaining: number;
+    projected: { label: string; usdc: number }[];
+}
+
+/**
+ * "Fuel" = the bot wallet's real USDC balance, expressed in days of buys it
+ * can still fund at the current buyAmountUsd/intervalHours settings — reads
+ * live on-chain rather than any app-side bookkeeping. Mirrors
+ * getSolanaFuelStatus. Projected series stops at 0 USDC or 20 cycles.
+ */
+export async function getEvmFuelStatus(): Promise<FuelStatus | { error: string }> {
+    const userId = await requireUserId();
+    const settings = await db.evmSettings.findUnique({ where: { userId } });
+    if (!settings) return { error: "Configurează mai întâi setările botului." };
+    try {
+        const wallet = loadBotWallet();
+        const usdcBalance = await getUsdcBalance(await wallet.getAddress());
+        const buyAmountUsd = Number(settings.buyAmountUsd);
+        const intervalHours = settings.intervalHours;
+        const cyclesRemaining = buyAmountUsd > 0 ? Math.floor(usdcBalance / buyAmountUsd) : 0;
+        const daysRemaining = cyclesRemaining * (intervalHours / 24);
+
+        const projected: { label: string; usdc: number }[] = [];
+        const maxCycles = Math.min(cyclesRemaining, 20);
+        for (let i = 0; i <= maxCycles; i++) {
+            const at = new Date(Date.now() + i * intervalHours * 60 * 60 * 1000);
+            projected.push({
+                label: at.toLocaleDateString("ro-RO", { day: "numeric", month: "short" }),
+                usdc: Math.max(0, usdcBalance - i * buyAmountUsd),
+            });
+        }
+
+        return { usdcBalance, buyAmountUsd, intervalHours, daysRemaining, projected };
+    } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+    }
 }
 
 export async function listEvmLots() {

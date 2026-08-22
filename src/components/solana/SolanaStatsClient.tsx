@@ -30,15 +30,25 @@ const STATUS_FILTER_OPTIONS = [
     { value: "CANCELLED", label: "Anulat" },
 ] as const;
 
+export interface FuelStatus {
+    usdcBalance: number;
+    buyAmountUsd: number;
+    intervalHours: number;
+    daysRemaining: number;
+    projected: { label: string; usdc: number }[];
+}
+
 export function SolanaStatsClient({
     lots: allLots,
     solPriceUsd,
     sweeps,
+    fuelStatus,
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
     solPriceUsd: number | null;
     sweeps: SweepDTO[];
+    fuelStatus: FuelStatus | { error: string };
 }) {
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
@@ -316,6 +326,37 @@ export function SolanaStatsClient({
                 <StatCard label="SOL deținut" value={`${stats.solHeld.toFixed(4)} SOL`} />
                 <StatCard label="Ordine active" value={String(stats.openOrders)} />
             </div>
+
+            {/* Fuel — how many more buy cycles the current USDC balance can fund */}
+            <Card>
+                <h2 className="mb-1 text-sm font-medium text-foreground">Combustibil (USDC)</h2>
+                {"error" in fuelStatus ? (
+                    <p className="text-sm text-muted">{fuelStatus.error}</p>
+                ) : fuelStatus.usdcBalance <= 0 ? (
+                    <p className="text-sm text-muted">
+                        Portofelul botului are 0 USDC — alimentează-l ca DCA-ul să poată continua.
+                    </p>
+                ) : (
+                    <>
+                        <p className="mb-4 text-xs text-faint">
+                            {formatUsd(fuelStatus.usdcBalance)} USDC în portofel ÷ {formatUsd(fuelStatus.buyAmountUsd)} pe ciclu, la fiecare {fuelStatus.intervalHours}h ≈{" "}
+                            <span className="font-medium text-foreground">{Math.floor(fuelStatus.daysRemaining)} zile</span> de cumpărări rămase la ritmul curent.
+                        </p>
+                        <ResponsiveContainer width="100%" height={220}>
+                            <BarChart data={fuelStatus.projected}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                                <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                                <Tooltip
+                                    contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                                    formatter={(v) => formatUsd(Number(v))}
+                                />
+                                <Bar dataKey="usdc" name="USDC proiectat" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </>
+                )}
+            </Card>
 
             {/* Charts */}
             {chartData.length > 0 && (
