@@ -7,6 +7,7 @@ import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, S
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertEvmSettings, runEvmDcaNow, runEvmSweepNow, type EvmSettingsInput } from "@/app/actions/evm";
 import { formatUsd, type SettingsDTO } from "./shared";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 /** Vercel Cron for /api/cron/base-dca runs daily at 09:10 UTC (see vercel.json) — this just mirrors that schedule for display. */
 function nextCronRunUtc(): Date {

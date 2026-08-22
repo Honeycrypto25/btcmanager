@@ -7,6 +7,7 @@ import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, S
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertSolanaSettings, runSolanaDcaNow, runSolanaSweepNow, type SolanaSettingsInput } from "@/app/actions/solana";
 import { formatUsd, type SettingsDTO } from "./shared";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 /** Vercel Cron for /api/cron/solana-dca runs daily at 09:00 UTC (see vercel.json) — this just mirrors that schedule for display. */
 function nextCronRunUtc(): Date {
