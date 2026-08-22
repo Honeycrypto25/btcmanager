@@ -138,9 +138,20 @@ export async function createTriggerSellOrder(params: {
 }
 
 export interface TriggerOrderTrade {
+    // Jupiter's history API returns BOTH a human-readable decimal string
+    // (inputAmount/outputAmount/feeAmount) AND the raw atomic-unit string
+    // (rawInputAmount/rawOutputAmount/rawFeeAmount) for the same value —
+    // easy to miss since the decimal ones read like they could be raw.
+    // Always use the raw* fields with fromRawAmount(); dividing the
+    // already-decimal fields by 10**decimals a second time silently
+    // produces a number that's off by a factor of 10**decimals (~10^9),
+    // rounding every fill to $0.00 / 0 SOL sold instead of throwing.
     inputAmount: string;
     outputAmount: string;
     feeAmount: string;
+    rawInputAmount: string;
+    rawOutputAmount: string;
+    rawFeeAmount: string;
     feeMint: string;
     txId: string;
     confirmedAt: string;
@@ -151,6 +162,8 @@ export interface TriggerOrder {
     status: "Open" | "Completed" | "Cancelled" | string;
     makingAmount: string;
     takingAmount: string;
+    rawMakingAmount: string;
+    rawTakingAmount: string;
     remainingMakingAmount: string;
     trades: TriggerOrderTrade[];
 }

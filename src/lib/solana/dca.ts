@@ -73,10 +73,14 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
 
         if (order.status === "Completed") {
             const fill = order.trades[0];
-            const solSold = fill ? fromRawAmount(fill.inputAmount, SOL_DECIMALS) : fromRawAmount(order.makingAmount, SOL_DECIMALS);
-            const proceedsUsd = fill ? fromRawAmount(fill.outputAmount, USDC_DECIMALS) : fromRawAmount(order.takingAmount, USDC_DECIMALS);
+            // NB: fill.inputAmount/outputAmount (and order.makingAmount/takingAmount)
+            // are already decimal-adjusted despite reading like raw amounts — the
+            // *actual* raw atomic-unit fields are raw{Input,Output}Amount /
+            // raw{Making,Taking}Amount. Must use those with fromRawAmount().
+            const solSold = fill ? fromRawAmount(fill.rawInputAmount, SOL_DECIMALS) : fromRawAmount(order.rawMakingAmount, SOL_DECIMALS);
+            const proceedsUsd = fill ? fromRawAmount(fill.rawOutputAmount, USDC_DECIMALS) : fromRawAmount(order.rawTakingAmount, USDC_DECIMALS);
             // Fee is charged in the output token (USDC) when Jupiter takes one; 0 for plain trigger orders without a referral fee.
-            const feeUsd = fill && fill.feeMint === USDC_MINT ? fromRawAmount(fill.feeAmount, USDC_DECIMALS) : 0;
+            const feeUsd = fill && fill.feeMint === USDC_MINT ? fromRawAmount(fill.rawFeeAmount, USDC_DECIMALS) : 0;
 
             const costBasisUsd = Number(lot.buyPriceUsd) * solSold;
             // The buy-side network fee applies to the WHOLE lot, not just

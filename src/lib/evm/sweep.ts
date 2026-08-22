@@ -16,18 +16,21 @@ export interface EvmSweepResult {
 }
 
 /**
- * Sends whatever WETH sits above `sweepMinBalanceWeth` in the bot's hot
- * wallet to BASE_SWEEP_DESTINATION (a Vercel env var, never stored in the
- * database — see the schema comment on EvmSettings.sweepEnabled). Native
- * ETH (the gas float) is never touched by this function — see the schema
- * comment on EvmSettings for why.
+ * Sends ALL available WETH in the bot's hot wallet to BASE_SWEEP_DESTINATION
+ * (a Vercel env var, never stored in the database — see the schema comment
+ * on EvmSettings.sweepEnabled). Native ETH (the gas float) is never touched
+ * by this function — see the schema comment on EvmSettings for why.
+ *
+ * Unlike Solana (where SOL must stay behind to pay for the bot's own
+ * transactions), WETH pays no fees on Base — there's nothing it needs to be
+ * kept for, so the minimum-to-keep is hardcoded to 0 rather than a
+ * user-editable setting (EvmSettings.sweepMinBalanceWeth still exists in
+ * the schema for backward compatibility but is intentionally ignored here).
  *
  * Always reads the REAL on-chain WETH balance rather than the app's own
  * wethRemaining bookkeeping. The amount sent is floored to 6 decimals
- * (never rounded up), so the wallet always keeps at least
- * sweepMinBalanceWeth — usually a little more. Mirrors
- * runSolanaSweepForUser field-for-field, with one deliberate difference:
- * see reservedWeth below.
+ * (never rounded up). Mirrors runSolanaSweepForUser field-for-field, with
+ * one deliberate difference: see reservedWeth below.
  *
  * IMPORTANT difference from Solana: a Jupiter Trigger order escrows the
  * SOL on-chain the moment it's placed, so a wallet-balance sweep
@@ -107,7 +110,8 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
     const openLots = await db.evmLot.findMany({ where: { userId, status: "OPEN" } });
     const reservedWeth = openLots.reduce((sum, lot) => sum + Number(lot.sellAmountWethPlanned ?? 0), 0);
 
-    const minBalance = Number(settings.sweepMinBalanceWeth);
+    // Hardcoded, not read from settings.sweepMinBalanceWeth — see the function doc above.
+    const minBalance = 0;
     const excess = balanceWeth - reservedWeth - minBalance;
     // Floor to 6 decimals — never round up, so the wallet never dips below minBalance (or into reserved funds).
     const amountWeth = Math.floor(excess * 1_000_000) / 1_000_000;
