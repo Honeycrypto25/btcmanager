@@ -80,9 +80,20 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
         throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
     }
 
-    // Read back the actual network fee paid (base fee + any priority fee), for accurate cost tracking.
-    const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
-    const feeLamports = txInfo?.meta?.fee ?? 0;
+    // Read back the actual network fee paid (base fee + any priority fee), for
+    // accurate cost tracking. confirmTransaction() resolving doesn't guarantee
+    // getTransaction() can find the tx yet — RPC read replicas can lag the
+    // write path by a beat, especially right after sendRawTransaction with
+    // skipPreflight. Retry briefly rather than silently recording a $0 fee.
+    let feeLamports = 0;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+        if (txInfo?.meta) {
+            feeLamports = txInfo.meta.fee;
+            break;
+        }
+        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
 
     return { signature, feeLamports };
 }
