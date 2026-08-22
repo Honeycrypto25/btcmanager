@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Camera, Upload, Receipt as ReceiptIcon, AlertTriangle, Loader2, X, List, BarChart3 } from "lucide-react";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface ReceiptRow {
     id: string;
@@ -55,6 +56,7 @@ type Tab = "list" | "stats";
 
 export function ReceiptsClient({ initialReceipts, r2Configured, categories }: { initialReceipts: ReceiptRow[]; r2Configured: boolean; categories: string[] }) {
     const router = useRouter();
+    const isAdmin = useIsAdmin();
     const [tab, setTab] = useState<Tab>("list");
     const [receipts] = useState(initialReceipts);
     const [uploading, setUploading] = useState(false);
@@ -140,7 +142,7 @@ export function ReceiptsClient({ initialReceipts, r2Configured, categories }: { 
                             </button>
                         ))}
                     </div>
-                    {tab === "list" && (
+                    {tab === "list" && isAdmin && (
                         <div className="flex gap-2">
                             <Button variant="primary" onClick={() => cameraInputRef.current?.click()} disabled={uploading || !r2Configured}>
                                 {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Camera className="w-4 h-4 mr-2" />}

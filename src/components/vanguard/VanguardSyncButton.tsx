@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/core";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 /** Manually triggers the ETF/OEIC price sync (see /api/vanguard/sync) --
  * only affects holdings that have both a ticker/ISIN and a unit count set;
  * everything else stays as-is. Mirrors T212SyncButton.tsx. */
 export function VanguardSyncButton({ onSynced }: { onSynced?: () => void }) {
     const router = useRouter();
+    const isAdmin = useIsAdmin();
     const [syncing, setSyncing] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,8 @@ export function VanguardSyncButton({ onSynced }: { onSynced?: () => void }) {
             setSyncing(false);
         }
     };
+
+    if (!isAdmin) return null;
 
     return (
         <div className="flex flex-col items-end gap-1.5">

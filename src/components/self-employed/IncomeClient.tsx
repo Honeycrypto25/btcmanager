@@ -6,6 +6,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, Trash2, Pencil, X, TrendingUp, BarChart3 } from "lucide-react";
 import { createIncome, updateIncome, deleteIncome, type IncomeInput } from "@/app/actions/self-employed";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface IncomeRow {
     id: string;
@@ -48,6 +49,7 @@ type Tab = "list" | "stats";
 
 export function IncomeClient({ initialIncomes, accounts }: { initialIncomes: IncomeRow[]; accounts: Account[] }) {
     const [tab, setTab] = useState<Tab>("list");
+    const isAdmin = useIsAdmin();
     const [incomes, setIncomes] = useState(initialIncomes);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -180,7 +182,7 @@ export function IncomeClient({ initialIncomes, accounts }: { initialIncomes: Inc
                             </button>
                         ))}
                     </div>
-                    {tab === "list" && (
+                    {tab === "list" && isAdmin && (
                         <Button variant="primary" onClick={openNew}>
                             <Plus className="w-4 h-4 mr-2" />
                             Adaugă venit
@@ -354,12 +356,16 @@ export function IncomeClient({ initialIncomes, accounts }: { initialIncomes: Inc
                                                 <td className="px-6 py-4 text-sm font-medium text-green-400 whitespace-nowrap">{formatGBP(row.amount)}</td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <>
+                                                                <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

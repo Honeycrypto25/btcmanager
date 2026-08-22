@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3 } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
     createVanguardAccount,
     deleteVanguardAccount,
@@ -66,6 +67,7 @@ function formatMoney(amount: number, currency: string): string {
 }
 
 export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRow[] }) {
+    const isAdmin = useIsAdmin();
     const [accounts, setAccounts] = useState(initialAccounts);
     const [syncTick, setSyncTick] = useState(0);
     const [tab, setTab] = useState<Tab>("list");
@@ -134,7 +136,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                         ))}
                     </div>
                     <VanguardSyncButton onSynced={() => setSyncTick((t) => t + 1)} />
-                    {tab === "list" && (
+                    {tab === "list" && isAdmin && (
                         <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
                             {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
                             {showAccountForm ? "Anulează" : "Adaugă cont"}
@@ -300,6 +302,7 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
 }
 
 function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { account: AccountRow; onRemoveAccount: (id: string) => void; setAccounts: React.Dispatch<React.SetStateAction<AccountRow[]>>; syncTick: number }) {
+    const isAdmin = useIsAdmin();
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<VanguardHoldingInput>({ accountId: account.id, fundName: "", costBasis: 0, currentValue: 0 });
     const [editingValueId, setEditingValueId] = useState<string | null>(null);
@@ -391,15 +394,17 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                     <p className="font-medium text-foreground">{account.name}</p>
                     <p className="text-xs text-muted mt-0.5">{account.accountType} · {account.currency}</p>
                 </div>
-                <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => setShowForm(!showForm)}>
-                        {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                        Holding
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => onRemoveAccount(account.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                </div>
+                {isAdmin && (
+                    <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => setShowForm(!showForm)}>
+                            {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                            Holding
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => onRemoveAccount(account.id)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {showForm && (
@@ -485,12 +490,16 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                             <TrendingUp className="w-3.5 h-3.5" />
                                                         </button>
                                                     )}
-                                                    <button onClick={() => { setEditingValueId(h.id); setEditValue(String(h.currentValue)); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
-                                                        <Pencil className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button onClick={() => removeHolding(h.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
+                                                    {isAdmin && (
+                                                        <>
+                                                            <button onClick={() => { setEditingValueId(h.id); setEditValue(String(h.currentValue)); }} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button onClick={() => removeHolding(h.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

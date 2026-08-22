@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Car, Gauge } from "lucide-react";
 import { createVehicle, type VehicleInput } from "@/app/actions/vehicles";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface VehicleRow {
     id: string;
@@ -36,6 +37,7 @@ const statusLabel: Record<string, string> = {
 
 export function VehiclesClient({ initialVehicles }: { initialVehicles: VehicleRow[] }) {
     const router = useRouter();
+    const isAdmin = useIsAdmin();
     const [vehicles, setVehicles] = useState(initialVehicles);
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<VehicleInput>(emptyForm);
@@ -82,10 +84,12 @@ export function VehiclesClient({ initialVehicles }: { initialVehicles: VehicleRo
                     </h1>
                     <p className="text-muted text-sm">{vehicles.length} vehicule</p>
                 </div>
-                <Button variant="primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                    {showForm ? "Anulează" : "Adaugă vehicul"}
-                </Button>
+                {isAdmin && (
+                    <Button variant="primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                        {showForm ? "Anulează" : "Adaugă vehicul"}
+                    </Button>
+                )}
             </div>
 
             {showForm && (

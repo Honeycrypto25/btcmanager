@@ -20,6 +20,7 @@ import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const PAGE_SIZE = 10;
 
@@ -50,6 +51,7 @@ export function SolanaStatsClient({
     sweeps: SweepDTO[];
     fuelStatus: FuelStatus | { error: string };
 }) {
+    const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -490,10 +492,12 @@ export function SolanaStatsClient({
                     <div className="flex items-center gap-3">
                         {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
                         {checkError && <span className="text-xs text-red-300">{checkError}</span>}
-                        <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
-                            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", checking && "animate-spin")} />
-                            {checking ? "Se verifică..." : "Verifică acum"}
-                        </Button>
+                        {isAdmin && (
+                            <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
+                                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", checking && "animate-spin")} />
+                                {checking ? "Se verifică..." : "Verifică acum"}
+                            </Button>
+                        )}
                     </div>
                 </div>
                 <p className="mb-4 text-xs text-faint">

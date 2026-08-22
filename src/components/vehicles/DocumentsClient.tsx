@@ -6,6 +6,7 @@ import { Card, Button, cn } from "@/components/ui/core";
 import { Upload, Trash2, ExternalLink, FileText, AlertTriangle, Pencil, Archive } from "lucide-react";
 import { deleteDocument, updateDocumentDetails } from "@/app/actions/documents";
 import { computeExpiryStatus, isPastRetention } from "@/lib/documents/lifecycle";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface DocumentRow {
     id: string;
@@ -38,6 +39,7 @@ function expiryBadge(expiryDate: string | null) {
 const CATEGORIES = ["Insurance", "MOT", "Warranty", "ID", "Contract", "Other"];
 
 export function DocumentsClient({ initialDocuments, vehicles, r2Configured }: { initialDocuments: DocumentRow[]; vehicles: { id: string; name: string }[]; r2Configured: boolean }) {
+    const isAdmin = useIsAdmin();
     const [documents, setDocuments] = useState(initialDocuments);
     const [category, setCategory] = useState("Other");
     const [vehicleId, setVehicleId] = useState("");
@@ -169,10 +171,14 @@ export function DocumentsClient({ initialDocuments, vehicles, r2Configured }: { 
                             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                         </select>
                     </div>
-                    <Button variant="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading || !r2Configured}>
-                        <Upload className="w-4 h-4 mr-2" /> {uploading ? "Se încarcă..." : "Încarcă document"}
-                    </Button>
-                    <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+                    {isAdmin && (
+                        <>
+                            <Button variant="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading || !r2Configured}>
+                                <Upload className="w-4 h-4 mr-2" /> {uploading ? "Se încarcă..." : "Încarcă document"}
+                            </Button>
+                            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+                        </>
+                    )}
                 </div>
                 {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
             </Card>
@@ -245,15 +251,19 @@ export function DocumentsClient({ initialDocuments, vehicles, r2Configured }: { 
                                                 <td className="px-6 py-4 text-sm text-muted">{format(new Date(d.createdAt), "dd MMM yyyy")}</td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => setEditingId(editingId === d.id ? null : d.id)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <button onClick={() => setEditingId(editingId === d.id ? null : d.id)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
                                                         <button onClick={() => viewDocument(d.id)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
                                                             <ExternalLink className="w-3.5 h-3.5" />
                                                         </button>
-                                                        <button onClick={() => remove(d.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10" disabled={isPending}>
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <button onClick={() => remove(d.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10" disabled={isPending}>
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

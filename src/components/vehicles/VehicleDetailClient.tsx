@@ -10,6 +10,7 @@ import { createFuelEntry, deleteFuelEntry, createMaintenanceRecord, deleteMainte
 import { deleteDocument } from "@/app/actions/documents";
 import { computeExpiryStatus } from "@/lib/documents/lifecycle";
 import { mpgToL100km, costPerMileToCostPerKm, milesToKm } from "@/lib/vehicles/stats";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface VehicleData {
     id: string;
@@ -162,6 +163,7 @@ type Tab = "overview" | "fuel" | "statistici" | "maintenance" | "documents";
 
 export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fuelEntries: FuelEntryRow[]; fuelStats: FuelStat[]; fuelReceipts: FuelReceiptRow[]; maintenance: MaintenanceRow[]; documents: DocumentRow[]; analytics: AnalyticsData } }) {
     const router = useRouter();
+    const isAdmin = useIsAdmin();
     const [tab, setTab] = useState<Tab>("overview");
     const [fuelEntries, setFuelEntries] = useState(data.fuelEntries);
     const [maintenance, setMaintenance] = useState(data.maintenance);
@@ -189,9 +191,11 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
                         {[data.vehicle.make, data.vehicle.model, data.vehicle.year, data.vehicle.registrationNumber].filter(Boolean).join(" · ") || "—"}
                     </p>
                 </div>
-                <Button variant="danger" size="sm" onClick={removeVehicle} disabled={isPending}>
-                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Șterge vehicul
-                </Button>
+                {isAdmin && (
+                    <Button variant="danger" size="sm" onClick={removeVehicle} disabled={isPending}>
+                        <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Șterge vehicul
+                    </Button>
+                )}
             </div>
 
             <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1 w-fit">
@@ -269,6 +273,7 @@ export function VehicleDetailClient({ data }: { data: { vehicle: VehicleData; fu
 }
 
 function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehicleId: string; entries: FuelEntryRow[]; setEntries: React.Dispatch<React.SetStateAction<FuelEntryRow[]>>; stats: FuelStat[]; fuelReceipts: FuelReceiptRow[] }) {
+    const isAdmin = useIsAdmin();
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<FuelEntryInput>({ vehicleId, date: new Date().toISOString().slice(0, 10), quantity: 0, cost: 0, isFullTank: true });
     const [isPending, startTransition] = useTransition();
@@ -320,10 +325,12 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
                         ? `Medie: ${avgMpg.toFixed(1)} mpg · ${formatGBP(avgCostPerMile)}/milă${fuelReceipts.some((r) => r.vehicleMileage !== null) ? " (include chitanțele legate cu kilometraj)" : ""}`
                         : "Nu există încă suficiente alimentări complete pentru calcul MPG."}
                 </p>
-                <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                    {showForm ? "Anulează" : "Adaugă alimentare"}
-                </Button>
+                {isAdmin && (
+                    <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                        {showForm ? "Anulează" : "Adaugă alimentare"}
+                    </Button>
+                )}
             </div>
 
             {showForm && (
@@ -388,9 +395,11 @@ function FuelTab({ vehicleId, entries, setEntries, stats, fuelReceipts }: { vehi
                                         <td className="px-6 py-4 text-sm text-muted">{e.quantity.toFixed(2)} L {!e.isFullTank && <span className="text-faint">(parțial)</span>}</td>
                                         <td className="px-6 py-4 text-sm font-medium text-foreground">{formatGBP(e.cost)}</td>
                                         <td className="px-6 py-4 text-right">
-                                            <button onClick={() => remove(e.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                                            {isAdmin && (
+                                                <button onClick={() => remove(e.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))
@@ -694,6 +703,7 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
 }
 
 function MaintenanceTab({ vehicleId, records, setRecords }: { vehicleId: string; records: MaintenanceRow[]; setRecords: React.Dispatch<React.SetStateAction<MaintenanceRow[]>> }) {
+    const isAdmin = useIsAdmin();
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<MaintenanceInput>({ vehicleId, type: "Service", date: new Date().toISOString().slice(0, 10) });
     const [isPending, startTransition] = useTransition();
@@ -727,12 +737,14 @@ function MaintenanceTab({ vehicleId, records, setRecords }: { vehicleId: string;
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end">
-                <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
-                    {showForm ? "Anulează" : "Adaugă mentenanță"}
-                </Button>
-            </div>
+            {isAdmin && (
+                <div className="flex justify-end">
+                    <Button variant="primary" size="sm" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <X className="w-3.5 h-3.5 mr-1.5" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+                        {showForm ? "Anulează" : "Adaugă mentenanță"}
+                    </Button>
+                </div>
+            )}
 
             {showForm && (
                 <Card className="p-5 border-primary/30">
@@ -803,9 +815,11 @@ function MaintenanceTab({ vehicleId, records, setRecords }: { vehicleId: string;
                                         </td>
                                         <td className="px-6 py-4"><StatusBadge status={r.status} /></td>
                                         <td className="px-6 py-4 text-right">
-                                            <button onClick={() => remove(r.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
+                                            {isAdmin && (
+                                                <button onClick={() => remove(r.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))
@@ -819,6 +833,7 @@ function MaintenanceTab({ vehicleId, records, setRecords }: { vehicleId: string;
 }
 
 function DocumentsTab({ vehicleId, documents, setDocuments }: { vehicleId: string; documents: DocumentRow[]; setDocuments: React.Dispatch<React.SetStateAction<DocumentRow[]>> }) {
+    const isAdmin = useIsAdmin();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [category, setCategory] = useState("Insurance");
     const [uploading, setUploading] = useState(false);
@@ -868,10 +883,14 @@ function DocumentsTab({ vehicleId, documents, setDocuments }: { vehicleId: strin
                     <option>Warranty</option>
                     <option>Other</option>
                 </select>
-                <Button variant="primary" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                    <Upload className="w-3.5 h-3.5 mr-1.5" /> Încarcă document
-                </Button>
-                <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+                {isAdmin && (
+                    <>
+                        <Button variant="primary" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                            <Upload className="w-3.5 h-3.5 mr-1.5" /> Încarcă document
+                        </Button>
+                        <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+                    </>
+                )}
             </div>
             {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -918,9 +937,11 @@ function DocumentsTab({ vehicleId, documents, setDocuments }: { vehicleId: strin
                                                 <button onClick={() => viewDocument(d.id)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
                                                     <ExternalLink className="w-3.5 h-3.5" />
                                                 </button>
-                                                <button onClick={() => remove(d.id)} disabled={isPending} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                                {isAdmin && (
+                                                    <button onClick={() => remove(d.id)} disabled={isPending} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

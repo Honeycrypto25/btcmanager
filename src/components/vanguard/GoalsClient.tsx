@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Trash2, Target, Check } from "lucide-react";
 import { createGoal, updateGoalProgress, deleteGoal, type GoalInput } from "@/app/actions/goals";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface GoalRow {
     id: string;
@@ -27,6 +28,7 @@ function formatMoney(amount: number, currency: string): string {
 const CATEGORIES = ["Savings", "Investment", "Debt payoff", "Emergency fund", "Other"];
 
 export function GoalsClient({ initialGoals }: { initialGoals: GoalRow[] }) {
+    const isAdmin = useIsAdmin();
     const [goals, setGoals] = useState(initialGoals);
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState<GoalInput>({ title: "", targetAmount: 0, currentAmount: 0, currency: "GBP" });
@@ -84,10 +86,12 @@ export function GoalsClient({ initialGoals }: { initialGoals: GoalRow[] }) {
                     </h1>
                     <p className="text-muted text-sm">{goals.length} obiective · {goals.filter((g) => g.isAchieved).length} atinse</p>
                 </div>
-                <Button variant="primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                    {showForm ? "Anulează" : "Adaugă obiectiv"}
-                </Button>
+                {isAdmin && (
+                    <Button variant="primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                        {showForm ? "Anulează" : "Adaugă obiectiv"}
+                    </Button>
+                )}
             </div>
 
             {showForm && (
@@ -152,9 +156,11 @@ export function GoalsClient({ initialGoals }: { initialGoals: GoalRow[] }) {
                                             {g.targetDate && ` · până la ${format(new Date(g.targetDate), "dd MMM yyyy")}`}
                                         </p>
                                     </div>
-                                    <button onClick={() => remove(g.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    {isAdmin && (
+                                        <button onClick={() => remove(g.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
                                 </div>
 
                                 <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden mb-2 mt-3">
@@ -169,7 +175,7 @@ export function GoalsClient({ initialGoals }: { initialGoals: GoalRow[] }) {
                                             <button onClick={() => setEditingProgressId(null)} className="p-1 rounded text-muted hover:bg-white/5"><X className="w-3.5 h-3.5" /></button>
                                         </div>
                                     ) : (
-                                        <button onClick={() => { setEditingProgressId(g.id); setProgressValue(String(g.currentAmount)); }} className="text-sm text-foreground hover:text-primary">
+                                        <button onClick={() => { if (!isAdmin) return; setEditingProgressId(g.id); setProgressValue(String(g.currentAmount)); }} className={cn("text-sm text-foreground", isAdmin && "hover:text-primary")}>
                                             {formatMoney(g.currentAmount, g.currency)} <span className="text-muted">/ {formatMoney(g.targetAmount, g.currency)}</span>
                                         </button>
                                     )}

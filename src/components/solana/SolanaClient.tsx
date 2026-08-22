@@ -27,6 +27,7 @@ export function SolanaClient({
     botWallet: { address: string } | { error: string };
     sweepDestination: { address: string } | { error: string };
 }) {
+    const isAdmin = useIsAdmin();
     const [settings, setSettings] = useState<SettingsDTO | null>(initialSettings);
     const [form, setForm] = useState<SolanaSettingsInput>({
         enabled: initialSettings?.enabled ?? false,
@@ -172,12 +173,14 @@ export function SolanaClient({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-3">
-                    <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary" size="sm">
-                        <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum, ca să verific că totul e în regulă"}
-                    </Button>
+                    {isAdmin && (
+                        <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary" size="sm">
+                            <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum, ca să verific că totul e în regulă"}
+                        </Button>
+                    )}
                     {runMessage && <span className="text-sm text-muted">{runMessage}</span>}
                     {error && <span className="text-sm text-red-300">{error}</span>}
-                    {!settings && <span className="text-xs text-faint">Salvează întâi setările mai jos.</span>}
+                    {!settings && isAdmin && <span className="text-xs text-faint">Salvează întâi setările mai jos.</span>}
                 </div>
             </Card>
 
@@ -186,7 +189,7 @@ export function SolanaClient({
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <h2 className="text-sm font-medium text-foreground">Setări</h2>
-                        {settings && !editing && (
+                        {settings && !editing && isAdmin && (
                             <Button onClick={() => setEditing(true)} variant="outline" size="sm">
                                 <Pencil className="h-3.5 w-3.5" /> Editează
                             </Button>
@@ -288,16 +291,18 @@ export function SolanaClient({
                 )}
                 {runMessage && <p className="text-sm text-muted">{runMessage}</p>}
 
-                <div className="flex flex-wrap gap-3">
-                    {editing && (
-                        <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
-                            <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează setările"}
+                {isAdmin && (
+                    <div className="flex flex-wrap gap-3">
+                        {editing && (
+                            <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
+                                <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează setările"}
+                            </Button>
+                        )}
+                        <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary">
+                            <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum (test)"}
                         </Button>
-                    )}
-                    <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary">
-                        <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum (test)"}
-                    </Button>
-                </div>
+                    </div>
+                )}
                 <p className="text-xs text-faint">
                     Portofelul trebuie să aibă în prealabil USDC (pentru cumpărare) și puțin SOL (pentru fee-uri de rețea).
                     Cheia privată se citește din variabila de mediu <code>SOLANA_PRIVATE_KEY</code> din Vercel — nu e stocată în baza de date.
@@ -309,7 +314,7 @@ export function SolanaClient({
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <h2 className="text-sm font-medium text-foreground">Retragere automată lunară</h2>
-                        {settings && !editing && (
+                        {settings && !editing && isAdmin && (
                             <Button onClick={() => setEditing(true)} variant="outline" size="sm">
                                 <Pencil className="h-3.5 w-3.5" /> Editează
                             </Button>
@@ -378,20 +383,22 @@ export function SolanaClient({
 
                 {sweepMessage && <p className="text-sm text-muted">{sweepMessage}</p>}
 
-                <div className="flex flex-wrap gap-3">
-                    {editing && (
-                        <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
-                            <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează"}
+                {isAdmin && (
+                    <div className="flex flex-wrap gap-3">
+                        {editing && (
+                            <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
+                                <Save className="h-4 w-4" /> {saving ? "Se salvează..." : "Salvează"}
+                            </Button>
+                        )}
+                        <Button
+                            onClick={handleSweepNow}
+                            disabled={sweeping || !settings || "error" in sweepDestination}
+                            variant="secondary"
+                        >
+                            <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
                         </Button>
-                    )}
-                    <Button
-                        onClick={handleSweepNow}
-                        disabled={sweeping || !settings || "error" in sweepDestination}
-                        variant="secondary"
-                    >
-                        <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
-                    </Button>
-                </div>
+                    </div>
+                )}
             </Card>
 
             {showSweepConfirm && (

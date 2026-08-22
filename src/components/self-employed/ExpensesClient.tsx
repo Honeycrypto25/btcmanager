@@ -6,6 +6,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, Trash2, Pencil, X, Receipt, Tag, Eye, TrendingDown, BarChart3 } from "lucide-react";
 import { createExpense, updateExpense, updateExpenseCategory, deleteExpense, type ExpenseInput } from "@/app/actions/self-employed";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface ExpenseRow {
     id: string;
@@ -60,6 +61,8 @@ type Tab = "list" | "stats";
 
 export function ExpensesClient({ initialExpenses, categories, accounts }: { initialExpenses: ExpenseRow[]; categories: string[]; accounts: Account[] }) {
     const [tab, setTab] = useState<Tab>("list");
+    const isAdmin = useIsAdmin();
+    const isAdmin = useIsAdmin();
     const [expenses, setExpenses] = useState(initialExpenses);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -231,7 +234,7 @@ export function ExpensesClient({ initialExpenses, categories, accounts }: { init
                             </button>
                         ))}
                     </div>
-                    {tab === "list" && (
+                    {tab === "list" && isAdmin && (
                         <Button variant="primary" onClick={openNew}>
                             <Plus className="w-4 h-4 mr-2" />
                             Adaugă cheltuială
@@ -464,13 +467,15 @@ export function ExpensesClient({ initialExpenses, categories, accounts }: { init
                                                     ) : (
                                                         <div className="flex items-center gap-1.5">
                                                             <span>{categoryPendingId === row.id ? "Se salvează..." : row.category}</span>
-                                                            <button
-                                                                onClick={() => setEditingCategoryId(row.id)}
-                                                                title="Schimbă categoria"
-                                                                className="p-1 rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-white/5 transition-opacity"
-                                                            >
-                                                                <Tag className="w-3 h-3" />
-                                                            </button>
+                                                            {isAdmin && (
+                                                                <button
+                                                                    onClick={() => setEditingCategoryId(row.id)}
+                                                                    title="Schimbă categoria"
+                                                                    className="p-1 rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-primary hover:bg-white/5 transition-opacity"
+                                                                >
+                                                                    <Tag className="w-3 h-3" />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </td>
@@ -488,12 +493,16 @@ export function ExpensesClient({ initialExpenses, categories, accounts }: { init
                                                                 <Eye className="w-3.5 h-3.5" />
                                                             </a>
                                                         )}
-                                                        <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
-                                                            <Pencil className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <>
+                                                                <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

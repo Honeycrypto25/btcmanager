@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/core";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export function T212SyncButton() {
     const router = useRouter();
+    const isAdmin = useIsAdmin();
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -23,6 +25,8 @@ export function T212SyncButton() {
             setSyncing(false);
         }
     };
+
+    if (!isAdmin) return null;
 
     return (
         <div className="flex flex-col items-end gap-1.5">

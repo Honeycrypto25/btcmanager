@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Check, RotateCcw, Trash2, BellRing } from "lucide-react";
 import { createReminder, dismissReminder, reopenReminder, deleteReminder, type ReminderInput } from "@/app/actions/reminders";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface ReminderRow {
     id: string;
@@ -37,6 +38,7 @@ const urgencyDot: Record<string, string> = {
 const inputClass = "w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors";
 
 export function RemindersClient({ initialReminders, vehicles }: { initialReminders: ReminderRow[]; vehicles: { id: string; name: string }[] }) {
+    const isAdmin = useIsAdmin();
     const [reminders, setReminders] = useState(initialReminders);
     const [showDismissed, setShowDismissed] = useState(false);
     const [showForm, setShowForm] = useState(false);
@@ -105,10 +107,12 @@ export function RemindersClient({ initialReminders, vehicles }: { initialReminde
                         {overdueCount === 0 && dueSoonCount === 0 && "Totul la zi"}
                     </p>
                 </div>
-                <Button variant="primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                    {showForm ? "Anulează" : "Adaugă reminder"}
-                </Button>
+                {isAdmin && (
+                    <Button variant="primary" onClick={() => setShowForm(!showForm)}>
+                        {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                        {showForm ? "Anulează" : "Adaugă reminder"}
+                    </Button>
+                )}
             </div>
 
             {showForm && (
@@ -176,12 +180,16 @@ export function RemindersClient({ initialReminders, vehicles }: { initialReminde
                                 <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider", urgencyStyles[r.urgency])}>
                                     {urgencyLabels[r.urgency]}
                                 </span>
-                                <button onClick={() => toggleDismiss(r)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5" disabled={isPending} title={r.isDismissed ? "Redeschide" : "Marchează rezolvat"}>
-                                    {r.isDismissed ? <RotateCcw className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                                </button>
-                                <button onClick={() => remove(r.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10" disabled={isPending}>
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {isAdmin && (
+                                    <>
+                                        <button onClick={() => toggleDismiss(r)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5" disabled={isPending} title={r.isDismissed ? "Redeschide" : "Marchează rezolvat"}>
+                                            {r.isDismissed ? <RotateCcw className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <button onClick={() => remove(r.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10" disabled={isPending}>
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </Card>
                     ))}

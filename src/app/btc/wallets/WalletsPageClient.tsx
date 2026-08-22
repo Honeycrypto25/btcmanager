@@ -16,6 +16,7 @@ import {
     Box
 } from "lucide-react";
 import axios from 'axios';
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface Wallet {
     id: string;
@@ -26,6 +27,7 @@ interface Wallet {
 }
 
 export default function WalletsPageClient() {
+    const isAdmin = useIsAdmin();
     const [wallets, setWallets] = useState<Wallet[]>([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
@@ -123,25 +125,27 @@ export default function WalletsPageClient() {
                         Track and monitor Bitcoin addresses for DCA analysis.
                     </p>
                 </div>
-                <div className="flex gap-3">
-                    <Button
-                        variant="ghost"
-                        onClick={handleRefreshAll}
-                        disabled={syncingAll || loading}
-                        className="rounded-lg border border-border text-foreground font-medium hover:bg-white/5 py-2.5 px-6 transition-colors"
-                    >
-                        <RefreshCcw className={cn("w-5 h-5 mr-2", syncingAll ? "animate-spin" : "")} />
-                        Refresh All
-                    </Button>
-                    <Button
-                        variant="primary"
-                        onClick={() => setShowAddForm(true)}
-                        className="rounded-lg py-2.5 px-6"
-                    >
-                        <Plus className="w-5 h-5 mr-2" />
-                        Add Address
-                    </Button>
-                </div>
+                {isAdmin && (
+                    <div className="flex gap-3">
+                        <Button
+                            variant="ghost"
+                            onClick={handleRefreshAll}
+                            disabled={syncingAll || loading}
+                            className="rounded-lg border border-border text-foreground font-medium hover:bg-white/5 py-2.5 px-6 transition-colors"
+                        >
+                            <RefreshCcw className={cn("w-5 h-5 mr-2", syncingAll ? "animate-spin" : "")} />
+                            Refresh All
+                        </Button>
+                        <Button
+                            variant="primary"
+                            onClick={() => setShowAddForm(true)}
+                            className="rounded-lg py-2.5 px-6"
+                        >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Add Address
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Search & Stats */}
@@ -170,7 +174,7 @@ export default function WalletsPageClient() {
                             <Bitcoin className="text-faint w-10 h-10" />
                         </div>
                         <p className="text-muted font-medium">No Bitcoin addresses found.</p>
-                        <Button variant="outline" onClick={() => setShowAddForm(true)}>Add your first address</Button>
+                        {isAdmin && <Button variant="outline" onClick={() => setShowAddForm(true)}>Add your first address</Button>}
                     </Card>
                 ) : (
                     filteredWallets.map(wallet => (
@@ -201,25 +205,27 @@ export default function WalletsPageClient() {
                                     <p className="text-xl font-medium text-foreground">{wallet._count?.transactions || 0}</p>
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="w-12 h-12 rounded-2xl bg-glass border border-border hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
-                                        onClick={() => handleSyncWallet(wallet.id)}
-                                        disabled={syncing === wallet.id}
-                                    >
-                                        <RefreshCcw className={cn("w-4 h-4", syncing === wallet.id ? "animate-spin" : "")} />
-                                    </Button>
-                                    <Button
-                                        variant="danger"
-                                        size="icon"
-                                        className="w-12 h-12 rounded-2xl"
-                                        onClick={() => handleDeleteWallet(wallet.id)}
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                </div>
+                                {isAdmin && (
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="w-12 h-12 rounded-2xl bg-glass border border-border hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
+                                            onClick={() => handleSyncWallet(wallet.id)}
+                                            disabled={syncing === wallet.id}
+                                        >
+                                            <RefreshCcw className={cn("w-4 h-4", syncing === wallet.id ? "animate-spin" : "")} />
+                                        </Button>
+                                        <Button
+                                            variant="danger"
+                                            size="icon"
+                                            className="w-12 h-12 rounded-2xl"
+                                            onClick={() => handleDeleteWallet(wallet.id)}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </Card>
                     ))
@@ -227,7 +233,7 @@ export default function WalletsPageClient() {
             </div>
 
             {/* Add Wallet Modal Modal */}
-            {showAddForm && (
+            {showAddForm && isAdmin && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-6">
                     <Card className="max-w-xl w-full p-10 space-y-8 animate-in fade-in zoom-in duration-300">
                         <div className="flex justify-between items-center">

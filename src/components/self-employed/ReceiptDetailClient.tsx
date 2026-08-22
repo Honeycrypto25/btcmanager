@@ -4,6 +4,7 @@ import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui/core";
 import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car, Receipt as ReceiptIcon, Undo2 } from "lucide-react";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
     updateReceiptDetails,
     deleteReceipt,
@@ -62,6 +63,7 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
     const [error, setError] = useState<string | null>(null);
     const [assistMessage, setAssistMessage] = useState<string | null>(null);
 
+    const isAdmin = useIsAdmin();
     const [vehicleId, setVehicleId] = useState(receipt.vehicleId || "");
     const [vehicleMileage, setVehicleMileage] = useState(receipt.vehicleMileage?.toString() || "");
     const [fuelQuantityLitres, setFuelQuantityLitres] = useState(receipt.fuelQuantityLitres?.toString() || "");
@@ -255,22 +257,24 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                 </Card>
 
                 <Card className="p-5 sm:p-6 space-y-4">
-                    <div className="flex flex-wrap gap-2">
-                        {["image/heic", "image/heif", "image/jpeg", "image/jpg", "image/png"].includes(receipt.originalMimeType) && !receipt.hasPreview && (
-                            <Button variant="outline" size="sm" onClick={generatePreview} disabled={isPending}>
-                                <ImageOff className="w-3.5 h-3.5 mr-2" />
-                                Generează preview
+                    {isAdmin && (
+                        <div className="flex flex-wrap gap-2">
+                            {["image/heic", "image/heif", "image/jpeg", "image/jpg", "image/png"].includes(receipt.originalMimeType) && !receipt.hasPreview && (
+                                <Button variant="outline" size="sm" onClick={generatePreview} disabled={isPending}>
+                                    <ImageOff className="w-3.5 h-3.5 mr-2" />
+                                    Generează preview
+                                </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={runOcr} disabled={isPending}>
+                                <ScanText className="w-3.5 h-3.5 mr-2" />
+                                Rulează OCR
                             </Button>
-                        )}
-                        <Button variant="outline" size="sm" onClick={runOcr} disabled={isPending}>
-                            <ScanText className="w-3.5 h-3.5 mr-2" />
-                            Rulează OCR
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={analyzeWithAI} disabled={isPending}>
-                            <Sparkles className="w-3.5 h-3.5 mr-2" />
-                            Analyze with AI
-                        </Button>
-                    </div>
+                            <Button variant="outline" size="sm" onClick={analyzeWithAI} disabled={isPending}>
+                                <Sparkles className="w-3.5 h-3.5 mr-2" />
+                                Analyze with AI
+                            </Button>
+                        </div>
+                    )}
                     {assistMessage && <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2">{assistMessage}</p>}
 
                     {ocrText && (
@@ -387,28 +391,32 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                             )}
                             {convertError && <p className="text-xs text-red-400 mt-1">{convertError}</p>}
                         </div>
-                        <div className="pt-3">
-                            {convertedExpenseId ? (
-                                <Button variant="outline" size="sm" onClick={undoConvertToExpense} disabled={isPending}>
-                                    <Undo2 className="w-3.5 h-3.5 mr-1.5" /> Anulează conversia
-                                </Button>
-                            ) : (
-                                <Button variant="outline" size="sm" onClick={convertToExpense} disabled={isPending || !form.amount || !form.receiptDate}>
-                                    <ReceiptIcon className="w-3.5 h-3.5 mr-1.5" /> Convertește în cheltuială
-                                </Button>
-                            )}
-                        </div>
+                        {isAdmin && (
+                            <div className="pt-3">
+                                {convertedExpenseId ? (
+                                    <Button variant="outline" size="sm" onClick={undoConvertToExpense} disabled={isPending}>
+                                        <Undo2 className="w-3.5 h-3.5 mr-1.5" /> Anulează conversia
+                                    </Button>
+                                ) : (
+                                    <Button variant="outline" size="sm" onClick={convertToExpense} disabled={isPending || !form.amount || !form.receiptDate}>
+                                        <ReceiptIcon className="w-3.5 h-3.5 mr-1.5" /> Convertește în cheltuială
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                        <Button variant="primary" onClick={save} disabled={isPending}>
-                            {isPending ? "Se salvează..." : "Salvează"}
-                        </Button>
-                        <Button variant="danger" onClick={remove} disabled={isPending}>
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Șterge
-                        </Button>
-                    </div>
+                    {isAdmin && (
+                        <div className="flex gap-2 pt-2">
+                            <Button variant="primary" onClick={save} disabled={isPending}>
+                                {isPending ? "Se salvează..." : "Salvează"}
+                            </Button>
+                            <Button variant="danger" onClick={remove} disabled={isPending}>
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Șterge
+                            </Button>
+                        </div>
+                    )}
                 </Card>
             </div>
 
@@ -466,9 +474,11 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                     </div>
                     {vehicleLinkError && <p className="text-sm text-red-400">{vehicleLinkError}</p>}
                     {vehicleLinkSaved && <p className="text-sm text-green-400">Salvat.</p>}
-                    <Button variant="outline" size="sm" onClick={saveVehicleLink} disabled={isPending}>
-                        Salvează legătura cu vehiculul
-                    </Button>
+                    {isAdmin && (
+                        <Button variant="outline" size="sm" onClick={saveVehicleLink} disabled={isPending}>
+                            Salvează legătura cu vehiculul
+                        </Button>
+                    )}
                 </Card>
             )}
         </div>
