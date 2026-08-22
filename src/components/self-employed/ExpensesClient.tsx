@@ -62,7 +62,6 @@ type Tab = "list" | "stats";
 export function ExpensesClient({ initialExpenses, categories, accounts }: { initialExpenses: ExpenseRow[]; categories: string[]; accounts: Account[] }) {
     const [tab, setTab] = useState<Tab>("list");
     const isAdmin = useIsAdmin();
-    const isAdmin = useIsAdmin();
     const [expenses, setExpenses] = useState(initialExpenses);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
