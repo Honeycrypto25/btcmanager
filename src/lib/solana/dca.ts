@@ -79,7 +79,14 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
             const feeUsd = fill && fill.feeMint === USDC_MINT ? fromRawAmount(fill.feeAmount, USDC_DECIMALS) : 0;
 
             const costBasisUsd = Number(lot.buyPriceUsd) * solSold;
-            const realizedPnlUsd = proceedsUsd - feeUsd - costBasisUsd;
+            // The buy-side network fee applies to the WHOLE lot, not just
+            // the slice being sold here — allocate it proportionally so a
+            // lot that's only partially sold doesn't have the full buy fee
+            // charged against just this sale. This is what "net P&L" is
+            // supposed to mean per the schema comment on realizedPnlUsd.
+            const solAcquiredNum = Number(lot.solAcquired);
+            const buyFeeShare = solAcquiredNum > 0 ? Number(lot.buyFeeUsd) * (solSold / solAcquiredNum) : 0;
+            const realizedPnlUsd = proceedsUsd - feeUsd - costBasisUsd - buyFeeShare;
 
             await db.solanaLot.update({
                 where: { id: lot.id },

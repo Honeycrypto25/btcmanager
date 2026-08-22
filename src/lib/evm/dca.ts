@@ -76,7 +76,15 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
             const wethSold = Number(formatUnits(order.data.makingAmount, WETH_DECIMALS));
             const proceedsUsd = Number(formatUnits(order.data.takingAmount, USDC_DECIMALS));
             const costBasisUsd = Number(lot.buyPriceUsd) * wethSold;
-            const realizedPnlUsd = proceedsUsd - costBasisUsd;
+            // The buy-side gas fee applies to the WHOLE lot, not just the
+            // slice being sold here — allocate it proportionally so a lot
+            // that's only partially sold doesn't have the full buy fee
+            // charged against just this sale. Tiny on Base (a fraction of
+            // a cent) but this is what "net P&L" is supposed to mean per
+            // the schema comment on realizedPnlUsd.
+            const wethAcquiredNum = Number(lot.wethAcquired);
+            const buyFeeShare = wethAcquiredNum > 0 ? Number(lot.buyFeeUsd) * (wethSold / wethAcquiredNum) : 0;
+            const realizedPnlUsd = proceedsUsd - costBasisUsd - buyFeeShare;
 
             await db.evmLot.update({
                 where: { id: lot.id },
