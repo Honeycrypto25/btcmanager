@@ -1,6 +1,7 @@
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, Button } from "@/components/ui/core";
@@ -19,11 +20,7 @@ import PriceChart from "@/components/dashboard/PriceChart";
 import { DashboardRefreshButton } from "@/components/dashboard/DashboardRefreshButton";
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
-
-  if (!session) {
-    redirect("/auth/signin");
-  }
+  const session = await requireSectionAccess("btc");
 
   // Fetch initial data
   const currentPrice = await getCurrentBtcPrice();

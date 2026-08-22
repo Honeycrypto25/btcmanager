@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getOverviewData } from "@/lib/overview-data";
@@ -14,8 +15,7 @@ import { getExchangeRate } from "@/lib/fx";
 import { getBtcEvolution, getT212Evolution, getVanguardEvolution, type AssetEvolution, type ValuePoint } from "@/lib/overview-evolution";
 
 export default async function OverviewPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireAdminPage();
 
     const { data, usdToGbp } = await getOverviewData();
 

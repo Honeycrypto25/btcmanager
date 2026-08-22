@@ -1,6 +1,7 @@
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
@@ -8,11 +9,7 @@ import { getCurrentBtcPrice } from "@/lib/btc";
 import HistoryClient from "./HistoryClient";
 
 export default async function HistoryPage() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        redirect("/auth/signin");
-    }
+    const session = await requireSectionAccess("btc");
 
     // Fetch current BTC price
     const currentPrice = await getCurrentBtcPrice();

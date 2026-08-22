@@ -4,13 +4,13 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ensureRoadmapSeeded, listDevTasks } from "@/app/actions/dev-tasks";
 import { TasksClient } from "@/components/tasks/TasksClient";
 
 export default async function TasksPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireAdminPage();
 
     await ensureRoadmapSeeded();
     const tasks = await listDevTasks();

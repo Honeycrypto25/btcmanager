@@ -4,14 +4,14 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listReminders } from "@/app/actions/reminders";
 import { listVehicles } from "@/app/actions/vehicles";
 import { RemindersClient } from "@/components/vehicles/RemindersClient";
 
 export default async function RemindersPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("vehicles");
 
     const [reminders, vehicles] = await Promise.all([listReminders(true), listVehicles()]);
 

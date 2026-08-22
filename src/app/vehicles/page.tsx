@@ -4,13 +4,13 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listVehicles, getVehicleOverallStatus } from "@/app/actions/vehicles";
 import { VehiclesClient } from "@/components/vehicles/VehiclesClient";
 
 export default async function VehiclesPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("vehicles");
 
     const vehicles = await listVehicles();
     const withStatus = await Promise.all(

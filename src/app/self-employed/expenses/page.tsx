@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listExpenses } from "@/app/actions/self-employed";
 import { listBankAccounts } from "@/app/actions/bank";
@@ -11,8 +12,7 @@ import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { ExpensesClient } from "@/components/self-employed/ExpensesClient";
 
 export default async function ExpensesPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("selfEmployed");
 
     const [expenses, accounts] = await Promise.all([listExpenses(), listBankAccounts()]);
 

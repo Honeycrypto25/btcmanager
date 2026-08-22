@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listDocuments } from "@/app/actions/documents";
 import { listVehicles } from "@/app/actions/vehicles";
@@ -11,8 +12,7 @@ import { isR2Configured } from "@/lib/r2/client";
 import { DocumentsClient } from "@/components/vehicles/DocumentsClient";
 
 export default async function DocumentsPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("vehicles");
 
     const [documents, vehicles] = await Promise.all([listDocuments(), listVehicles()]);
 

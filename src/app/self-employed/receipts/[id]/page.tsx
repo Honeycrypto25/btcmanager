@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect, notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getReceipt } from "@/app/actions/receipts";
 import { listVehicles } from "@/app/actions/vehicles";
@@ -11,8 +12,7 @@ import { EXPENSE_CATEGORIES } from "@/lib/expense-categories";
 import { ReceiptDetailClient } from "@/components/self-employed/ReceiptDetailClient";
 
 export default async function ReceiptDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("selfEmployed");
 
     const { id } = await params;
 

@@ -4,13 +4,13 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listBankAccounts, listBankTransactions, listImportBatches, listReceiptsForManualMatch } from "@/app/actions/bank";
 import { BankClient } from "@/components/self-employed/BankClient";
 
 export default async function BankPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("selfEmployed");
 
     const [accounts, transactions, batches, matchableReceipts] = await Promise.all([
         listBankAccounts(),

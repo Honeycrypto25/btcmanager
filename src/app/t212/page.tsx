@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, cn } from "@/components/ui/core";
@@ -13,8 +14,7 @@ import { T212SyncButton } from "@/components/t212/T212SyncButton";
 import { PositionsList } from "@/components/t212/PositionsList";
 
 export default async function T212Page() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("t212");
 
     const account = await db.t212Account.findFirst({
         orderBy: { createdAt: "desc" },

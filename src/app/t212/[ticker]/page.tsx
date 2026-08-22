@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { cn } from "@/components/ui/core";
@@ -29,8 +30,7 @@ function mondayOf(date: Date): Date {
 }
 
 export default async function PositionDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("t212");
 
     const { ticker } = await params;
 

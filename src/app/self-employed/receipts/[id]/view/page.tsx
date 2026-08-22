@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect, notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { getReceipt } from "@/app/actions/receipts";
 import { ReceiptImageViewer } from "@/components/self-employed/ReceiptImageViewer";
 
@@ -12,8 +13,7 @@ import { ReceiptImageViewer } from "@/components/self-employed/ReceiptImageViewe
  * action on Expenses rows and the accounting export's receipt links, so
  * looking up a receipt doesn't drop the user into an edit form by accident. */
 export default async function ReceiptImageViewPage({ params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("selfEmployed");
 
     const { id } = await params;
 

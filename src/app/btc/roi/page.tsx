@@ -2,6 +2,7 @@
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
@@ -21,11 +22,7 @@ function daysSince(date: Date): number {
 }
 
 export default async function RoiPage() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        redirect("/auth/signin");
-    }
+    const session = await requireSectionAccess("btc");
 
     // 1. Fetch Transactions
     const transactions = await db.bitcoinTransaction.findMany({

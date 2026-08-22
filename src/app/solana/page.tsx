@@ -3,14 +3,14 @@ export const dynamic = "force-dynamic";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getBotWalletAddress, getSolanaSettings, getSweepDestinationInfo } from "@/app/actions/solana";
 import { SolanaClient } from "@/components/solana/SolanaClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 
 export default async function SolanaPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("solana");
 
     const [settings, solPriceUsd, botWallet, sweepDestination] = await Promise.all([
         getSolanaSettings(),

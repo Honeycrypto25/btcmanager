@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect, notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getVehicle, getFuelStats, getMaintenanceWithStatus, getVehicleAnalytics } from "@/app/actions/vehicles";
 import type { FuelSegmentStat, PeriodBucket, DistanceBucket, PricePoint } from "@/lib/vehicles/stats";
@@ -11,8 +12,7 @@ import { listDocuments } from "@/app/actions/documents";
 import { VehicleDetailClient } from "@/components/vehicles/VehicleDetailClient";
 
 export default async function VehicleDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("vehicles");
 
     const { id } = await params;
 

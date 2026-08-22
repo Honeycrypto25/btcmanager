@@ -4,13 +4,13 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listGoals } from "@/app/actions/goals";
 import { GoalsClient } from "@/components/vanguard/GoalsClient";
 
 export default async function GoalsPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("investments");
 
     const goals = await listGoals();
 

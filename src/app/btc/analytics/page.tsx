@@ -2,17 +2,14 @@
 import React from 'react';
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import AnalyticsClient from "./AnalyticsClient";
 
 export default async function AnalyticsPage() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        redirect("/auth/signin");
-    }
+    const session = await requireSectionAccess("btc");
 
     const wallets = await db.bitcoinWallet.findMany({
         include: { transactions: true }

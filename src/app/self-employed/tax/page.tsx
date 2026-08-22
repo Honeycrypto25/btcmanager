@@ -4,6 +4,7 @@ import React from "react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getTaxEstimate } from "@/app/actions/tax";
 import { getCurrentUkTaxYear, listRecentUkTaxYears } from "@/lib/tax/uk-tax-year";
@@ -14,8 +15,7 @@ export default async function TaxPage({
 }: {
     searchParams: Promise<{ taxYear?: string }>;
 }) {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("selfEmployed");
 
     const params = await searchParams;
     const taxYears = listRecentUkTaxYears(5);

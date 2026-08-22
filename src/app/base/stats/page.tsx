@@ -3,14 +3,14 @@ export const dynamic = "force-dynamic";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getEvmStats, listEvmLots, listEvmSweeps, getEvmFuelStatus } from "@/app/actions/evm";
 import { EvmStatsClient } from "@/components/evm/EvmStatsClient";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
 
 export default async function BaseStatsPage() {
-    const session = await getServerSession(authOptions);
-    if (!session) redirect("/auth/signin");
+    const session = await requireSectionAccess("base");
 
     const [lots, stats, wethPriceUsd, sweeps, fuelStatus] = await Promise.all([
         listEvmLots(),
