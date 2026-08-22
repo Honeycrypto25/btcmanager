@@ -99,7 +99,7 @@ export async function POST(req: Request) {
 
         // 4. Send Email via Resend
         await resend.emails.send({
-            from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+            from: process.env.EMAIL_FROM || "BTC Manager <login@evama.net>",
             to: normalizedEmail,
             subject: "Your Login Code - BTC Manager",
             html: `
