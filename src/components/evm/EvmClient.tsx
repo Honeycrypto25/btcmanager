@@ -36,7 +36,7 @@ export function EvmClient({
         sellAmountUsd: initialSettings ? Number(initialSettings.sellAmountUsd) : 10,
         slippageBps: initialSettings?.slippageBps ?? 300,
         sweepEnabled: initialSettings?.sweepEnabled ?? false,
-        sweepMinBalanceWeth: initialSettings ? Number(initialSettings.sweepMinBalanceWeth) : 0,
+        sweepMinBalanceWeth: 0, // hardcoded — WETH pays no fees on Base, so there is no reason to keep a minimum
     });
     const [editing, setEditing] = useState(!initialSettings);
     const [saving, startSaving] = useTransition();
@@ -73,7 +73,7 @@ export function EvmClient({
                 sellAmountUsd: Number(settings.sellAmountUsd),
                 slippageBps: settings.slippageBps,
                 sweepEnabled: settings.sweepEnabled,
-                sweepMinBalanceWeth: Number(settings.sweepMinBalanceWeth),
+                sweepMinBalanceWeth: 0,
             });
         }
         setError(null);
@@ -335,11 +335,11 @@ export function EvmClient({
                     </label>
                 </div>
                 <p className="text-xs text-faint">
-                    În fiecare zi de 2 a lunii, tot WETH-ul acumulat ce depășește minimul de mai jos se trimite automat către portofelul de retragere — floatul de ETH pentru gas nu e niciodată atins, și nici WETH-ul deja promis unui ordin de vânzare activ (spre deosebire de Solana, un ordin 1inch nu blochează fondurile on-chain, deci scădem manual ce e rezervat înainte de a calcula excedentul). Suma trimisă e rotunjită în jos la 6 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
+                    În fiecare zi de 2 a lunii, tot WETH-ul disponibil se trimite automat către portofelul de retragere — floatul de ETH pentru gas nu e niciodată atins (WETH nu plătește fees pe Base), și nici WETH-ul deja promis unui ordin de vânzare activ (spre deosebire de Solana, un ordin 1inch nu blochează fondurile on-chain, deci scădem manual ce e rezervat înainte de a calcula excedentul). Suma trimisă e rotunjită în jos la 6 zecimale.
                 </p>
                 {settings && !editing && (
                     <p className="text-xs text-faint">
-                        Blocat împreună cu Setările de mai sus — apasă „Editează” (aici sau acolo) ca să activezi retragerea sau să schimbi minimul.
+                        Blocat împreună cu Setările de mai sus — apasă „Editează” (aici sau acolo) ca să activezi retragerea.
                     </p>
                 )}
 
@@ -357,19 +357,6 @@ export function EvmClient({
                         <code className="text-foreground">{sweepDestination.address}</code>
                     </div>
                 )}
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Field label="Minim WETH păstrat mereu în portofelul botului">
-                        <input
-                            type="number"
-                            step="0.0001"
-                            value={form.sweepMinBalanceWeth}
-                            disabled={!editing}
-                            onChange={(e) => setForm({ ...form, sweepMinBalanceWeth: parseFloat(e.target.value) || 0 })}
-                            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
-                        />
-                    </Field>
-                </div>
 
                 <div className="flex flex-col gap-0.5 text-xs text-faint">
                     <span>
@@ -413,13 +400,9 @@ export function EvmClient({
                         </div>
 
                         <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-sm">
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="text-faint">Rămâne mereu</span>
-                                <span className="font-medium text-foreground">{form.sweepMinBalanceWeth} WETH</span>
-                            </div>
                             <div className="flex items-center gap-2 text-faint">
                                 <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                                <span className="text-xs">Excedentul de peste minim, rotunjit în jos la 6 zecimale</span>
+                                <span className="text-xs">Tot WETH-ul disponibil (mai puțin ce e rezervat pentru ordine deschise), rotunjit în jos la 6 zecimale</span>
                             </div>
                             <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] pt-2">
                                 <span className="text-faint">Către</span>

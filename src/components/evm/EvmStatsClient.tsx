@@ -131,7 +131,7 @@ export function EvmStatsClient({
         for (const lot of allLots) {
             if (!FINAL_STATUSES.has(lot.status)) continue;
             const key = format(new Date(lot.boughtAt), "yyyy-MM");
-            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.wethAcquired));
+            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.wethRemaining));
         }
 
         return months.map(({ key, label }) => ({
@@ -365,7 +365,7 @@ export function EvmStatsClient({
                 <Card>
                     <h2 className="mb-1 text-sm font-medium text-foreground">WETH acumulat pe lună</h2>
                     <p className="mb-4 text-xs text-faint">
-                        Ultimele 14 luni, doar cicluri finalizate (vândute sau anulate) — loturile în așteptare nu sunt incluse încă.
+                        Ultimele 14 luni, doar cicluri finalizate — WETH rămas efectiv în portofel după vânzare (profitul), nu suma cumpărată. Loturile în așteptare nu sunt incluse încă.
                     </p>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={monthlyData}>

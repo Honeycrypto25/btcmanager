@@ -133,7 +133,7 @@ export function SolanaStatsClient({
         for (const lot of allLots) {
             if (!FINAL_STATUSES.has(lot.status)) continue;
             const key = format(new Date(lot.boughtAt), "yyyy-MM");
-            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.solAcquired));
+            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.solRemaining));
         }
 
         return months.map(({ key, label }) => ({
@@ -370,7 +370,7 @@ export function SolanaStatsClient({
                 <Card>
                     <h2 className="mb-1 text-sm font-medium text-foreground">SOL acumulat pe lună</h2>
                     <p className="mb-4 text-xs text-faint">
-                        Ultimele 14 luni, doar cicluri finalizate (vândute sau anulate) — loturile în așteptare nu sunt incluse încă, fiindcă nu se știe cât SOL rămâne până la finalizarea vânzării.
+                        Ultimele 14 luni, doar cicluri finalizate — SOL rămas efectiv în portofel după vânzare (profitul), nu suma cumpărată. Loturile în așteptare nu sunt incluse încă, fiindcă nu se știe cât SOL rămâne până la finalizarea vânzării.
                     </p>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={monthlyData}>
