@@ -436,16 +436,8 @@ export function EvmStatsClient({
             )}
 
             <Card className="overflow-x-auto">
-                <h2 className="mb-1 text-sm font-medium text-foreground">Achiziții finalizate ({lots.length})</h2>
-                <p className="mb-4 text-xs text-faint">
-                    Fiecare cumpărare e o tranzacție deja confirmată pe blockchain — independent de ce se întâmplă cu ordinul de vânzare de mai jos.
-                </p>
-                <PurchasesTable lots={lots} />
-            </Card>
-
-            <Card className="overflow-x-auto">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="text-sm font-medium text-foreground">Ordine de vânzare — în așteptare ({pendingLots.length})</h2>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-sm font-medium text-foreground">Cicluri DCA ({lots.length})</h2>
                     <div className="flex items-center gap-3">
                         {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
                         {checkError && <span className="text-xs text-red-300">{checkError}</span>}
@@ -455,12 +447,10 @@ export function EvmStatsClient({
                         </Button>
                     </div>
                 </div>
-                <LotsTable lots={pendingLots} emptyMessage="Niciun ordin de vânzare în așteptare momentan." />
-            </Card>
-
-            <Card className="overflow-x-auto">
-                <h2 className="mb-4 text-sm font-medium text-foreground">Ordine de vânzare — finalizate ({finalLots.length})</h2>
-                <LotsTable lots={finalLots} emptyMessage="Niciun ordin de vânzare finalizat încă." />
+                <p className="mb-4 text-xs text-faint">
+                    Fiecare rând e un ciclu complet — cumpărare (mereu confirmată pe blockchain) și, alături, statusul vânzării ({pendingLots.length} în așteptare, {finalLots.length} finalizate).
+                </p>
+                <CyclesTable lots={lots} />
             </Card>
 
             <Card className="overflow-x-auto">
@@ -472,45 +462,7 @@ export function EvmStatsClient({
     );
 }
 
-function PurchasesTable({ lots }: { lots: LotDTO[] }) {
-    const [page, setPage] = useState(1);
-    if (lots.length === 0) return <p className="text-sm text-muted">Nicio achiziție încă.</p>;
-    const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
-    const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-    const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
-    const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
-    return (
-        <>
-            <table className="w-full min-w-[640px] text-left text-sm">
-                <thead>
-                    <tr className="text-xs uppercase tracking-wider text-faint">
-                        <th className="pb-2 pr-4">Data</th>
-                        <th className="pb-2 pr-4">Sumă</th>
-                        <th className="pb-2 pr-4">WETH primit</th>
-                        <th className="pb-2 pr-4">Preț efectiv</th>
-                        <th className="pb-2 pr-4">Fee</th>
-                        <th className="pb-2">Tranzacție</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {pageItems.map((lot) => (
-                        <tr key={lot.id} className="border-t border-white/[0.06]">
-                            <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
-                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
-                            <td className="py-2 pr-4 text-foreground">{Number(lot.wethAcquired).toFixed(5)} WETH</td>
-                            <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
-                            <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
-                            <td className="py-2 text-faint">
-                                {lot.buyTxHash ? <BasescanLink hash={lot.buyTxHash} label="Vezi ↗" /> : "—"}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={sorted.length} pageStart={pageStart} />
-        </>
-    );
-}
+
 
 function Pager({
     page,
@@ -558,26 +510,30 @@ function BasescanLink({ hash, label }: { hash: string; label: string }) {
     );
 }
 
-function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: string }) {
+function CyclesTable({ lots }: { lots: LotDTO[] }) {
     const [page, setPage] = useState(1);
-    if (lots.length === 0) return <p className="text-sm text-muted">{emptyMessage}</p>;
-    const totalPages = Math.max(1, Math.ceil(lots.length / PAGE_SIZE));
+    if (lots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
+    const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
+    const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
-    const pageItems = lots.slice(pageStart, pageStart + PAGE_SIZE);
+    const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
-            <table className="w-full min-w-[960px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
                         <th className="pb-2 pr-4">Status</th>
-                        <th className="pb-2 pr-4">Cumpărat</th>
+                        <th className="pb-2 pr-4">Sumă</th>
+                        <th className="pb-2 pr-4">WETH primit</th>
                         <th className="pb-2 pr-4">Preț cumpărare</th>
+                        <th className="pb-2 pr-4">Fee</th>
                         <th className="pb-2 pr-4">Preț țintă</th>
                         <th className="pb-2 pr-4">Vândut</th>
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">WETH rămas</th>
                         <th className="pb-2 pr-4">Verificat</th>
+                        <th className="pb-2 pr-4">Cumpărare</th>
                         <th className="pb-2">Ordin 1inch</th>
                     </tr>
                 </thead>
@@ -594,7 +550,9 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                                     </span>
                                 </td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
+                                <td className="py-2 pr-4 text-foreground">{Number(lot.wethAcquired).toFixed(5)}</td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                                <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
                                 <td className="py-2 pr-4 text-foreground">{lot.sellProceedsUsd ? formatUsd(Number(lot.sellProceedsUsd)) : "—"}</td>
                                 <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
@@ -605,6 +563,9 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                                     {lot.lastCheckedAt
                                         ? formatDistanceToNow(new Date(lot.lastCheckedAt), { addSuffix: true })
                                         : "încă neverificat"}
+                                </td>
+                                <td className="py-2 pr-4 text-faint">
+                                    {lot.buyTxHash ? <BasescanLink hash={lot.buyTxHash} label="Vezi ↗" /> : "—"}
                                 </td>
                                 <td className="py-2 text-faint">
                                     {/* 1inch is a gasless off-chain orderbook — there's no creation/fill
@@ -621,7 +582,7 @@ function LotsTable({ lots, emptyMessage }: { lots: LotDTO[]; emptyMessage: strin
                     })}
                 </tbody>
             </table>
-            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={lots.length} pageStart={pageStart} />
+            <Pager page={Math.min(page, totalPages)} setPage={setPage} totalItems={sorted.length} pageStart={pageStart} />
         </>
     );
 }
