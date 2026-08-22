@@ -1,5 +1,6 @@
 import "server-only";
 import { Resend } from "resend";
+import { logEmail, type EmailType } from "./email-log";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -114,9 +115,12 @@ function buildEmailHtml(opts: {
  * Fire-and-forget send — NEVER throws. This is called from deep inside
  * the trading logic (dca.ts / sweep.ts on all three chains); a Resend
  * outage or a missing API key must never break a real buy/sell/sweep, so
- * every failure is swallowed here and only logged.
+ * every failure is swallowed here and only logged. Every real attempt
+ * (RESEND_API_KEY + REPORT_EMAIL_TO both configured) is recorded via
+ * logEmail() for the Admin > "Emailuri" history tab — a skip due to
+ * missing config isn't logged, since nothing was actually attempted.
  */
-async function send(subject: string, html: string): Promise<void> {
+async function send(type: EmailType, chain: ChainName, subject: string, html: string): Promise<void> {
     try {
         const resend = getResendClient();
         if (!resend) return;
@@ -125,9 +129,16 @@ async function send(subject: string, html: string): Promise<void> {
         const result = await resend.emails.send({ from: getSender(), to, subject, html });
         if (result.error) {
             console.error("Transaction notification email failed to send:", result.error.message);
+            await logEmail({ type, chain, subject, recipient: to, status: "FAILED", errorMessage: result.error.message });
+        } else {
+            await logEmail({ type, chain, subject, recipient: to, status: "SENT" });
         }
     } catch (err) {
         console.error("Transaction notification email threw:", err);
+        const to = getRecipient();
+        if (to) {
+            await logEmail({ type, chain, subject, recipient: to, status: "FAILED", errorMessage: err instanceof Error ? err.message : String(err) });
+        }
     }
 }
 
@@ -163,7 +174,7 @@ export async function notifyOrderPlaced(opts: {
         link: opts.buyTxUrl ? { label: "Vezi tranzacția de cumpărare", url: opts.buyTxUrl } : undefined,
         dashboardUrl: getDashboardUrl(),
     });
-    await send(`${opts.chain} DCA — ordin plasat (${fmtUsd(opts.buyAmountUsd)})`, html);
+    await send("ORDER_PLACED", opts.chain, `${opts.chain} DCA — ordin plasat (${fmtUsd(opts.buyAmountUsd)})`, html);
 }
 
 /** Sent when a previously-open take-profit order is detected as FILLED (via cron reconcile or manual "Verifică acum"). */
@@ -193,7 +204,7 @@ export async function notifyOrderFilled(opts: {
         link: opts.sellTxUrl ? { label: "Vezi tranzacția de vânzare", url: opts.sellTxUrl } : undefined,
         dashboardUrl: getDashboardUrl(),
     });
-    await send(`${opts.chain} DCA — vândut (${opts.realizedPnlUsd >= 0 ? '+' : ''}${fmtUsd(opts.realizedPnlUsd)} P&L)`, html);
+    await send("ORDER_FILLED", opts.chain, `${opts.chain} DCA — vândut (${opts.realizedPnlUsd >= 0 ? '+' : ''}${fmtUsd(opts.realizedPnlUsd)} P&L)`, html);
 }
 
 /** Sent for every actual sweep attempt (success or failure) — not for routine "not due yet" / "nothing to send" skips. */
@@ -225,5 +236,5 @@ export async function notifySweep(opts: {
         dashboardUrl: getDashboardUrl(),
     });
     const subjectPrefix = opts.status === "SUCCESS" ? "retragere reușită" : "retragere EȘUATĂ";
-    await send(`${opts.chain} — ${subjectPrefix} (${fmtToken(opts.amount)} ${opts.tokenSymbol})`, html);
+    await send("SWEEP", opts.chain, `${opts.chain} — ${subjectPrefix} (${fmtToken(opts.amount)} ${opts.tokenSymbol})`, html);
 }

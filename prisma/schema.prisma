@@ -1174,3 +1174,23 @@ model BnbLot {
   @@index([userId, status])
   @@index([userId, boughtAt])
 }
+
+// One row per email actually attempted (transactional DCA notifications +
+// weekly/monthly portfolio reports) — a complete audit trail shown on the
+// Admin > "Emailuri" tab, so it's obvious what got sent, when, and whether
+// it succeeded. Not scoped to a userId — mirrors the rest of the DCA bot
+// models' whole-deployment (not multi-tenant) design.
+model EmailLog {
+  id        String   @id @default(cuid())
+  type      String   // "ORDER_PLACED" | "ORDER_FILLED" | "SWEEP" | "WEEKLY_REPORT" | "MONTHLY_REPORT"
+  chain     String?  // "Solana" | "Base (ETH)" | "BNB Chain" — null for portfolio-wide reports
+  subject   String
+  recipient String
+  status    String   // "SENT" | "FAILED"
+  errorMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type])
+}

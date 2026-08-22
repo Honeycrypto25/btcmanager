@@ -4,6 +4,7 @@ import { buildReportHtml } from "@/lib/email/report-template";
 import { getExchangeRate } from "@/lib/fx";
 import { getBtcEvolution, getT212Evolution, getVanguardEvolution } from "@/lib/overview-evolution";
 import { getSolanaDcaReportData, getEvmDcaReportData, getBnbDcaReportData } from "@/lib/email/dca-report-data";
+import { logEmail } from "@/lib/email/email-log";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -97,14 +98,19 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
             bnbDca,
         });
 
+        const subject = `Weekly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`;
         const result = await resend.emails.send({
             from: getSender(),
             to,
-            subject: `Weekly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`,
+            subject,
             html,
         });
 
-        if (result.error) return { ok: false, error: result.error.message };
+        if (result.error) {
+            await logEmail({ type: "WEEKLY_REPORT", subject, recipient: to, status: "FAILED", errorMessage: result.error.message });
+            return { ok: false, error: result.error.message };
+        }
+        await logEmail({ type: "WEEKLY_REPORT", subject, recipient: to, status: "SENT" });
         return { ok: true };
     } catch (err: any) {
         return { ok: false, error: err?.message ?? "Failed to send weekly report" };
@@ -139,14 +145,19 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
             bnbDca,
         });
 
+        const subject = `Monthly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`;
         const result = await resend.emails.send({
             from: getSender(),
             to,
-            subject: `Monthly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`,
+            subject,
             html,
         });
 
-        if (result.error) return { ok: false, error: result.error.message };
+        if (result.error) {
+            await logEmail({ type: "MONTHLY_REPORT", subject, recipient: to, status: "FAILED", errorMessage: result.error.message });
+            return { ok: false, error: result.error.message };
+        }
+        await logEmail({ type: "MONTHLY_REPORT", subject, recipient: to, status: "SENT" });
         return { ok: true };
     } catch (err: any) {
         return { ok: false, error: err?.message ?? "Failed to send monthly report" };

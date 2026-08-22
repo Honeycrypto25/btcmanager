@@ -20,9 +20,12 @@ import {
     Mail,
     Send,
     Users,
-    UserX
+    UserX,
+    History,
+    XCircle
 } from "lucide-react";
 import axios from 'axios';
+import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
 
 interface T212Status {
     configured: boolean;
@@ -60,6 +63,34 @@ const SECTION_OPTIONS: { key: string; label: string }[] = [
     { key: 'vehicles', label: 'Vehicule & Documente' },
 ];
 
+const CHAIN_COLORS: Record<string, string> = {
+    'Solana': '#9945FF',
+    'Base (ETH)': '#0052FF',
+    'BNB Chain': '#F0B90B',
+};
+
+const EMAIL_TRIGGERS: { label: string; description: string; color: string }[] = [
+    { label: 'Ordin plasat — Solana', description: 'Trimis după ce ordinul limit de vânzare e plasat (nu la simpla cumpărare).', color: CHAIN_COLORS['Solana'] },
+    { label: 'Ordin finalizat — Solana', description: 'Trimis când ordinul limit se umple (fill).', color: CHAIN_COLORS['Solana'] },
+    { label: 'Retragere — Solana', description: 'Trimis la fiecare sweep către cold wallet.', color: CHAIN_COLORS['Solana'] },
+    { label: 'Ordin plasat — Base (ETH)', description: 'Trimis după ce ordinul limit de vânzare e plasat.', color: CHAIN_COLORS['Base (ETH)'] },
+    { label: 'Ordin finalizat — Base (ETH)', description: 'Trimis când ordinul limit se umple (fill).', color: CHAIN_COLORS['Base (ETH)'] },
+    { label: 'Retragere — Base (ETH)', description: 'Trimis la fiecare sweep către cold wallet.', color: CHAIN_COLORS['Base (ETH)'] },
+    { label: 'Ordin plasat — BNB Chain', description: 'Trimis după ce ordinul limit de vânzare e plasat.', color: CHAIN_COLORS['BNB Chain'] },
+    { label: 'Ordin finalizat — BNB Chain', description: 'Trimis când ordinul limit se umple (fill).', color: CHAIN_COLORS['BNB Chain'] },
+    { label: 'Retragere — BNB Chain', description: 'Trimis la fiecare sweep către cold wallet.', color: CHAIN_COLORS['BNB Chain'] },
+    { label: 'Raport săptămânal', description: 'Rezumat portofoliu, luni dimineața.', color: '#8A8F98' },
+    { label: 'Raport lunar', description: 'Recapitulare lunară, pe 1 ale lunii.', color: '#8A8F98' },
+];
+
+const EMAIL_TYPE_LABELS: Record<string, string> = {
+    ORDER_PLACED: 'Ordin plasat',
+    ORDER_FILLED: 'Ordin finalizat',
+    SWEEP: 'Retragere',
+    WEEKLY_REPORT: 'Raport săptămânal',
+    MONTHLY_REPORT: 'Raport lunar',
+};
+
 export default function AdminPageClient() {
     const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'features'>('security');
     const [loading, setLoading] = useState(true);
@@ -85,6 +116,11 @@ export default function AdminPageClient() {
     const [sendingReport, setSendingReport] = useState<'weekly' | 'monthly' | null>(null);
     const [reportError, setReportError] = useState<string | null>(null);
     const [reportSuccess, setReportSuccess] = useState<string | null>(null);
+
+    // Email History State
+    const [emailLogs, setEmailLogs] = useState<EmailLogRow[]>([]);
+    const [emailLogsLoading, setEmailLogsLoading] = useState(true);
+    const [emailLogsError, setEmailLogsError] = useState<string | null>(null);
 
     // Viewer Access State
     const [viewers, setViewers] = useState<ViewerAccessRow[]>([]);
@@ -129,6 +165,19 @@ export default function AdminPageClient() {
         }
     };
 
+    const fetchEmailLogs = async () => {
+        setEmailLogsError(null);
+        try {
+            const rows = await listEmailLogs(200);
+            setEmailLogs(rows);
+        } catch (err) {
+            console.error('Failed to fetch email logs', err);
+            setEmailLogsError('Nu am putut încărca istoricul emailurilor.');
+        } finally {
+            setEmailLogsLoading(false);
+        }
+    };
+
     const fetchViewers = async () => {
         try {
             const { data } = await axios.get('/api/admin/viewers');
@@ -144,6 +193,7 @@ export default function AdminPageClient() {
         fetchStatus();
         fetchT212Status();
         fetchReportsStatus();
+        fetchEmailLogs();
         fetchViewers();
     }, []);
 
@@ -631,6 +681,104 @@ export default function AdminPageClient() {
                                     Scheduled sends run automatically — Mondays at ~7am UTC (weekly) and the 1st of the month at
                                     ~7am UTC (monthly). These buttons just send an on-demand copy so you can preview the design.
                                 </p>
+                            </div>
+                        )}
+                    </Card>
+
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
+                                <Send className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Configured emails</h3>
+                                <p className="text-muted text-sm">
+                                    These are sent automatically, in addition to the weekly/monthly reports above.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                            {EMAIL_TRIGGERS.map((trigger) => (
+                                <div key={trigger.label} className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-border">
+                                    <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: trigger.color }} />
+                                    <div className="min-w-0">
+                                        <p className="text-sm text-foreground font-medium">{trigger.label}</p>
+                                        <p className="text-xs text-faint leading-relaxed">{trigger.description}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
+                                <History className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Email history</h3>
+                                <p className="text-muted text-sm">
+                                    Last {emailLogs.length} email{emailLogs.length === 1 ? '' : 's'} sent or attempted.
+                                </p>
+                            </div>
+                            <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={fetchEmailLogs} disabled={emailLogsLoading}>
+                                <RefreshCw className={cn("w-4 h-4", emailLogsLoading && "animate-spin")} />
+                            </Button>
+                        </div>
+
+                        {emailLogsLoading ? (
+                            <div className="flex justify-center py-6">
+                                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                            </div>
+                        ) : emailLogsError ? (
+                            <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                {emailLogsError}
+                            </div>
+                        ) : emailLogs.length === 0 ? (
+                            <p className="text-sm text-muted">Niciun email trimis încă.</p>
+                        ) : (
+                            <div className="overflow-x-auto -mx-6 md:-mx-8">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-xs text-faint uppercase border-b border-border">
+                                            <th className="px-6 md:px-8 py-2 font-medium whitespace-nowrap">Data</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Tip</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Chain</th>
+                                            <th className="px-3 py-2 font-medium">Subiect</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Destinatar</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {emailLogs.map((log) => (
+                                            <tr key={log.id} className="border-b border-border/50 last:border-0 align-top">
+                                                <td className="px-6 md:px-8 py-2.5 whitespace-nowrap text-faint text-xs">
+                                                    {new Date(log.createdAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-foreground">
+                                                    {EMAIL_TYPE_LABELS[log.type] ?? log.type}
+                                                </td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-muted">{log.chain ?? '—'}</td>
+                                                <td className="px-3 py-2.5 text-muted max-w-xs truncate" title={log.subject}>{log.subject}</td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-muted">{log.recipient}</td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                                    {log.status === 'SENT' ? (
+                                                        <span className="inline-flex items-center gap-1.5 text-accent text-xs font-medium">
+                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Trimis
+                                                        </span>
+                                                    ) : (
+                                                        <span
+                                                            className="inline-flex items-center gap-1.5 text-red-400 text-xs font-medium"
+                                                            title={log.errorMessage ?? undefined}
+                                                        >
+                                                            <XCircle className="w-3.5 h-3.5" /> Eșuat
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </Card>
