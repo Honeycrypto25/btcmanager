@@ -16,7 +16,7 @@ import {
     ResponsiveContainer,
     Cell,
 } from "recharts";
-import { format, differenceInCalendarMonths } from "date-fns";
+import { format, differenceInCalendarMonths, startOfWeek } from "date-fns";
 import { ArrowLeft, TrendingUp, TrendingDown, Calendar, PiggyBank, Percent } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 
@@ -51,6 +51,30 @@ const PERIOD_OPTIONS = [
 
 type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 
+const GRANULARITY_OPTIONS = [
+    { key: "day", label: "Zilnic" },
+    { key: "week", label: "Săptămânal" },
+    { key: "month", label: "Lunar" },
+    { key: "year", label: "Anual" },
+] as const;
+
+type Granularity = (typeof GRANULARITY_OPTIONS)[number]["key"];
+
+/** Groups a date into the bucket key for the chosen granularity — same key for every date in that day/week/month/year, so the LAST snapshot per bucket can be picked as its representative point. */
+function bucketKey(date: Date, g: Granularity): string {
+    if (g === "day") return format(date, "yyyy-MM-dd");
+    if (g === "week") return format(startOfWeek(date, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    if (g === "month") return format(date, "yyyy-MM");
+    return format(date, "yyyy");
+}
+
+function bucketLabel(date: Date, g: Granularity): string {
+    if (g === "day") return format(date, "d MMM");
+    if (g === "week") return `S ${format(startOfWeek(date, { weekStartsOn: 1 }), "d MMM")}`;
+    if (g === "month") return format(date, "MMM yyyy");
+    return format(date, "yyyy");
+}
+
 export function T212StatsClient({
     account,
     snapshots,
@@ -61,6 +85,7 @@ export function T212StatsClient({
     orders: OrderDTO[];
 }) {
     const [period, setPeriod] = useState<PeriodKey>("all");
+    const [granularity, setGranularity] = useState<Granularity>("day");
 
     const currencySymbol =
         account?.currency === "USD" ? "$" : account?.currency === "EUR" ? "€" : account?.currency === "GBP" ? "£" : account?.currency ? `${account.currency} ` : "£";
@@ -91,24 +116,38 @@ export function T212StatsClient({
         return dailySnapshots.filter((s) => new Date(s.capturedAt) >= periodCutoff);
     }, [dailySnapshots, periodCutoff]);
 
+    // The evolution charts group snapshots by the chosen granularity, keeping
+    // only the LAST snapshot in each day/week/month/year bucket — right for
+    // point-in-time balances like these (total value, invested, P&L), as
+    // opposed to summing, which would only make sense for flow amounts.
+    const aggregatedSnapshots = useMemo(() => {
+        const byBucket = new Map<string, { key: string; label: string; s: (typeof filteredDailySnapshots)[number] }>();
+        for (const s of filteredDailySnapshots) {
+            const d = new Date(s.capturedAt);
+            const key = bucketKey(d, granularity);
+            byBucket.set(key, { key, label: bucketLabel(d, granularity), s });
+        }
+        return [...byBucket.values()].sort((a, b) => a.key.localeCompare(b.key));
+    }, [filteredDailySnapshots, granularity]);
+
     const portfolioSeries = useMemo(
         () =>
-            filteredDailySnapshots.map((s) => ({
-                date: format(new Date(s.capturedAt), "d MMM"),
+            aggregatedSnapshots.map(({ label, s }) => ({
+                date: label,
                 "Valoare totală": Math.round(s.totalValue * 100) / 100,
                 Investit: Math.round(s.investedValue * 100) / 100,
             })),
-        [filteredDailySnapshots]
+        [aggregatedSnapshots]
     );
 
     const pnlSeries = useMemo(
         () =>
-            filteredDailySnapshots.map((s) => ({
-                date: format(new Date(s.capturedAt), "d MMM"),
+            aggregatedSnapshots.map(({ label, s }) => ({
+                date: label,
                 pnl: Math.round(s.resultPpl * 100) / 100,
                 pnlPercent: s.investedValue > 0 ? Math.round((s.resultPpl / s.investedValue) * 10000) / 100 : 0,
             })),
-        [filteredDailySnapshots]
+        [aggregatedSnapshots]
     );
 
     const buyOrders = useMemo(() => orders.filter((o) => o.side === "BUY"), [orders]);
@@ -141,46 +180,45 @@ export function T212StatsClient({
         return totalBoughtEver / monthSpan;
     }, [buyOrders, totalBoughtEver]);
 
-    const monthlyInvestmentSeries = useMemo(() => {
-        const byMonth = new Map<string, { key: string; label: string; total: number }>();
-        for (const o of buyOrders) {
+    // Same period filter as the evolution charts above — respects `period` so
+    // switching to "3L"/"6L"/"1A" narrows every chart on the page, not just
+    // the first two.
+    const filteredBuyOrders = useMemo(() => {
+        if (!periodCutoff) return buyOrders;
+        return buyOrders.filter((o) => new Date(o.filledAt) >= periodCutoff);
+    }, [buyOrders, periodCutoff]);
+
+    // Investment is a FLOW amount (money going in during the bucket), so
+    // buckets are summed — unlike the point-in-time balances above, which
+    // take the last value in the bucket.
+    const investmentSeries = useMemo(() => {
+        const byBucket = new Map<string, { key: string; label: string; total: number }>();
+        for (const o of filteredBuyOrders) {
             const d = new Date(o.filledAt);
-            const key = format(d, "yyyy-MM");
-            const existing = byMonth.get(key) ?? { key, label: format(d, "MMM yyyy"), total: 0 };
+            const key = bucketKey(d, granularity);
+            const existing = byBucket.get(key) ?? { key, label: bucketLabel(d, granularity), total: 0 };
             existing.total += o.total;
-            byMonth.set(key, existing);
+            byBucket.set(key, existing);
         }
-        return [...byMonth.values()].sort((a, b) => a.key.localeCompare(b.key));
-    }, [buyOrders]);
+        return [...byBucket.values()].sort((a, b) => a.key.localeCompare(b.key));
+    }, [filteredBuyOrders, granularity]);
 
-    // "ROI lunar/anual" here means: the cumulative ROI (total unrealized P&L
+    // "ROI (cumulativ)" here means: the cumulative ROI (total unrealized P&L
     // over total invested capital, at that point in time) observed at the end
-    // of each calendar month/year — a running temperature check, not a
-    // month-by-month delta. With money going in continuously via
-    // auto-invest, a clean per-month delta isn't really separable from new
-    // contributions without misleading assumptions, so this progression is
-    // the honest way to show "how is the ROI trending" over time.
-    const monthlyRoiSeries = useMemo(() => {
-        const byMonth = new Map<string, { key: string; label: string; roi: number }>();
-        for (const s of dailySnapshots) {
-            const d = new Date(s.capturedAt);
-            const key = format(d, "yyyy-MM");
-            const roi = s.investedValue > 0 ? (s.resultPpl / s.investedValue) * 100 : 0;
-            byMonth.set(key, { key, label: format(d, "MMM yyyy"), roi: Math.round(roi * 100) / 100 }); // later entries in the same month overwrite — we want the month-END value
-        }
-        return [...byMonth.values()].sort((a, b) => a.key.localeCompare(b.key));
-    }, [dailySnapshots]);
-
-    const annualRoiSeries = useMemo(() => {
-        const byYear = new Map<string, { key: string; roi: number }>();
-        for (const s of dailySnapshots) {
-            const d = new Date(s.capturedAt);
-            const key = format(d, "yyyy");
-            const roi = s.investedValue > 0 ? (s.resultPpl / s.investedValue) * 100 : 0;
-            byYear.set(key, { key, roi: Math.round(roi * 100) / 100 });
-        }
-        return [...byYear.values()].sort((a, b) => a.key.localeCompare(b.key));
-    }, [dailySnapshots]);
+    // of each bucket — a running temperature check, not a delta. With money
+    // going in continuously via auto-invest, a clean per-bucket delta isn't
+    // really separable from new contributions without misleading
+    // assumptions, so this progression is the honest way to show "how is the
+    // ROI trending" over time. Reuses aggregatedSnapshots so it shares both
+    // the period filter and the granularity toggle with the charts above.
+    const roiSeries = useMemo(
+        () =>
+            aggregatedSnapshots.map(({ label, s }) => ({
+                label,
+                roi: s.investedValue > 0 ? Math.round((s.resultPpl / s.investedValue) * 10000) / 100 : 0,
+            })),
+        [aggregatedSnapshots]
+    );
 
     // Best/worst month by £ swing in unrealized P&L, month-over-month — a
     // quick "which month felt best/worst" callout, separate from the ROI %
@@ -322,6 +360,27 @@ export function T212StatsClient({
                 </Card>
             </div>
 
+            {/* Granularity toggle — shared by all four charts below (portfolio,
+                P&L, investment, ROI); the period buttons up in the header
+                filter them too. */}
+            <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-medium text-muted uppercase tracking-wider">Granularitate grafice:</span>
+                <div className="flex items-center gap-1.5 rounded-xl border border-border bg-white/[0.02] p-1">
+                    {GRANULARITY_OPTIONS.map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setGranularity(opt.key)}
+                            className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                                granularity === opt.key ? "bg-primary/15 text-primary" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {/* Portfolio evolution */}
             <Card>
                 <h2 className="mb-4 text-sm font-medium text-foreground">Evoluție portofoliu — valoare totală vs. investit</h2>
@@ -359,14 +418,14 @@ export function T212StatsClient({
             </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Monthly investment */}
+                {/* Investment per bucket */}
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Investiție lunară</h2>
-                    {monthlyInvestmentSeries.length === 0 ? (
+                    <h2 className="mb-4 text-sm font-medium text-foreground">Investiție</h2>
+                    {investmentSeries.length === 0 ? (
                         <p className="text-sm text-muted py-10 text-center">Niciun ordin de cumpărare încă.</p>
                     ) : (
                         <ResponsiveContainer width="100%" height={240}>
-                            <BarChart data={monthlyInvestmentSeries}>
+                            <BarChart data={investmentSeries}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                                 <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
@@ -380,11 +439,11 @@ export function T212StatsClient({
                     )}
                 </Card>
 
-                {/* Monthly ROI */}
+                {/* Cumulative ROI per bucket */}
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">ROI lunar (cumulativ)</h2>
+                    <h2 className="mb-4 text-sm font-medium text-foreground">ROI (cumulativ)</h2>
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={monthlyRoiSeries}>
+                        <BarChart data={roiSeries}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
@@ -393,7 +452,7 @@ export function T212StatsClient({
                                 formatter={(v) => `${Number(v).toFixed(2)}%`}
                             />
                             <Bar dataKey="roi" name="ROI" radius={[4, 4, 0, 0]}>
-                                {monthlyRoiSeries.map((entry, i) => (
+                                {roiSeries.map((entry, i) => (
                                     <Cell key={i} fill={entry.roi >= 0 ? "#22c55e" : "#ef4444"} />
                                 ))}
                             </Bar>
@@ -401,33 +460,6 @@ export function T212StatsClient({
                     </ResponsiveContainer>
                 </Card>
             </div>
-
-            {/* Annual ROI */}
-            <Card>
-                <h2 className="mb-4 text-sm font-medium text-foreground">ROI anual (cumulativ)</h2>
-                {annualRoiSeries.length <= 1 ? (
-                    <p className="text-sm text-muted py-6 text-center">
-                        Prea puțin istoric pentru un grafic anual — {annualRoiSeries[0] ? `${annualRoiSeries[0].roi.toFixed(2)}% în ${annualRoiSeries[0].key}` : "încă"}.
-                    </p>
-                ) : (
-                    <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={annualRoiSeries}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="key" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
-                            <Tooltip
-                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => `${Number(v).toFixed(2)}%`}
-                            />
-                            <Bar dataKey="roi" name="ROI" radius={[4, 4, 0, 0]}>
-                                {annualRoiSeries.map((entry, i) => (
-                                    <Cell key={i} fill={entry.roi >= 0 ? "#22c55e" : "#ef4444"} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                )}
-            </Card>
         </div>
     );
 }
