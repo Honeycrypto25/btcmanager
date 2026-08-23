@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { PwaProvider } from "@/components/pwa/PwaProvider";
+import { InstallBanner } from "@/components/pwa/InstallBanner";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -51,6 +52,7 @@ export default function RootLayout({
         <AuthProvider>
           <PwaProvider />
           {children}
+          <InstallBanner />
         </AuthProvider>
       </body>
     </html>
