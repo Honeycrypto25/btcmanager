@@ -15,6 +15,7 @@ import {
     Legend,
     ResponsiveContainer,
     Cell,
+    LabelList,
 } from "recharts";
 import { format, differenceInCalendarMonths, startOfWeek } from "date-fns";
 import { ArrowLeft, TrendingUp, TrendingDown, Calendar, PiggyBank, Percent } from "lucide-react";
@@ -461,10 +462,13 @@ export function T212StatsClient({
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <Tooltip
+                                cursor={{ fill: "rgba(255,255,255,0.04)" }}
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => fmt(Number(v))}
                             />
-                            <Bar dataKey="total" name="Investit" fill="rgba(139,92,246,0.6)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="total" name="Investit" fill="rgba(139,92,246,0.6)" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="total" position="top" formatter={(v) => fmt(Number(v))} style={{ fill: "#8c8a80", fontSize: 11 }} />
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 )}
@@ -482,6 +486,7 @@ export function T212StatsClient({
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                         <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
                         <Tooltip
+                            cursor={{ fill: "rgba(255,255,255,0.04)" }}
                             contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                             formatter={(v) => `${Number(v).toFixed(2)}%`}
                         />
@@ -489,6 +494,7 @@ export function T212StatsClient({
                             {roiChart.data.map((entry, i) => (
                                 <Cell key={i} fill={entry.roi >= 0 ? "#22c55e" : "#ef4444"} />
                             ))}
+                            <LabelList dataKey="roi" position="top" formatter={(v) => `${Number(v).toFixed(2)}%`} style={{ fill: "#8c8a80", fontSize: 11 }} />
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>
