@@ -51,6 +51,18 @@ const PERIOD_OPTIONS = [
 
 type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 
+// Cap how many bars/points a chart draws — at "Zilnic" granularity over
+// months of history, cramming 40+ daily bars into one card just turns into
+// unreadable slivers. Keeps the MOST RECENT points, since that's what you
+// care about seeing clearly; switch to a coarser granularity (or a shorter
+// period) to see further back without truncation.
+const MAX_CHART_POINTS = 20;
+
+function capToRecent<T>(series: T[]): { data: T[]; truncated: boolean } {
+    if (series.length <= MAX_CHART_POINTS) return { data: series, truncated: false };
+    return { data: series.slice(series.length - MAX_CHART_POINTS), truncated: true };
+}
+
 const GRANULARITY_OPTIONS = [
     { key: "day", label: "Zilnic" },
     { key: "week", label: "Săptămânal" },
@@ -220,6 +232,12 @@ export function T212StatsClient({
         [aggregatedSnapshots]
     );
 
+    // Each chart is capped independently to its own most-recent MAX_CHART_POINTS.
+    const portfolioChart = useMemo(() => capToRecent(portfolioSeries), [portfolioSeries]);
+    const pnlChart = useMemo(() => capToRecent(pnlSeries), [pnlSeries]);
+    const investmentChart = useMemo(() => capToRecent(investmentSeries), [investmentSeries]);
+    const roiChart = useMemo(() => capToRecent(roiSeries), [roiSeries]);
+
     // Best/worst month by £ swing in unrealized P&L, month-over-month — a
     // quick "which month felt best/worst" callout, separate from the ROI %
     // progression above.
@@ -383,9 +401,14 @@ export function T212StatsClient({
 
             {/* Portfolio evolution */}
             <Card>
-                <h2 className="mb-4 text-sm font-medium text-foreground">Evoluție portofoliu — valoare totală vs. investit</h2>
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 className="text-sm font-medium text-foreground">Evoluție portofoliu — valoare totală vs. investit</h2>
+                    {portfolioChart.truncated && (
+                        <span className="text-[11px] text-faint shrink-0">ultimele {MAX_CHART_POINTS} din {portfolioSeries.length}</span>
+                    )}
+                </div>
                 <ResponsiveContainer width="100%" height={280}>
-                    <ComposedChart data={portfolioSeries}>
+                    <ComposedChart data={portfolioChart.data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                         <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                         <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
@@ -402,9 +425,12 @@ export function T212StatsClient({
 
             {/* P&L evolution */}
             <Card>
-                <h2 className="mb-4 text-sm font-medium text-foreground">Evoluție profitabilitate (P&amp;L nerealizat)</h2>
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 className="text-sm font-medium text-foreground">Evoluție profitabilitate (P&amp;L nerealizat)</h2>
+                    {pnlChart.truncated && <span className="text-[11px] text-faint shrink-0">ultimele {MAX_CHART_POINTS} din {pnlSeries.length}</span>}
+                </div>
                 <ResponsiveContainer width="100%" height={260}>
-                    <ComposedChart data={pnlSeries}>
+                    <ComposedChart data={pnlChart.data}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                         <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                         <YAxis yAxisId="left" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
@@ -417,49 +443,56 @@ export function T212StatsClient({
                 </ResponsiveContainer>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Investment per bucket */}
-                <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Investiție</h2>
-                    {investmentSeries.length === 0 ? (
-                        <p className="text-sm text-muted py-10 text-center">Niciun ordin de cumpărare încă.</p>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={240}>
-                            <BarChart data={investmentSeries}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                                <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                                <Tooltip
-                                    contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                    formatter={(v) => fmt(Number(v))}
-                                />
-                                <Bar dataKey="total" name="Investit" fill="rgba(139,92,246,0.6)" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+            {/* Investment per bucket — own full-width row, not squeezed into a
+                2-column grid, so bars stay readable even at "Zilnic". */}
+            <Card>
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 className="text-sm font-medium text-foreground">Investiție</h2>
+                    {investmentChart.truncated && (
+                        <span className="text-[11px] text-faint shrink-0">ultimele {MAX_CHART_POINTS} din {investmentSeries.length}</span>
                     )}
-                </Card>
-
-                {/* Cumulative ROI per bucket */}
-                <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">ROI (cumulativ)</h2>
-                    <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={roiSeries}>
+                </div>
+                {investmentChart.data.length === 0 ? (
+                    <p className="text-sm text-muted py-10 text-center">Niciun ordin de cumpărare încă.</p>
+                ) : (
+                    <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={investmentChart.data}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => `${Number(v).toFixed(2)}%`}
+                                formatter={(v) => fmt(Number(v))}
                             />
-                            <Bar dataKey="roi" name="ROI" radius={[4, 4, 0, 0]}>
-                                {roiSeries.map((entry, i) => (
-                                    <Cell key={i} fill={entry.roi >= 0 ? "#22c55e" : "#ef4444"} />
-                                ))}
-                            </Bar>
+                            <Bar dataKey="total" name="Investit" fill="rgba(139,92,246,0.6)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
-                </Card>
-            </div>
+                )}
+            </Card>
+
+            {/* Cumulative ROI per bucket — same full-width treatment */}
+            <Card>
+                <div className="flex items-baseline justify-between gap-3 mb-4">
+                    <h2 className="text-sm font-medium text-foreground">ROI (cumulativ)</h2>
+                    {roiChart.truncated && <span className="text-[11px] text-faint shrink-0">ultimele {MAX_CHART_POINTS} din {roiSeries.length}</span>}
+                </div>
+                <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={roiChart.data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
+                        <Tooltip
+                            contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                            formatter={(v) => `${Number(v).toFixed(2)}%`}
+                        />
+                        <Bar dataKey="roi" name="ROI" radius={[4, 4, 0, 0]}>
+                            {roiChart.data.map((entry, i) => (
+                                <Cell key={i} fill={entry.roi >= 0 ? "#22c55e" : "#ef4444"} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </Card>
         </div>
     );
 }
