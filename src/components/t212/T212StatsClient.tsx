@@ -457,7 +457,7 @@ export function T212StatsClient({
                     <p className="text-sm text-muted py-10 text-center">Niciun ordin de cumpărare încă.</p>
                 ) : (
                     <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={investmentChart.data}>
+                        <BarChart data={investmentChart.data} margin={{ top: 20, right: 8, left: 8, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
@@ -481,7 +481,7 @@ export function T212StatsClient({
                     {roiChart.truncated && <span className="text-[11px] text-faint shrink-0">ultimele {MAX_CHART_POINTS} din {roiSeries.length}</span>}
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={roiChart.data}>
+                    <BarChart data={roiChart.data} margin={{ top: 20, right: 8, left: 8, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                         <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" unit="%" />
