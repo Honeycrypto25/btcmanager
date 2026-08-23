@@ -108,8 +108,16 @@ export async function runEvmSweepForUser(userId: string, force = false): Promise
     // above). Reads live from the DB rather than trusting a cached sum
     // anywhere, same "always the real current state" principle as the
     // on-chain balance check just above.
+    //
+    // A flat +10% safety margin is added on top of the planned amounts —
+    // slippage on the eventual fill, or a lot created between this
+    // computation and the actual transfer, could otherwise leave an open
+    // order short by a hair. Costs nothing but a slightly slower ramp-up of
+    // what's sweepable each month; correctness here matters more than
+    // maximizing the swept amount.
+    const RESERVE_SAFETY_MARGIN = 1.1;
     const openLots = await db.evmLot.findMany({ where: { userId, status: "OPEN" } });
-    const reservedWeth = openLots.reduce((sum, lot) => sum + Number(lot.sellAmountWethPlanned ?? 0), 0);
+    const reservedWeth = openLots.reduce((sum, lot) => sum + Number(lot.sellAmountWethPlanned ?? 0), 0) * RESERVE_SAFETY_MARGIN;
 
     // Hardcoded, not read from settings.sweepMinBalanceWeth — see the function doc above.
     const minBalance = 0;
