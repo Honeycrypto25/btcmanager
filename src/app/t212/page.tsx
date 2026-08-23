@@ -6,9 +6,9 @@ import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, cn } from "@/components/ui/core";
+import { Card, Button, cn } from "@/components/ui/core";
 import { db } from "@/lib/db";
-import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown, Repeat } from "lucide-react";
+import { TrendingUp, TrendingDown, PieChart, Link2, Clock, ArrowUpDown, Repeat, BarChart3 } from "lucide-react";
 import Link from 'next/link';
 import { T212SyncButton } from "@/components/t212/T212SyncButton";
 import { PositionsList } from "@/components/t212/PositionsList";
@@ -119,7 +119,14 @@ export default async function T212Page() {
                         Last synced {new Date(snapshot.capturedAt).toLocaleString()} &middot; {account.environment}
                     </p>
                 </div>
-                <T212SyncButton />
+                <div className="flex items-center gap-3">
+                    <Link href="/t212/stats">
+                        <Button variant="secondary" size="sm">
+                            <BarChart3 className="h-4 w-4" /> Statistici
+                        </Button>
+                    </Link>
+                    <T212SyncButton />
+                </div>
             </div>
 
             {account.lastSyncError && (
