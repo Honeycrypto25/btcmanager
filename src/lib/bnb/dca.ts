@@ -1,5 +1,5 @@
 import "server-only";
-import { parseUnits, formatUnits } from "ethers";
+import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
 import { loadConnectedBotWallet } from "./wallet";
 import { runBnbSweepForUser } from "./sweep";
@@ -131,6 +131,68 @@ export async function reconcileBnbOrdersForUser(userId: string): Promise<Reconci
 }
 
 /**
+ * Retries placing the take-profit sell order for any lot stuck in
+ * PENDING_SELL_ORDER — i.e. the buy went through on-chain but something
+ * (an RPC hiccup, a 1inch API error, a crash) prevented the sell order from
+ * being created right after. Without this, such a lot would sit there
+ * forever: nothing else in the app ever revisits PENDING_SELL_ORDER, since
+ * reconcileOpenLots only looks at status OPEN. Runs on every cron pass,
+ * before the interval-gated buy check, so a stuck lot gets fixed even on a
+ * day the interval isn't due for a fresh buy.
+ */
+async function retryPendingSellOrders(
+    userId: string,
+    settings: { takeProfitPercent: unknown; sellAmountUsd: unknown },
+    wallet: Wallet,
+): Promise<void> {
+    const stuckLots = await db.bnbLot.findMany({ where: { userId, status: "PENDING_SELL_ORDER" } });
+    for (const lot of stuckLots) {
+        try {
+            const targetPriceUsd = Number(lot.buyPriceUsd) * (1 + Number(settings.takeProfitPercent) / 100);
+            const sellAmountUsd = Number(settings.sellAmountUsd);
+            const sellAmountBnb = sellAmountUsd / targetPriceUsd;
+
+            const { orderHash } = await createTakeProfitSellOrder(wallet, {
+                makingAmountRaw: parseUnits(sellAmountBnb.toFixed(WBNB_DECIMALS), WBNB_DECIMALS),
+                takingAmountRaw: parseUnits(sellAmountUsd.toFixed(USDT_DECIMALS), USDT_DECIMALS),
+                expirationSeconds: ORDER_EXPIRATION_SECONDS,
+            });
+
+            await db.bnbLot.update({
+                where: { id: lot.id },
+                data: {
+                    status: "OPEN",
+                    targetPriceUsd,
+                    sellAmountBnbPlanned: sellAmountBnb,
+                    oneInchOrderHash: orderHash,
+                    sellOrderCreatedAt: new Date(),
+                    notes: null,
+                },
+            });
+
+            await notifyOrderPlaced({
+                chain: "BNB Chain",
+                tokenSymbol: "WBNB",
+                buyAmountUsd: Number(lot.buyAmountUsd),
+                tokenAcquired: Number(lot.bnbAcquired),
+                buyPriceUsd: Number(lot.buyPriceUsd),
+                targetPriceUsd,
+                takeProfitPercent: Number(settings.takeProfitPercent),
+                sellAmountPlanned: sellAmountBnb,
+                buyTxUrl: lot.buyTxHash ? `https://bscscan.com/tx/${lot.buyTxHash}` : undefined,
+            });
+        } catch (err) {
+            // Still stuck — leave it for the next cron pass to retry again.
+            const message = err instanceof Error ? err.message : String(err);
+            await db.bnbLot.update({
+                where: { id: lot.id },
+                data: { notes: `Sell order retry failed: ${message}` },
+            });
+        }
+    }
+}
+
+/**
  * Runs one DCA cycle for a single user: reconciles previously-open sell
  * orders, then — if `intervalHours` have elapsed since the last buy — buys
  * `buyAmountUsd` of WBNB via 1inch's Classic Swap API and places a
@@ -145,6 +207,20 @@ export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult>
     try {
         await reconcileOpenLots(userId, settings.walletAddress);
 
+        // Wallet is needed both for retrying any stuck sell order and for a
+        // fresh buy, so load it up front — independent of whether a new buy
+        // is due today.
+        const wallet = loadConnectedBotWallet();
+        if ((await wallet.getAddress()).toLowerCase() !== settings.walletAddress.toLowerCase()) {
+            throw new Error("BASE_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
+        }
+
+        // A lot can be stuck in PENDING_SELL_ORDER if a previous run's buy
+        // succeeded on-chain but placing the sell order afterwards failed
+        // (RPC hiccup, 1inch API error, etc.). Retry those every pass,
+        // regardless of whether a new buy is due.
+        await retryPendingSellOrders(userId, settings, wallet);
+
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
@@ -155,11 +231,6 @@ export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult>
         const sellAmountUsd = Number(settings.sellAmountUsd);
         if (sellAmountUsd < MIN_LIMIT_ORDER_USD) {
             throw new Error(`sellAmountUsd must be at least $${MIN_LIMIT_ORDER_USD}`);
-        }
-
-        const wallet = loadConnectedBotWallet();
-        if ((await wallet.getAddress()).toLowerCase() !== settings.walletAddress.toLowerCase()) {
-            throw new Error("BASE_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
         }
 
         // 1) Buy: USDT -> WBNB

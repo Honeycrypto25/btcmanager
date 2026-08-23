@@ -1,4 +1,5 @@
 import "server-only";
+import type { Keypair } from "@solana/web3.js";
 import { db } from "@/lib/db";
 import { loadBotKeypair } from "./wallet";
 import { runSolanaSweepForUser } from "./sweep";
@@ -144,6 +145,71 @@ export async function reconcileSolanaOrdersForUser(userId: string): Promise<Reco
 }
 
 /**
+ * Retries placing the take-profit sell order for any lot stuck in
+ * PENDING_SELL_ORDER — i.e. the buy went through on-chain but something
+ * (an RPC hiccup, a Jupiter API error, a crash) prevented the sell order
+ * from being created right after. Without this, such a lot would sit there
+ * forever: nothing else in the app ever revisits PENDING_SELL_ORDER, since
+ * reconcileOpenLots only looks at status OPEN. Runs on every cron pass,
+ * before the interval-gated buy check, so a stuck lot gets fixed even on a
+ * day the interval isn't due for a fresh buy. Mirrors the BNB/EVM side.
+ */
+async function retryPendingSellOrders(
+    userId: string,
+    settings: { takeProfitPercent: unknown; sellAmountUsd: unknown },
+    keypair: Keypair,
+): Promise<void> {
+    const stuckLots = await db.solanaLot.findMany({ where: { userId, status: "PENDING_SELL_ORDER" } });
+    for (const lot of stuckLots) {
+        try {
+            const targetPriceUsd = Number(lot.buyPriceUsd) * (1 + Number(settings.takeProfitPercent) / 100);
+            const sellAmountUsd = Number(settings.sellAmountUsd);
+            const sellAmountSol = sellAmountUsd / targetPriceUsd;
+
+            const { orderKey, txSignature } = await createTriggerSellOrder({
+                keypair,
+                inputMint: SOL_MINT,
+                outputMint: USDC_MINT,
+                makingAmountRaw: toRawAmount(sellAmountSol, SOL_DECIMALS),
+                takingAmountRaw: toRawAmount(sellAmountUsd, USDC_DECIMALS),
+            });
+
+            await db.solanaLot.update({
+                where: { id: lot.id },
+                data: {
+                    status: "OPEN",
+                    targetPriceUsd,
+                    sellAmountSolPlanned: sellAmountSol,
+                    jupiterOrderKey: orderKey,
+                    sellOrderCreatedAt: new Date(),
+                    sellOrderTxSignature: txSignature,
+                    notes: null,
+                },
+            });
+
+            await notifyOrderPlaced({
+                chain: "Solana",
+                tokenSymbol: "SOL",
+                buyAmountUsd: Number(lot.buyAmountUsd),
+                tokenAcquired: Number(lot.solAcquired),
+                buyPriceUsd: Number(lot.buyPriceUsd),
+                targetPriceUsd,
+                takeProfitPercent: Number(settings.takeProfitPercent),
+                sellAmountPlanned: sellAmountSol,
+                buyTxUrl: lot.buyTxSignature ? `https://solscan.io/tx/${lot.buyTxSignature}` : undefined,
+            });
+        } catch (err) {
+            // Still stuck — leave it for the next cron pass to retry again.
+            const message = err instanceof Error ? err.message : String(err);
+            await db.solanaLot.update({
+                where: { id: lot.id },
+                data: { notes: `Sell order retry failed: ${message}` },
+            });
+        }
+    }
+}
+
+/**
  * Runs one DCA cycle for a single user: reconciles previously-open sell
  * orders, then — if `intervalHours` have elapsed since the last buy — buys
  * `buyAmountUsd` of SOL and places a take-profit trigger sell order for
@@ -157,6 +223,20 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
     try {
         await reconcileOpenLots(userId, settings.walletAddress);
 
+        // Keypair is needed both for retrying any stuck sell order and for
+        // a fresh buy, so load it up front — independent of whether a new
+        // buy is due today.
+        const keypair = loadBotKeypair();
+        if (keypair.publicKey.toBase58() !== settings.walletAddress) {
+            throw new Error("SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
+        }
+
+        // A lot can be stuck in PENDING_SELL_ORDER if a previous run's buy
+        // succeeded on-chain but placing the sell order afterwards failed
+        // (RPC hiccup, Jupiter API error, etc.). Retry those every pass,
+        // regardless of whether a new buy is due.
+        await retryPendingSellOrders(userId, settings, keypair);
+
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
@@ -167,11 +247,6 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
         const sellAmountUsd = Number(settings.sellAmountUsd);
         if (sellAmountUsd < MIN_TRIGGER_ORDER_USD) {
             throw new Error(`sellAmountUsd must be at least $${MIN_TRIGGER_ORDER_USD} (Jupiter Trigger API minimum)`);
-        }
-
-        const keypair = loadBotKeypair();
-        if (keypair.publicKey.toBase58() !== settings.walletAddress) {
-            throw new Error("SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
         }
 
         // 1) Buy: USDC -> SOL
