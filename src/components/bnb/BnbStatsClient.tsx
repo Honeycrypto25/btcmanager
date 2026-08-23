@@ -495,7 +495,7 @@ export function BnbStatsClient({
                 <p className="mb-4 text-xs text-faint">
                     Fiecare rând e un ciclu complet — cumpărare (mereu confirmată pe blockchain) și, alături, statusul vânzării ({pendingLots.length} în așteptare, {finalLots.length} finalizate).
                 </p>
-                <CyclesTable lots={lots} />
+                <CyclesTable lots={lots} currentPriceUsd={bnbPriceUsd} />
             </Card>
 
             <Card className="overflow-x-auto">
@@ -555,7 +555,7 @@ function BscscanLink({ hash, label }: { hash: string; label: string }) {
     );
 }
 
-function CyclesTable({ lots }: { lots: LotDTO[] }) {
+function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
     const [page, setPage] = useState(1);
     if (lots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
@@ -564,7 +564,7 @@ function CyclesTable({ lots }: { lots: LotDTO[] }) {
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
-            <table className="w-full min-w-[1180px] text-left text-sm">
+            <table className="w-full min-w-[1320px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
@@ -574,6 +574,8 @@ function CyclesTable({ lots }: { lots: LotDTO[] }) {
                         <th className="pb-2 pr-4">Preț cumpărare</th>
                         <th className="pb-2 pr-4">Fee</th>
                         <th className="pb-2 pr-4">Preț țintă</th>
+                        <th className="pb-2 pr-4">Preț curent</th>
+                        <th className="pb-2 pr-4">%</th>
                         <th className="pb-2 pr-4">Vândut</th>
                         <th className="pb-2 pr-4">P&L</th>
                         <th className="pb-2 pr-4">WBNB rămas</th>
@@ -586,6 +588,9 @@ function CyclesTable({ lots }: { lots: LotDTO[] }) {
                     {pageItems.map((lot) => {
                         const meta = statusMeta[lot.status] ?? statusMeta.PENDING_SELL_ORDER;
                         const Icon = meta.icon;
+                        const isOpen = PENDING_STATUSES.has(lot.status);
+                        const pctChange =
+                            isOpen && currentPriceUsd ? ((currentPriceUsd - Number(lot.buyPriceUsd)) / Number(lot.buyPriceUsd)) * 100 : null;
                         return (
                             <tr key={lot.id} className="border-t border-white/[0.06]">
                                 <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
@@ -599,6 +604,10 @@ function CyclesTable({ lots }: { lots: LotDTO[] }) {
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
                                 <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
+                                <td className="py-2 pr-4 text-foreground">{isOpen && currentPriceUsd ? formatUsd(currentPriceUsd) : "—"}</td>
+                                <td className={cn("py-2 pr-4 font-medium", pctChange === null ? "text-faint" : pctChange >= 0 ? "text-emerald-300" : "text-red-300")}>
+                                    {pctChange === null ? "—" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`}
+                                </td>
                                 <td className="py-2 pr-4 text-foreground">{lot.sellProceedsUsd ? formatUsd(Number(lot.sellProceedsUsd)) : "—"}</td>
                                 <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
                                     {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
