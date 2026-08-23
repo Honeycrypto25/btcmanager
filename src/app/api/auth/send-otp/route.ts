@@ -106,15 +106,29 @@ export async function POST(req: Request) {
         await resend.emails.send({
             from: process.env.EMAIL_FROM || "BTC Manager <login@evama.net>",
             to: normalizedEmail,
-            subject: "Your Login Code - BTC Manager",
+            subject: `${otp} — your BTC Manager login code`,
             html: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Login Verification</h2>
-                    <p>Enter the following code to sign in to BTC Manager:</p>
-                    <div style="background: #f4f4f4; padding: 20px; text-align: center; border-radius: 8px; font-size: 24px; letter-spacing: 5px; font-weight: bold;">
-                        ${otp}
+                <div style="background:#0a0a09; padding:40px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+                    <div style="max-width:440px; margin:0 auto;">
+                        <div style="text-align:center; margin-bottom:28px;">
+                            <span style="display:inline-flex; align-items:center; gap:8px; color:#8a8f98; font-size:11px; font-weight:600; letter-spacing:0.2em; text-transform:uppercase;">
+                                BTC Manager
+                            </span>
+                        </div>
+                        <div style="background:#141311; border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:36px 32px;">
+                            <p style="margin:0 0 4px; color:#8a8f98; font-size:11px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase;">Login verification</p>
+                            <h1 style="margin:0 0 20px; color:#f0eee6; font-size:20px; font-weight:500;">Your sign-in code</h1>
+                            <div style="background:rgba(214,162,76,0.08); border:1px solid rgba(214,162,76,0.24); border-radius:12px; padding:20px; text-align:center;">
+                                <span style="font-family: 'SF Mono', Consolas, monospace; font-size:32px; font-weight:600; letter-spacing:0.35em; color:#e8bc70;">${otp}</span>
+                            </div>
+                            <p style="margin:20px 0 0; color:#a9a79c; font-size:13px; line-height:1.6;">
+                                This code expires in 15 minutes. Enter it on the sign-in screen to access your portfolio.
+                            </p>
+                        </div>
+                        <p style="margin:24px 0 0; color:#57554c; font-size:12px; line-height:1.6; text-align:center;">
+                            Didn't request this? You can safely ignore this email — no one can sign in without this code.
+                        </p>
                     </div>
-                    <p style="color: #666; font-size: 14px; margin-top: 20px;">This code expires in 15 minutes. If you didn't request this, please ignore this email.</p>
                 </div>
             `,
         });

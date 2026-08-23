@@ -20,6 +20,26 @@ export default function SignInPage() {
         setError(null);
 
         try {
+            // Trusted-device fast path — if this browser was previously marked
+            // "trust this device" for this exact email, this silently succeeds
+            // and no OTP email is needed at all. Any failure here (wrong/new
+            // device, expired or revoked trust) just falls through to the
+            // normal email-a-code flow below.
+            try {
+                const trustRes = await signIn('otp', {
+                    email,
+                    code: '',
+                    redirect: false,
+                    callbackUrl: '/',
+                });
+                if (trustRes && !trustRes.error) {
+                    router.push('/');
+                    return;
+                }
+            } catch {
+                // ignore — fall back to sending a code
+            }
+
             const res = await fetch('/api/auth/send-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -143,7 +163,7 @@ export default function SignInPage() {
                             <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                             <>
-                                {step === 'email' ? 'Send code' : 'Secure login'}
+                                {step === 'email' ? 'Continue' : 'Secure login'}
                                 <ArrowRight className="w-4 h-4 ml-1" />
                             </>
                         )}

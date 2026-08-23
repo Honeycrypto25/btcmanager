@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { verifyTotpToken } from "@/lib/totp";
 import { cookies } from "next/headers";
 import { sign2faCookie, COOKIE_NAME } from "@/lib/cookie-sign";
+import { createTrustedDevice, TRUSTED_DEVICE_COOKIE, TRUSTED_DEVICE_MAX_AGE_SECONDS } from "@/lib/trusted-device";
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
     if (!(session.user as any).isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     try {
-        const { token } = await req.json();
+        const { token, trustDevice } = await req.json();
         if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
 
         const user = await db.user.findUnique({
@@ -37,6 +38,22 @@ export async function POST(req: NextRequest) {
             maxAge: 60 * 60 * 24, // 24 ore
             path: '/'
         });
+
+        // "Trust this device" — only ever set here, after a FULL verified
+        // login (OTP + TOTP), so a compromised email alone can never grant
+        // lasting trust. Once set, this same cookie also lets future logins
+        // skip the emailed OTP code entirely (src/lib/auth.ts authorize()).
+        if (trustDevice) {
+            const userAgent = req.headers.get('user-agent');
+            const deviceCookieValue = await createTrustedDevice(user.id, userAgent);
+            cookieStore.set(TRUSTED_DEVICE_COOKIE, deviceCookieValue, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+                maxAge: TRUSTED_DEVICE_MAX_AGE_SECONDS,
+                path: '/'
+            });
+        }
 
         return NextResponse.json({ success: true });
     } catch (err) {

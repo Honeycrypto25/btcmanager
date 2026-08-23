@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { db } from "./db";
 import crypto from "crypto";
+import { readCookieFromHeader, verifyTrustedDevice, TRUSTED_DEVICE_COOKIE } from "./trusted-device";
 
 function hashOtp(otp: string): string {
     return crypto.createHash("sha256").update(otp).digest("hex");
@@ -46,8 +47,8 @@ export const authOptions: NextAuthOptions = {
                 email: { label: "Email", type: "email" },
                 code: { label: "Code", type: "text" },
             },
-            async authorize(credentials) {
-                if (!credentials?.email || !credentials?.code) {
+            async authorize(credentials, req) {
+                if (!credentials?.email) {
                     throw new Error("Missing credentials");
                 }
 
@@ -66,24 +67,38 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("AccessDenied");
                 }
 
-                // Verify OTP — comparăm hash-uri pentru a nu expune OTP-ul plaintext
-                if (
-                    !user.loginOtp ||
-                    !user.loginOtpExpires ||
-                    new Date() > user.loginOtpExpires ||
-                    user.loginOtp !== hashOtp(credentials.code)
-                ) {
-                    throw new Error("Invalid or expired code");
-                }
+                // Trusted-device fast path — a device only ever gets here after
+                // a FULL prior login (OTP + TOTP where applicable) explicitly
+                // checked "trust this device" (see /api/auth/2fa/verify). If the
+                // cookie checks out against the DB (still valid, not revoked
+                // from Admin), the emailed OTP code isn't required at all.
+                const cookieHeader = (req?.headers as Record<string, string> | undefined)?.cookie
+                    ?? (req?.headers as Record<string, string> | undefined)?.Cookie;
+                const deviceCookie = readCookieFromHeader(cookieHeader, TRUSTED_DEVICE_COOKIE);
+                const trustedUserId = await verifyTrustedDevice(deviceCookie);
+                const isTrustedDevice = trustedUserId === user.id;
 
-                // Clear OTP after successful login
-                await db.user.update({
-                    where: { id: user.id },
-                    data: {
-                        loginOtp: null,
-                        loginOtpExpires: null,
-                    },
-                });
+                if (!isTrustedDevice) {
+                    // Verify OTP — comparăm hash-uri pentru a nu expune OTP-ul plaintext
+                    if (
+                        !credentials.code ||
+                        !user.loginOtp ||
+                        !user.loginOtpExpires ||
+                        new Date() > user.loginOtpExpires ||
+                        user.loginOtp !== hashOtp(credentials.code)
+                    ) {
+                        throw new Error("Invalid or expired code");
+                    }
+
+                    // Clear OTP after successful login
+                    await db.user.update({
+                        where: { id: user.id },
+                        data: {
+                            loginOtp: null,
+                            loginOtpExpires: null,
+                        },
+                    });
+                }
 
                 return {
                     id: user.id,

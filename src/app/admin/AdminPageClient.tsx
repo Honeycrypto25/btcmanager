@@ -25,7 +25,8 @@ import {
     XCircle,
     Package,
     Copy,
-    Check
+    Check,
+    MonitorSmartphone
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
@@ -57,6 +58,16 @@ interface ViewerAccessRow {
     email: string;
     label: string | null;
     sections: string[];
+}
+
+interface TrustedDeviceRow {
+    id: string;
+    email: string | null;
+    label: string | null;
+    userAgent: string | null;
+    createdAt: string;
+    lastUsedAt: string;
+    expiresAt: string;
 }
 
 // Kept in sync by hand with SECTION_KEYS/SECTION_LABELS in
@@ -103,7 +114,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminPageClient() {
-    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'devices' | 'features'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -150,6 +161,13 @@ export default function AdminPageClient() {
     const [depLoaded, setDepLoaded] = useState(false);
     const [depError, setDepError] = useState<string | null>(null);
     const [depCopied, setDepCopied] = useState(false);
+
+    // Trusted ("safe") devices State — lazy-loaded on first tab open
+    const [devices, setDevices] = useState<TrustedDeviceRow[]>([]);
+    const [devicesLoading, setDevicesLoading] = useState(false);
+    const [devicesLoaded, setDevicesLoaded] = useState(false);
+    const [devicesError, setDevicesError] = useState<string | null>(null);
+    const [revokingDeviceId, setRevokingDeviceId] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         try {
@@ -237,6 +255,41 @@ export default function AdminPageClient() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
+
+    const fetchDevices = async () => {
+        setDevicesLoading(true);
+        setDevicesError(null);
+        try {
+            const { data } = await axios.get('/api/admin/trusted-devices');
+            setDevices(data);
+            setDevicesLoaded(true);
+        } catch (err) {
+            console.error('Failed to fetch trusted devices', err);
+            setDevicesError('Nu am putut încărca dispozitivele de încredere.');
+        } finally {
+            setDevicesLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'devices' && !devicesLoaded && !devicesLoading) {
+            fetchDevices();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
+
+    const handleRevokeDevice = async (id: string) => {
+        if (!confirm('Sigur revoci acest dispozitiv? La următoarea autentificare va trebui să introducă din nou codurile.')) return;
+        setRevokingDeviceId(id);
+        try {
+            await axios.delete(`/api/admin/trusted-devices?id=${id}`);
+            setDevices(prev => prev.filter(d => d.id !== id));
+        } catch (err) {
+            console.error('Failed to revoke device');
+        } finally {
+            setRevokingDeviceId(null);
+        }
+    };
 
     const statusLabelFor = (dep: DependencyRow) =>
         dep.behind === 'major' ? 'Major în urmă' :
@@ -401,6 +454,7 @@ export default function AdminPageClient() {
                     { id: 'integrations', name: 'Integrations', icon: Link2 },
                     { id: 'reports', name: 'Reports', icon: Mail },
                     { id: 'dependencies', name: 'Dependențe', icon: Package },
+                    { id: 'devices', name: 'Dispozitive de încredere', icon: MonitorSmartphone },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -940,6 +994,83 @@ export default function AdminPageClient() {
                                     </table>
                                 </div>
                             </>
+                        )}
+                    </Card>
+                </div>
+            )}
+
+            {activeTab === 'devices' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
+                                <MonitorSmartphone className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Dispozitive de încredere</h3>
+                                <p className="text-muted text-sm">
+                                    Un dispozitiv ajunge aici doar după o autentificare completă (cod pe email + Google Authenticator),
+                                    când bifezi &bdquo;nu mai cere codurile&rdquo; pe ecranul de verificare. Timp de 60 de zile,
+                                    dispozitivul respectiv sare peste ambele coduri. Revocă oricând de aici.
+                                </p>
+                            </div>
+                            <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={fetchDevices} disabled={devicesLoading}>
+                                <RefreshCw className={cn("w-4 h-4", devicesLoading && "animate-spin")} />
+                            </Button>
+                        </div>
+
+                        {devicesLoading && devices.length === 0 ? (
+                            <div className="flex items-center gap-2 text-sm text-muted py-6 justify-center">
+                                <Loader2 className="w-5 h-5 animate-spin" /> Se încarcă...
+                            </div>
+                        ) : devicesError ? (
+                            <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                {devicesError}
+                            </div>
+                        ) : devices.length === 0 ? (
+                            <p className="text-sm text-muted">Niciun dispozitiv de încredere încă.</p>
+                        ) : (
+                            <div className="overflow-x-auto -mx-6 md:-mx-8">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-xs text-faint uppercase border-b border-border">
+                                            <th className="px-6 md:px-8 py-2 font-medium whitespace-nowrap">Cont</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Dispozitiv</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Autorizat</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Ultima folosire</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Expiră</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {devices.map((d) => (
+                                            <tr key={d.id} className="border-b border-border/50 last:border-0">
+                                                <td className="px-6 md:px-8 py-2.5 whitespace-nowrap text-foreground">{d.email ?? '—'}</td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-muted" title={d.userAgent ?? undefined}>{d.label ?? 'Necunoscut'}</td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-faint text-xs">
+                                                    {new Date(d.createdAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-faint text-xs">
+                                                    {new Date(d.lastUsedAt).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-faint text-xs">
+                                                    {new Date(d.expiresAt).toLocaleDateString('ro-RO', { dateStyle: 'medium' })}
+                                                </td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                                    <Button
+                                                        variant="danger"
+                                                        size="sm"
+                                                        onClick={() => handleRevokeDevice(d.id)}
+                                                        disabled={revokingDeviceId === d.id}
+                                                    >
+                                                        {revokingDeviceId === d.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Revocă'}
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
                     </Card>
                 </div>

@@ -1,6 +1,6 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
-import { verify2faCookie, COOKIE_NAME } from "@/lib/cookie-sign";
+import { verify2faCookie, COOKIE_NAME, verifyTrustedDeviceCookie, TRUSTED_DEVICE_COOKIE } from "@/lib/cookie-sign";
 
 export default withAuth(
     async function proxy(req) {
@@ -25,7 +25,18 @@ export default withAuth(
             const is2faVerified = !!verifiedUserId && verifiedUserId === userId;
 
             if (requires2fa && !is2faVerified) {
-                return NextResponse.redirect(new URL("/auth/totp", req.url));
+                // "Safe device" fast path — an edge-safe signature+expiry check
+                // only (no DB call from middleware). Revoking a device from
+                // Admin stops it going forward but doesn't retroactively kick
+                // an already-issued cookie mid-flight — same tradeoff the
+                // 24h 2fa_verified cookie above already has.
+                const deviceCookie = req.cookies.get(TRUSTED_DEVICE_COOKIE)?.value;
+                const trusted = deviceCookie ? await verifyTrustedDeviceCookie(deviceCookie) : null;
+                const isTrustedDevice = !!trusted && trusted.userId === userId;
+
+                if (!isTrustedDevice) {
+                    return NextResponse.redirect(new URL("/auth/totp", req.url));
+                }
             }
         }
 

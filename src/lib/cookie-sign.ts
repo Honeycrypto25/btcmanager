@@ -58,4 +58,52 @@ export async function verify2faCookie(value: string, maxAgeSeconds = 86400): Pro
     }
 }
 
-export { COOKIE_NAME };
+const TRUSTED_DEVICE_COOKIE = 'trusted_device';
+const TRUSTED_DEVICE_MAX_AGE_SECONDS = 60 * 24 * 60 * 60; // 60 zile
+
+/**
+ * Semnează un cookie "trusted device": "<userId>.<deviceId>.<timestamp>.<sig>".
+ * deviceId e id-ul rândului TrustedDevice din DB — nesecret pe cont propriu
+ * (semnătura HMAC e ce împiedică falsificarea), dar permite revocare din
+ * Admin fără să schimbăm formatul cookie-ului.
+ */
+export async function signTrustedDeviceCookie(userId: string, deviceId: string): Promise<string> {
+    const timestamp = Date.now().toString();
+    const payload = `${userId}.${deviceId}.${timestamp}`;
+    const key = await getHmacKey(getSecret());
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+    return `${payload}.${bufToHex(sig)}`;
+}
+
+/**
+ * Verifică semnătura unui cookie "trusted device" și returnează
+ * { userId, deviceId } dacă e valid (semnătură OK + neexpirat), null altfel.
+ * Rulează pe Web Crypto — sigur de folosit din edge middleware (src/proxy.ts),
+ * fără niciun query către DB. Revocarea unui dispozitiv din Admin nu invalidează
+ * instant un cookie deja emis aici (verificat doar prin semnătură + vârstă) —
+ * doar oprește bypass-ul codului OTP la autentificare (vezi src/lib/trusted-device.ts,
+ * care verifică suplimentar și rândul din DB).
+ */
+export async function verifyTrustedDeviceCookie(value: string, maxAgeSeconds = TRUSTED_DEVICE_MAX_AGE_SECONDS): Promise<{ userId: string; deviceId: string } | null> {
+    try {
+        const parts = value.split('.');
+        if (parts.length !== 4) return null;
+        const [userId, deviceId, timestamp, sig] = parts;
+        if (!userId || !deviceId || !timestamp || !sig) return null;
+
+        const payload = `${userId}.${deviceId}.${timestamp}`;
+        const key = await getHmacKey(getSecret());
+        const sigBytes = Uint8Array.from(sig.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+        const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload));
+        if (!valid) return null;
+
+        const age = (Date.now() - parseInt(timestamp, 10)) / 1000;
+        if (age > maxAgeSeconds) return null;
+
+        return { userId, deviceId };
+    } catch {
+        return null;
+    }
+}
+
+export { COOKIE_NAME, TRUSTED_DEVICE_COOKIE, TRUSTED_DEVICE_MAX_AGE_SECONDS };

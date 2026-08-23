@@ -11,6 +11,7 @@ export default function TotpPage() {
     const { data: session, status } = useSession();
     const router = useRouter();
     const [token, setToken] = useState('');
+    const [trustDevice, setTrustDevice] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +31,7 @@ export default function TotpPage() {
         setError(null);
 
         try {
-            const { data } = await axios.post('/api/auth/2fa/verify', { token });
+            const { data } = await axios.post('/api/auth/2fa/verify', { token, trustDevice });
             if (data.success) {
                 // Force refresh session/page to clear requires2fa flag (handled via cookie/server state in this implementation)
                 window.location.href = '/';
@@ -70,6 +71,19 @@ export default function TotpPage() {
                             />
                         </div>
                     </div>
+
+                    <label className="flex items-start gap-2.5 rounded-lg border border-border px-4 py-3 text-sm text-muted cursor-pointer hover:text-foreground transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={trustDevice}
+                            onChange={(e) => setTrustDevice(e.target.checked)}
+                            className="mt-0.5 accent-primary"
+                        />
+                        <span>
+                            Nu mai cere codurile pe acest dispozitiv timp de 60 de zile
+                            <span className="block text-xs text-faint mt-0.5">Bifează doar pe un dispozitiv personal, de încredere.</span>
+                        </span>
+                    </label>
 
                     {error && (
                         <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg flex items-center gap-3">

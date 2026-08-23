@@ -59,9 +59,33 @@ model User {
   bnbSettings          BnbSettings?
   bnbLots              BnbLot[]
   bnbSweeps            BnbSweep[]
+  trustedDevices       TrustedDevice[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// --- Trusted devices ("safe devices") ---
+// Lets a device skip the emailed OTP code and the Google Authenticator (TOTP)
+// prompt on future logins, without weakening security for any other device.
+// Trust is only ever established AFTER a full verified login (OTP + TOTP for
+// accounts with 2FA on) via a "trust this device" checkbox — see
+// src/app/api/auth/2fa/verify/route.ts. The browser only ever holds an
+// HMAC-signed cookie referencing this row's id (src/lib/cookie-sign.ts); the
+// row itself is what makes trust revocable from Admin.
+model TrustedDevice {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  label     String? // best-effort browser/OS guess, shown in Admin
+  userAgent String? @db.Text
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  expiresAt  DateTime // cookie itself also carries this; revoking here (delete) takes effect on the next login attempt
+
+  @@index([userId])
 }
 
 enum UserRole {
