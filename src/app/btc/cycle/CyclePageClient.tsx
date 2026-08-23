@@ -472,7 +472,10 @@ export default function CyclePageClient() {
                                     <Tooltip
                                         contentStyle={{ backgroundColor: '#181714', borderColor: 'rgba(255,255,255,0.08)', color: '#f0eee6', borderRadius: 8 }}
                                         itemStyle={{ color: '#f0eee6' }}
-                                        formatter={(val: number | undefined) => [val != null ? `$${val.toLocaleString()}` : '', 'Price']}
+                                        formatter={(val) => {
+                                            const num = typeof val === 'number' ? val : Number(val);
+                                            return [Number.isFinite(num) ? `$${num.toLocaleString()}` : '', 'Price'];
+                                        }}
                                         labelStyle={{ color: '#8c8a80' }}
                                     />
 

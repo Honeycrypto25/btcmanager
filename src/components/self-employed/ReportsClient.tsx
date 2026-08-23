@@ -117,7 +117,7 @@ export function ReportsClient({ summary, taxYears, advanced }: { summary: Summar
                                 <YAxis stroke="#8c8a80" fontSize={12} tickFormatter={(v) => `£${v}`} />
                                 <Tooltip
                                     contentStyle={{ background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}
-                                    formatter={(value: number | undefined) => formatGBP(value ?? 0)}
+                                    formatter={(value) => formatGBP(typeof value === 'number' ? value : Number(value) || 0)}
                                 />
                                 <Legend />
                                 <Bar dataKey="income" name="Venit" fill="#52c98a" radius={[4, 4, 0, 0]} />
