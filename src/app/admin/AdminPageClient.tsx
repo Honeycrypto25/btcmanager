@@ -22,10 +22,19 @@ import {
     Users,
     UserX,
     History,
-    XCircle
+    XCircle,
+    Package
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
+
+interface DependencyRow {
+    name: string;
+    type: 'dependency' | 'devDependency';
+    current: string;
+    latest: string | null;
+    behind: 'patch' | 'minor' | 'major' | null;
+}
 
 interface T212Status {
     configured: boolean;
@@ -92,7 +101,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminPageClient() {
-    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'features'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -131,6 +140,13 @@ export default function AdminPageClient() {
     const [viewerSaving, setViewerSaving] = useState(false);
     const [viewerError, setViewerError] = useState<string | null>(null);
     const [editingViewerId, setEditingViewerId] = useState<string | null>(null);
+
+    // Dependencies State — lazy-loaded only when the tab is first opened
+    // (42 npm registry lookups on every page load would be wasteful).
+    const [depRows, setDepRows] = useState<DependencyRow[]>([]);
+    const [depLoading, setDepLoading] = useState(false);
+    const [depLoaded, setDepLoaded] = useState(false);
+    const [depError, setDepError] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         try {
@@ -196,6 +212,28 @@ export default function AdminPageClient() {
         fetchEmailLogs();
         fetchViewers();
     }, []);
+
+    const fetchDependencies = async () => {
+        setDepLoading(true);
+        setDepError(null);
+        try {
+            const { data } = await axios.get('/api/admin/dependencies');
+            setDepRows(data);
+            setDepLoaded(true);
+        } catch (err) {
+            console.error('Failed to fetch dependency status', err);
+            setDepError('Nu am putut verifica versiunile — încearcă din nou.');
+        } finally {
+            setDepLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'dependencies' && !depLoaded && !depLoading) {
+            fetchDependencies();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     const toggleViewerSection = (key: string) => {
         setViewerSections(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
@@ -328,6 +366,7 @@ export default function AdminPageClient() {
                     { id: 'access', name: 'Acces vizualizare', icon: Users },
                     { id: 'integrations', name: 'Integrations', icon: Link2 },
                     { id: 'reports', name: 'Reports', icon: Mail },
+                    { id: 'dependencies', name: 'Dependențe', icon: Package },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -780,6 +819,85 @@ export default function AdminPageClient() {
                                     </tbody>
                                 </table>
                             </div>
+                        )}
+                    </Card>
+                </div>
+            )}
+
+            {activeTab === 'dependencies' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
+                                <Package className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Dependențe (package.json)</h3>
+                                <p className="text-muted text-sm">
+                                    Versiunea folosită acum vs. ultima versiune publicată pe npm, pentru fiecare pachet. Nu actualizează nimic automat — doar arată ce ar merita verificat.
+                                </p>
+                            </div>
+                            <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={fetchDependencies} disabled={depLoading}>
+                                <RefreshCw className={cn("w-4 h-4", depLoading && "animate-spin")} />
+                            </Button>
+                        </div>
+
+                        {depLoading && depRows.length === 0 ? (
+                            <div className="flex items-center gap-2 text-sm text-muted py-6 justify-center">
+                                <Loader2 className="w-5 h-5 animate-spin" /> Se verifică pe npm — poate dura câteva secunde...
+                            </div>
+                        ) : depError ? (
+                            <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                {depError}
+                            </div>
+                        ) : depRows.length === 0 ? (
+                            <p className="text-sm text-muted">Apasă refresh ca să verifici versiunile.</p>
+                        ) : (
+                            <>
+                                <div className="flex flex-wrap items-center gap-3 text-xs">
+                                    <span className="inline-flex items-center gap-1.5 text-red-400"><span className="w-2 h-2 rounded-full bg-red-400" /> Major în urmă</span>
+                                    <span className="inline-flex items-center gap-1.5 text-orange-400"><span className="w-2 h-2 rounded-full bg-orange-400" /> Minor în urmă</span>
+                                    <span className="inline-flex items-center gap-1.5 text-yellow-400"><span className="w-2 h-2 rounded-full bg-yellow-400" /> Patch în urmă</span>
+                                    <span className="inline-flex items-center gap-1.5 text-accent"><span className="w-2 h-2 rounded-full bg-accent" /> La zi</span>
+                                    <span className="inline-flex items-center gap-1.5 text-faint"><span className="w-2 h-2 rounded-full bg-faint" /> Necunoscut (lookup eșuat)</span>
+                                </div>
+                                <div className="overflow-x-auto -mx-6 md:-mx-8">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-left text-xs text-faint uppercase border-b border-border">
+                                                <th className="px-6 md:px-8 py-2 font-medium">Pachet</th>
+                                                <th className="px-3 py-2 font-medium whitespace-nowrap">Tip</th>
+                                                <th className="px-3 py-2 font-medium whitespace-nowrap">Versiune curentă</th>
+                                                <th className="px-3 py-2 font-medium whitespace-nowrap">Ultima pe npm</th>
+                                                <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {depRows.map((dep) => {
+                                                const statusColor =
+                                                    dep.behind === 'major' ? 'text-red-400' :
+                                                    dep.behind === 'minor' ? 'text-orange-400' :
+                                                    dep.behind === 'patch' ? 'text-yellow-400' :
+                                                    dep.latest ? 'text-accent' : 'text-faint';
+                                                const statusLabel =
+                                                    dep.behind === 'major' ? 'Major în urmă' :
+                                                    dep.behind === 'minor' ? 'Minor în urmă' :
+                                                    dep.behind === 'patch' ? 'Patch în urmă' :
+                                                    dep.latest ? 'La zi' : 'Necunoscut';
+                                                return (
+                                                    <tr key={dep.name} className="border-b border-border/50 last:border-0">
+                                                        <td className="px-6 md:px-8 py-2.5 whitespace-nowrap text-foreground font-mono text-xs">{dep.name}</td>
+                                                        <td className="px-3 py-2.5 whitespace-nowrap text-muted text-xs">{dep.type === 'devDependency' ? 'dev' : 'prod'}</td>
+                                                        <td className="px-3 py-2.5 whitespace-nowrap text-muted font-num">{dep.current}</td>
+                                                        <td className="px-3 py-2.5 whitespace-nowrap text-foreground font-num">{dep.latest ?? '—'}</td>
+                                                        <td className={cn("px-3 py-2.5 whitespace-nowrap text-xs font-medium", statusColor)}>{statusLabel}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
                         )}
                     </Card>
                 </div>
