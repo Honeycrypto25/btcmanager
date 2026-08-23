@@ -23,7 +23,9 @@ import {
     UserX,
     History,
     XCircle,
-    Package
+    Package,
+    Copy,
+    Check
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
@@ -147,6 +149,7 @@ export default function AdminPageClient() {
     const [depLoading, setDepLoading] = useState(false);
     const [depLoaded, setDepLoaded] = useState(false);
     const [depError, setDepError] = useState<string | null>(null);
+    const [depCopied, setDepCopied] = useState(false);
 
     const fetchStatus = async () => {
         try {
@@ -234,6 +237,37 @@ export default function AdminPageClient() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
+
+    const statusLabelFor = (dep: DependencyRow) =>
+        dep.behind === 'major' ? 'Major în urmă' :
+        dep.behind === 'minor' ? 'Minor în urmă' :
+        dep.behind === 'patch' ? 'Patch în urmă' :
+        dep.latest ? 'La zi' : 'Necunoscut';
+
+    const handleCopyDependencies = async () => {
+        const lines = depRows.map((dep) => {
+            const tag = dep.type === 'devDependency' ? 'dev' : 'prod';
+            return `${dep.name} (${tag}): ${dep.current} → ${dep.latest ?? '?'} [${statusLabelFor(dep)}]`;
+        });
+        const text = lines.join('\n');
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            // Clipboard API can fail (permissions, non-HTTPS, etc.) — fall back
+            // to a manual copy via a temporary textarea so the button never
+            // just silently does nothing.
+            const el = document.createElement('textarea');
+            el.value = text;
+            el.style.position = 'fixed';
+            el.style.opacity = '0';
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        }
+        setDepCopied(true);
+        setTimeout(() => setDepCopied(false), 2000);
+    };
 
     const toggleViewerSection = (key: string) => {
         setViewerSections(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
@@ -837,9 +871,17 @@ export default function AdminPageClient() {
                                     Versiunea folosită acum vs. ultima versiune publicată pe npm, pentru fiecare pachet. Nu actualizează nimic automat — doar arată ce ar merita verificat.
                                 </p>
                             </div>
-                            <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={fetchDependencies} disabled={depLoading}>
-                                <RefreshCw className={cn("w-4 h-4", depLoading && "animate-spin")} />
-                            </Button>
+                            <div className="ml-auto flex items-center gap-2 shrink-0">
+                                {depRows.length > 0 && (
+                                    <Button variant="outline" size="sm" onClick={handleCopyDependencies}>
+                                        {depCopied ? <Check className="w-4 h-4 mr-1.5 text-accent" /> : <Copy className="w-4 h-4 mr-1.5" />}
+                                        {depCopied ? 'Copiat!' : 'Copiază tot'}
+                                    </Button>
+                                )}
+                                <Button variant="outline" size="sm" onClick={fetchDependencies} disabled={depLoading}>
+                                    <RefreshCw className={cn("w-4 h-4", depLoading && "animate-spin")} />
+                                </Button>
+                            </div>
                         </div>
 
                         {depLoading && depRows.length === 0 ? (
