@@ -129,6 +129,22 @@ export function EvmStatsClient({
         return rows;
     }, [lots]);
 
+    // Just the currently-active limit sell orders — deliberately NOT built
+    // from the (filterable/date-ranged) `lots` above, and deliberately not
+    // accumulating history: this chart exists to answer "what am I exposed
+    // to right now", so a lot drops off the moment it's filled or
+    // cancelled rather than lingering as a flat historical line.
+    const openLotsChartData = useMemo(() => {
+        return allLots
+            .filter((lot) => lot.status === "OPEN")
+            .sort((a, b) => new Date(a.boughtAt).getTime() - new Date(b.boughtAt).getTime())
+            .map((lot) => ({
+                date: format(new Date(lot.boughtAt), "d MMM"),
+                buyPrice: Number(lot.buyPriceUsd),
+                targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
+            }));
+    }, [allLots]);
+
     // Fixed trailing 14-month window, independent of the filter bar above, and
     // counting only finalized cycles (FILLED / CANCELLED / FAILED).
     const monthlyData = useMemo(() => {
@@ -356,11 +372,11 @@ export function EvmStatsClient({
             </Card>
 
             {/* Charts */}
-            {chartData.length > 0 && (
+            {openLotsChartData.length > 0 && (
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot</h2>
+                    <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
                     <ResponsiveContainer width="100%" height={280}>
-                        <ComposedChart data={chartData}>
+                        <ComposedChart data={openLotsChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                             <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
