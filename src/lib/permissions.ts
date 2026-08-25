@@ -14,6 +14,7 @@ export const SECTION_KEYS = [
     "solana",
     "base",
     "bnb",
+    "polygon",
     "selfEmployed",
     "vehicles",
 ] as const;
@@ -27,6 +28,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
     solana: "Solana DCA",
     base: "Base (ETH) DCA",
     bnb: "BNB Chain DCA",
+    polygon: "Polygon Reverse-DCA",
     selfEmployed: "Self Employed / Taxe",
     vehicles: "Vehicule & Documente",
 };
@@ -83,6 +85,7 @@ export function sectionHomeHref(section: SectionKey): string {
         case "solana": return "/solana";
         case "base": return "/base";
         case "bnb": return "/bnb";
+        case "polygon": return "/polygon";
         case "selfEmployed": return "/self-employed";
         case "vehicles": return "/vehicles";
     }

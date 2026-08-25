@@ -34,17 +34,20 @@ const COLORS = {
     baseSoft: 'rgba(0,82,255,0.12)',
     bnb: '#F0B90B',
     bnbSoft: 'rgba(240,185,11,0.12)',
+    polygon: '#8247E5',
+    polygonSoft: 'rgba(130,71,229,0.12)',
 };
 
 const FONT_DISPLAY = "'Space Grotesk', Helvetica, Arial, sans-serif";
 const FONT_BODY = "Helvetica, Arial, sans-serif";
 
-export type ChainName = "Solana" | "Base (ETH)" | "BNB Chain";
+export type ChainName = "Solana" | "Base (ETH)" | "BNB Chain" | "Polygon";
 
 const CHAIN_COLOR: Record<ChainName, { fg: string; soft: string }> = {
     "Solana": { fg: COLORS.solana, soft: COLORS.solanaSoft },
     "Base (ETH)": { fg: COLORS.base, soft: COLORS.baseSoft },
     "BNB Chain": { fg: COLORS.bnb, soft: COLORS.bnbSoft },
+    "Polygon": { fg: COLORS.polygon, soft: COLORS.polygonSoft },
 };
 
 function fmtUsd(n: number): string {
@@ -237,4 +240,89 @@ export async function notifySweep(opts: {
     });
     const subjectPrefix = opts.status === "SUCCESS" ? "retragere reușită" : "retragere EȘUATĂ";
     await send("SWEEP", opts.chain, `${opts.chain} — ${subjectPrefix} (${fmtToken(opts.amount)} ${opts.tokenSymbol})`, html);
+}
+
+// --- Polygon reverse-DCA (sell externally-received token -> USDC, buy-back order below) ---
+
+/** Sent once a reverse-DCA sell (of externally-received GEOD/MYST/...) confirms on-chain, before the buy-back order attempt. */
+export async function notifyTokenSold(opts: {
+    tokenSymbol: string;
+    tokenSold: number;
+    sellPriceUsd: number;
+    usdcReceived: number;
+    usdcToBuyback: number;
+    usdcProfit: number;
+    sellTxUrl?: string;
+}): Promise<void> {
+    const rows: Row[] = [
+        { label: `${opts.tokenSymbol} vândut`, value: `${fmtToken(opts.tokenSold)} ${opts.tokenSymbol}` },
+        { label: "Preț vânzare", value: fmtUsd(opts.sellPriceUsd) },
+        { label: "Încasat (USDC)", value: fmtUsd(opts.usdcReceived) },
+        { label: "Rezervat pentru răscumpărare", value: fmtUsd(opts.usdcToBuyback) },
+        { label: "Profit realizat", value: fmtUsd(opts.usdcProfit), valueColor: COLORS.accent },
+    ];
+    const html = buildEmailHtml({
+        chain: "Polygon",
+        badge: "Vândut",
+        badgeColor: COLORS.accent,
+        title: `${opts.tokenSymbol} primit extern — vândut în USDC`,
+        rows,
+        link: opts.sellTxUrl ? { label: "Vezi tranzacția de vânzare", url: opts.sellTxUrl } : undefined,
+        dashboardUrl: getDashboardUrl(),
+    });
+    await send("ORDER_FILLED", "Polygon", `Polygon — ${opts.tokenSymbol} vândut (${fmtUsd(opts.usdcReceived)})`, html);
+}
+
+/** Sent once the buy-back limit order (USDC -> token, below the sale price) is confirmed placed. */
+export async function notifyRebuyOrderPlaced(opts: {
+    tokenSymbol: string;
+    tokenSold: number;
+    sellPriceUsd: number;
+    usdcToBuyback: number;
+    targetPriceUsd: number;
+    buybackDipPercent: number;
+}): Promise<void> {
+    const rows: Row[] = [
+        { label: `${opts.tokenSymbol} vândut inițial`, value: `${fmtToken(opts.tokenSold)} ${opts.tokenSymbol}` },
+        { label: "Preț vânzare", value: fmtUsd(opts.sellPriceUsd) },
+        { label: "USDC în ordinul de răscumpărare", value: fmtUsd(opts.usdcToBuyback) },
+        { label: "Preț țintă răscumpărare", value: `${fmtUsd(opts.targetPriceUsd)} (-${opts.buybackDipPercent}%)` },
+    ];
+    const html = buildEmailHtml({
+        chain: "Polygon",
+        badge: "Ordin plasat",
+        badgeColor: COLORS.foreground,
+        title: `Ordin de răscumpărare ${opts.tokenSymbol} plasat`,
+        rows,
+        dashboardUrl: getDashboardUrl(),
+    });
+    await send("ORDER_PLACED", "Polygon", `Polygon — ordin de răscumpărare ${opts.tokenSymbol} plasat`, html);
+}
+
+/** Sent when a previously-open buy-back order is detected as FILLED — the token was reacquired at the lower price. */
+export async function notifyRebuyFilled(opts: {
+    tokenSymbol: string;
+    tokenReacquired: number;
+    usdcSpent: number;
+    buybackPriceUsd: number;
+    originalSellPriceUsd: number;
+}): Promise<void> {
+    const discount = opts.originalSellPriceUsd > 0
+        ? ((opts.originalSellPriceUsd - opts.buybackPriceUsd) / opts.originalSellPriceUsd) * 100
+        : 0;
+    const rows: Row[] = [
+        { label: `${opts.tokenSymbol} răscumpărat`, value: `${fmtToken(opts.tokenReacquired)} ${opts.tokenSymbol}` },
+        { label: "USDC cheltuit", value: fmtUsd(opts.usdcSpent) },
+        { label: "Preț răscumpărare", value: fmtUsd(opts.buybackPriceUsd) },
+        { label: "Față de prețul de vânzare", value: `-${discount.toFixed(1)}%`, valueColor: COLORS.accent },
+    ];
+    const html = buildEmailHtml({
+        chain: "Polygon",
+        badge: "Răscumpărat",
+        badgeColor: COLORS.accent,
+        title: `Ordin de răscumpărare ${opts.tokenSymbol} finalizat`,
+        rows,
+        dashboardUrl: getDashboardUrl(),
+    });
+    await send("ORDER_FILLED", "Polygon", `Polygon — ${opts.tokenSymbol} răscumpărat mai ieftin`, html);
 }

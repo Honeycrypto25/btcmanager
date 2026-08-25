@@ -81,6 +81,7 @@ const SECTION_OPTIONS: { key: string; label: string }[] = [
     { key: 'solana', label: 'Solana DCA' },
     { key: 'base', label: 'Base (ETH) DCA' },
     { key: 'bnb', label: 'BNB Chain DCA' },
+    { key: 'polygon', label: 'Polygon Reverse-DCA' },
     { key: 'selfEmployed', label: 'Self Employed / Taxe' },
     { key: 'vehicles', label: 'Vehicule & Documente' },
 ];

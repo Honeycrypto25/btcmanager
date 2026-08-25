@@ -31,7 +31,8 @@ import {
     Layers,
     Coins,
     Hexagon,
-    Diamond
+    Diamond,
+    Repeat
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -96,6 +97,14 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'DCA automat', href: '/bnb', icon: Diamond },
             { name: 'Statistici', href: '/bnb/stats', icon: BarChart3 },
+        ],
+    },
+    {
+        section: 'Polygon',
+        sectionKey: 'polygon',
+        items: [
+            { name: 'Reverse-DCA', href: '/polygon', icon: Repeat },
+            { name: 'Statistici', href: '/polygon/stats', icon: BarChart3 },
         ],
     },
     {

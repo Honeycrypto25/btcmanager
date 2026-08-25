@@ -60,6 +60,10 @@ model User {
   bnbLots              BnbLot[]
   bnbSweeps            BnbSweep[]
   trustedDevices       TrustedDevice[]
+  polygonTokenSettings PolygonTokenSettings[]
+  polygonTokenLots     PolygonTokenLot[]
+  polygonTokenSweeps   PolygonTokenSweep[]
+  polygonSweepSettings PolygonSweepSettings?
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -1217,4 +1221,149 @@ model EmailLog {
 
   @@index([createdAt])
   @@index([type])
+}
+
+// --- Polygon "reverse DCA" bot ---
+// The mirror image of the Solana/Base/BNB bots above, and just as
+// cadence-driven: those buy a fixed USD amount on a schedule and place a
+// take-profit SELL order above the buy price. This one sells a fixed USD
+// amount on the same kind of schedule — GEODNET/Mysterium tokens accumulate
+// on their own from mining rewards (never bought by this app), and every
+// `intervalHours` the bot sells `sellAmountUsd` worth of whatever balance
+// is sitting in the wallet into USDC via 1inch Classic Swap, then places a
+// 1inch Limit Order Protocol v4 BUY-BACK order below the sale price so a
+// price dip reacquires some of it cheaper. Multi-token by design (one row
+// per userId+tokenAddress, not per user) — Sergiu runs this for both GEOD
+// and MYST on the same wallet as Base/BNB (same BASE_PRIVATE_KEY — an EVM
+// key produces the same address on every EVM chain).
+model PolygonTokenSettings {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  tokenAddress  String // checksum ERC-20 address on Polygon
+  tokenSymbol   String // fetched live from the contract when added, cached here for display
+  tokenDecimals Int // fetched live from the contract when added
+
+  // Public address only — never the private key. Same wallet as Base/BNB
+  // (BASE_PRIVATE_KEY env var — an EVM key is chain-agnostic).
+  walletAddress String
+
+  sellAmountUsd     Decimal @default(10) @db.Decimal(10, 2) // fixed USD-equivalent of the token sold each cycle — mirrors buyAmountUsd on Base/BNB
+  intervalHours     Int     @default(24)
+  buybackDipPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 — place the buy-back order 10% below the sale price
+  buybackPercent    Decimal @default(50) @db.Decimal(5, 2) // % of USDC proceeds committed to the buy-back order; the rest is realized profit (sweepable)
+  slippageBps       Int     @default(300)
+
+  lastRunAt     DateTime?
+  lastRunStatus String? // "ok" | "skipped" | "error"
+  lastRunError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lots PolygonTokenLot[]
+
+  @@unique([userId, tokenAddress])
+  @@index([userId])
+}
+
+enum PolygonLotStatus {
+  PENDING_BUYBACK_ORDER // sell succeeded, buy-back order creation failed/not yet attempted
+  OPEN // buy-back limit order live on 1inch, waiting for the price to dip
+  FILLED // buy-back order executed — token reacquired at the lower price
+  CANCELLED // buy-back order cancelled/expired/invalidated
+  FAILED // the sell itself failed — no USDC received
+}
+
+// One row per "reverse lot" — links a sell (of externally-received token) to
+// its buy-back order, split into a reinvested share and a realized-profit
+// share. Mirrors SolanaLot/EvmLot/BnbLot field-for-field where the concepts
+// carry over, with buy/sell roles swapped.
+model PolygonTokenLot {
+  id         String               @id @default(cuid())
+  userId     String
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  settingsId String
+  settings   PolygonTokenSettings @relation(fields: [settingsId], references: [id], onDelete: Cascade)
+
+  status PolygonLotStatus @default(PENDING_BUYBACK_ORDER)
+
+  // --- Sell side (always set once the lot exists) ---
+  tokenSold    Decimal  @db.Decimal(30, 18) // amount of GEOD/MYST/etc. sold
+  sellPriceUsd Decimal  @db.Decimal(14, 6)
+  usdcReceived Decimal  @db.Decimal(14, 4)
+  sellFeeUsd   Decimal  @default(0) @db.Decimal(10, 4) // network gas (paid in POL), converted to USD
+  sellTxHash   String?
+  soldAt       DateTime @default(now())
+
+  // --- Split of proceeds (per PolygonTokenSettings.buybackPercent AT THE TIME of this lot) ---
+  usdcToBuyback Decimal @db.Decimal(14, 4) // committed to the buy-back order below
+  usdcProfit    Decimal @db.Decimal(14, 4) // realized immediately — never reserved, eligible for the monthly sweep
+
+  // --- Buy-back limit order (set once created) ---
+  targetPriceUsd        Decimal?  @db.Decimal(14, 6)
+  tokenBuybackPlanned    Decimal?  @db.Decimal(30, 18) // token amount the order would deliver if filled at targetPriceUsd
+  oneInchOrderHash       String?
+  buybackOrderCreatedAt  DateTime?
+
+  // --- Buy-back fill (set once a 1inch resolver fills it) ---
+  filledAt        DateTime?
+  tokenReacquired Decimal? @db.Decimal(30, 18)
+  usdcSpent       Decimal? @db.Decimal(14, 4)
+
+  lastCheckedAt DateTime?
+  notes         String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([settingsId, status])
+  @@index([userId, soldAt])
+}
+
+// One row per user — the sweep toggle lives HERE rather than on
+// PolygonTokenSettings because it's a whole-wallet-USDC action spanning
+// every token bot (GEOD, MYST, ...), not something that makes sense
+// per-token. Shown once in the /polygon UI, applying to the combined USDC
+// balance across all of the user's Polygon token-lots.
+model PolygonSweepSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  lastSweepAt     DateTime?
+  lastSweepStatus String? // "ok" | "skipped" | "error"
+  lastSweepError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per executed (or attempted) monthly sweep of the REALIZED-PROFIT
+// USDC (the usdcProfit share across all of a user's Polygon token-lots,
+// never the usdcToBuyback share reserved for open orders) to
+// POLYGON_SWEEP_DESTINATION. Not per-token — USDC is fungible regardless of
+// which token's sale generated it.
+model PolygonTokenSweep {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status            String // "SUCCESS" | "FAILED"
+  balanceBeforeUsdc Decimal  @db.Decimal(20, 6)
+  amountUsdc        Decimal  @db.Decimal(20, 6)
+  destination       String
+  txHash            String?
+  errorMessage      String? @db.Text
+  manual            Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
