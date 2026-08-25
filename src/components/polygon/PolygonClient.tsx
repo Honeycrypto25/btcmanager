@@ -26,7 +26,6 @@ interface TokenSettingsDTO {
     sellAmountUsd: string;
     intervalHours: number;
     buybackDipPercent: string;
-    buybackPercent: string;
     slippageBps: number;
     lastRunAt: string | null;
     lastRunStatus: string | null;
@@ -303,7 +302,6 @@ function TokenCard({
         sellAmountUsd: Number(settings.sellAmountUsd),
         intervalHours: settings.intervalHours,
         buybackDipPercent: Number(settings.buybackDipPercent),
-        buybackPercent: Number(settings.buybackPercent),
         slippageBps: settings.slippageBps,
     });
 
@@ -332,7 +330,7 @@ function TokenCard({
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
                 <div>
                     <p className="text-xs text-faint uppercase tracking-wider mb-1">Vândut pe ciclu</p>
                     <p className="font-num">${Number(settings.sellAmountUsd)} / {settings.intervalHours}h</p>
@@ -340,10 +338,9 @@ function TokenCard({
                 <div>
                     <p className="text-xs text-faint uppercase tracking-wider mb-1">Scădere răscumpărare</p>
                     <p className="font-num">-{Number(settings.buybackDipPercent)}%</p>
-                </div>
-                <div>
-                    <p className="text-xs text-faint uppercase tracking-wider mb-1">Reinvestit</p>
-                    <p className="font-num">{Number(settings.buybackPercent)}%</p>
+                    <p className="text-xs text-faint">
+                        din ${Number(settings.sellAmountUsd)}, profit ${(Number(settings.sellAmountUsd) * (Number(settings.buybackDipPercent) / 100)).toFixed(2)}/ciclu
+                    </p>
                 </div>
                 <div>
                     <p className="text-xs text-faint uppercase tracking-wider mb-1">Ultima rulare</p>
@@ -365,9 +362,6 @@ function TokenCard({
                         </Field>
                         <Field label="Scădere pentru răscumpărare (%)">
                             <input type="number" className={inputClass} value={form.buybackDipPercent} onChange={(e) => setForm({ ...form, buybackDipPercent: Number(e.target.value) })} />
-                        </Field>
-                        <Field label="% din USDC reinvestit">
-                            <input type="number" className={inputClass} value={form.buybackPercent} onChange={(e) => setForm({ ...form, buybackPercent: Number(e.target.value) })} />
                         </Field>
                         <Field label="Slippage (bps)">
                             <input type="number" className={inputClass} value={form.slippageBps} onChange={(e) => setForm({ ...form, slippageBps: Number(e.target.value) })} />

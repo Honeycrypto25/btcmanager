@@ -76,7 +76,6 @@ export interface PolygonTokenSettingsInput {
     sellAmountUsd: number;
     intervalHours: number;
     buybackDipPercent: number;
-    buybackPercent: number;
     slippageBps?: number;
 }
 
@@ -88,11 +87,17 @@ export async function updatePolygonTokenSettings(settingsId: string, input: Poly
         throw new Error(`Suma vândută pe ciclu trebuie să fie de cel puțin $${MIN_LIMIT_ORDER_USD}.`);
     }
     if (input.intervalHours < 1) throw new Error("Intervalul trebuie să fie de cel puțin 1 oră.");
-    if (input.buybackDipPercent <= 0) throw new Error("Procentul de scădere pentru răscumpărare trebuie să fie pozitiv.");
-    if (input.buybackPercent < 0 || input.buybackPercent > 100) throw new Error("Procentul reinvestit trebuie să fie între 0 și 100.");
-    const reinvestedUsd = input.sellAmountUsd * (input.buybackPercent / 100);
-    if (reinvestedUsd > 0 && reinvestedUsd < MIN_LIMIT_ORDER_USD) {
-        throw new Error(`${input.buybackPercent}% din $${input.sellAmountUsd} e sub minimul de $${MIN_LIMIT_ORDER_USD} pentru un ordin — crește suma vândută sau procentul reinvestit.`);
+    if (input.buybackDipPercent <= 0 || input.buybackDipPercent >= 100) {
+        throw new Error("Procentul de scădere pentru răscumpărare trebuie să fie între 0 și 100.");
+    }
+    // The buy-back order always re-funds the exact token quantity sold, at
+    // the dipped target price — that costs sellAmountUsd * (1 - dip%), which
+    // must clear 1inch's minimum order size.
+    const buybackOrderUsd = input.sellAmountUsd * (1 - input.buybackDipPercent / 100);
+    if (buybackOrderUsd < MIN_LIMIT_ORDER_USD) {
+        throw new Error(
+            `Cu o scădere de ${input.buybackDipPercent}%, comanda de răscumpărare ar costa doar $${buybackOrderUsd.toFixed(2)} — sub minimul de $${MIN_LIMIT_ORDER_USD}. Crește suma vândută sau scade procentul de scădere.`
+        );
     }
 
     const settings = await db.polygonTokenSettings.update({
@@ -102,7 +107,6 @@ export async function updatePolygonTokenSettings(settingsId: string, input: Poly
             sellAmountUsd: input.sellAmountUsd,
             intervalHours: input.intervalHours,
             buybackDipPercent: input.buybackDipPercent,
-            buybackPercent: input.buybackPercent,
             slippageBps: input.slippageBps ?? 300,
         },
     });

@@ -161,13 +161,16 @@ async function retryPendingBuybackOrders(settings: PolygonTokenSettings, wallet:
  * Runs one reverse-DCA cycle for a single token-settings row: reconciles
  * open buy-back orders, retries any stuck order creation, then — if
  * `intervalHours` have elapsed since the last run — sells `sellAmountUsd`
- * worth (at the current market price) of whatever GEOD/MYST balance is
- * sitting in the wallet (accumulated from mining rewards) into USDC via
- * 1inch Classic Swap, and places a buy-back limit order for
- * `buybackPercent`% of the proceeds, `buybackDipPercent`% below the sale
- * price. The rest of the proceeds (`usdcProfit`) is realized immediately —
- * never reserved, and eligible for the monthly sweep. Mirrors
- * runEvmDcaForUser's interval gate exactly, just selling instead of buying.
+ * worth (at the current market price, floored to a whole token) of whatever
+ * GEOD/MYST balance is sitting in the wallet (accumulated from mining
+ * rewards) into USDC via 1inch Classic Swap, and places a buy-back limit
+ * order to re-acquire the EXACT SAME token quantity just sold, at
+ * `buybackDipPercent`% below the sale price. The position is fully restored
+ * once that order fills — never growing or shrinking. Whatever's left over
+ * from the sale proceeds after fully funding that buy-back (`usdcProfit`) is
+ * pure arbitrage profit, realized immediately in USDC — never reserved, and
+ * eligible for the monthly sweep. Mirrors runEvmDcaForUser's interval gate
+ * exactly, just selling instead of buying.
  */
 export async function runPolygonReverseDcaForSettings(settingsId: string): Promise<PolygonDcaRunResult> {
     const settings = await db.polygonTokenSettings.findUnique({ where: { id: settingsId } });
@@ -239,8 +242,15 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
         const nativePriceUsd = await getNativePriceUsd(USDC_ADDRESS).catch(() => 0);
         const sellFeeUsd = feeNative * nativePriceUsd;
 
-        const buybackPercent = Number(settings.buybackPercent);
-        const usdcToBuyback = usdcReceived * (buybackPercent / 100);
+        // Buy-back order always targets the EXACT quantity just sold (not a
+        // fraction of the proceeds) — the position is fully restored once
+        // the order fills, never growing or shrinking. Whatever's left over
+        // from usdcReceived after fully re-funding that purchase at the
+        // dipped target price is pure arbitrage profit, kept 100% in USDC.
+        // e.g. sell 100 MYST @ $0.10 ($10 received), buy back 100 MYST @
+        // $0.095 (-5% dip, $9.50 cost) -> $0.50 profit.
+        const targetPriceUsdForBuyback = sellPriceUsd * (1 - Number(settings.buybackDipPercent) / 100);
+        const usdcToBuyback = tokenAmountToSell * targetPriceUsdForBuyback;
         const usdcProfit = usdcReceived - usdcToBuyback;
 
         const lot = await db.polygonTokenLot.create({

@@ -1253,8 +1253,7 @@ model PolygonTokenSettings {
 
   sellAmountUsd     Decimal @default(10) @db.Decimal(10, 2) // fixed USD-equivalent of the token sold each cycle — mirrors buyAmountUsd on Base/BNB
   intervalHours     Int     @default(24)
-  buybackDipPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 — place the buy-back order 10% below the sale price
-  buybackPercent    Decimal @default(50) @db.Decimal(5, 2) // % of USDC proceeds committed to the buy-back order; the rest is realized profit (sweepable)
+  buybackDipPercent Decimal @db.Decimal(6, 2) // e.g. 10.00 — place the buy-back order 10% below the sale price, to re-acquire the exact same token quantity just sold
   slippageBps       Int     @default(300)
 
   lastRunAt     DateTime?
@@ -1299,7 +1298,9 @@ model PolygonTokenLot {
   sellTxHash   String?
   soldAt       DateTime @default(now())
 
-  // --- Split of proceeds (per PolygonTokenSettings.buybackPercent AT THE TIME of this lot) ---
+  // --- Split of proceeds: usdcToBuyback always fully re-funds the exact
+  // tokenSold quantity at the dipped target price; usdcProfit is whatever's
+  // left over (the arbitrage spread), realized immediately ---
   usdcToBuyback Decimal @db.Decimal(14, 4) // committed to the buy-back order below
   usdcProfit    Decimal @db.Decimal(14, 4) // realized immediately — never reserved, eligible for the monthly sweep
 
