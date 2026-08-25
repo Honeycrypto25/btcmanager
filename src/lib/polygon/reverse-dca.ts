@@ -193,7 +193,20 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
 
         const sellAmountUsd = Number(settings.sellAmountUsd);
         const priceUsd = await getTokenPriceUsd(settings.tokenAddress, settings.tokenDecimals, USDC_ADDRESS);
-        const tokenAmountToSell = sellAmountUsd / priceUsd;
+        // Rounded DOWN to a whole token — sells a clean "94 MYST" / "41 GEOD"
+        // instead of a fractional amount, so the position sizes and realized
+        // profit are easy to read at a glance. This means the actual USD sold
+        // per cycle lands at or slightly above sellAmountUsd, never below.
+        const tokenAmountToSell = Math.floor(sellAmountUsd / priceUsd);
+
+        if (tokenAmountToSell <= 0) {
+            return {
+                settingsId,
+                tokenSymbol: settings.tokenSymbol,
+                action: "skipped",
+                reason: `$${sellAmountUsd} is less than 1 ${settings.tokenSymbol} at the current price ($${priceUsd.toFixed(6)}) — raise sellAmountUsd`,
+            };
+        }
 
         const currentBalance = await getTokenBalance(settings.tokenAddress, settings.tokenDecimals, settings.walletAddress);
         if (currentBalance < tokenAmountToSell) {
