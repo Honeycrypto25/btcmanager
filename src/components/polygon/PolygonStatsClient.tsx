@@ -4,7 +4,6 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
     ComposedChart,
-    Line,
     Bar,
     BarChart,
     XAxis,
@@ -453,8 +452,8 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps }: Pro
                                 formatter={(v) => fmtUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Line type="monotone" dataKey="sellPrice" name="Preț vânzare" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă răscump." stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
+                            <Bar dataKey="sellPrice" name="Preț vânzare" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="targetPrice" name="Preț țintă răscump." fill="#22c55e" radius={[4, 4, 0, 0]} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </Card>
