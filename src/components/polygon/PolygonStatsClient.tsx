@@ -48,6 +48,7 @@ interface LotDTO {
 interface SweepDTO {
     id: string;
     status: string;
+    balanceBeforeUsdc: string;
     amountUsdc: string;
     destination: string;
     txHash: string | null;
@@ -640,12 +641,13 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
     return (
         <>
             <div className="overflow-x-auto -mx-6">
-                <table className="w-full text-sm min-w-[720px]">
+                <table className="w-full text-sm min-w-[860px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
                             <th className="px-6 py-2 font-medium">Data</th>
                             <th className="px-3 py-2 font-medium">Status</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Sumă</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Balanță înainte</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Sumă trimisă</th>
                             <th className="px-3 py-2 font-medium">Tip</th>
                             <th className="px-3 py-2 font-medium">Tranzacție</th>
                         </tr>
@@ -659,6 +661,7 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                                         {s.status === "SUCCESS" ? "Reușit" : "Eșuat"}
                                     </span>
                                 </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap font-num text-muted">{fmtUsd(Number(s.balanceBeforeUsdc))}</td>
                                 <td className="px-3 py-2.5 whitespace-nowrap font-num text-foreground">{fmtUsd(Number(s.amountUsdc))}</td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-muted">{s.manual ? "manual" : "automat"}</td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">
