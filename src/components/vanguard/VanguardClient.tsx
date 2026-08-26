@@ -4,7 +4,7 @@ import React, { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3 } from "lucide-react";
+import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
@@ -15,9 +15,28 @@ import {
     deleteVanguardHolding,
     getVanguardPriceHistory,
     getVanguardAccountValueHistory,
+    addVanguardContribution,
+    deleteVanguardContribution,
+    getVanguardContributions,
     type VanguardAccountInput,
     type VanguardHoldingInput,
+    type VanguardContributionInput,
 } from "@/app/actions/vanguard";
+
+const OWNER_OPTIONS: { value: string; label: string }[] = [
+    { value: "self", label: "Eu" },
+    { value: "spouse", label: "Soție" },
+    { value: "child", label: "Copil" },
+    { value: "other", label: "Altul" },
+];
+
+function ownerBadgeLabel(owner: string | undefined, ownerLabel: string | null | undefined): string {
+    const preset = OWNER_OPTIONS.find((o) => o.value === owner);
+    if (owner === "child" || owner === "other") {
+        return ownerLabel?.trim() ? ownerLabel : (preset?.label ?? "Altul");
+    }
+    return preset?.label ?? "Eu";
+}
 
 const tooltipStyle = { background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 };
 const chartAxisProps = { stroke: "#8c8a80", fontSize: 12 };
@@ -57,7 +76,17 @@ interface AccountRow {
     name: string;
     accountType: string | null;
     currency: string;
+    owner: string;
+    ownerLabel: string | null;
     holdings: HoldingRow[];
+}
+
+interface ContributionRow {
+    id: string;
+    date: string;
+    units: number;
+    amount: number;
+    notes: string | null;
 }
 
 const inputClass = "w-full bg-white/[0.04] border border-border rounded-xl p-3 text-foreground text-sm focus:outline-none focus:border-primary transition-colors";
@@ -72,7 +101,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
     const [syncTick, setSyncTick] = useState(0);
     const [tab, setTab] = useState<Tab>("list");
     const [showAccountForm, setShowAccountForm] = useState(false);
-    const [accountForm, setAccountForm] = useState<VanguardAccountInput>({ name: "", accountType: "ISA", currency: "GBP" });
+    const [accountForm, setAccountForm] = useState<VanguardAccountInput>({ name: "", accountType: "ISA", currency: "GBP", owner: "self", ownerLabel: "" });
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
 
@@ -85,8 +114,8 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
         startTransition(async () => {
             try {
                 const created = await createVanguardAccount(accountForm);
-                setAccounts((prev) => [...prev, { id: created.id, name: created.name, accountType: created.accountType, currency: created.currency, holdings: [] }]);
-                setAccountForm({ name: "", accountType: "ISA", currency: "GBP" });
+                setAccounts((prev) => [...prev, { id: created.id, name: created.name, accountType: created.accountType, currency: created.currency, owner: created.owner, ownerLabel: created.ownerLabel, holdings: [] }]);
+                setAccountForm({ name: "", accountType: "ISA", currency: "GBP", owner: "self", ownerLabel: "" });
                 setShowAccountForm(false);
             } catch (e: any) {
                 setError(e.message || "A apărut o eroare.");
@@ -180,6 +209,20 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                                     <label className="text-xs text-muted">Monedă</label>
                                     <input value={accountForm.currency} onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })} className={inputClass} />
                                 </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-muted">Proprietar</label>
+                                    <select value={accountForm.owner} onChange={(e) => setAccountForm({ ...accountForm, owner: e.target.value })} className={inputClass}>
+                                        {OWNER_OPTIONS.map((o) => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {(accountForm.owner === "child" || accountForm.owner === "other") && (
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted">{accountForm.owner === "child" ? "Numele copilului" : "Etichetă"}</label>
+                                        <input value={accountForm.ownerLabel || ""} onChange={(e) => setAccountForm({ ...accountForm, ownerLabel: e.target.value })} placeholder={accountForm.owner === "child" ? "ex. Maria" : "ex. Cumnat-su"} className={inputClass} />
+                                    </div>
+                                )}
                             </div>
                             {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
                             <div className="flex gap-2 mt-4">
@@ -313,6 +356,89 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
     const [priceHistory, setPriceHistory] = useState<Record<string, PricePoint[]>>({});
     const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({});
 
+    const [expandedContribId, setExpandedContribId] = useState<string | null>(null);
+    const [contributions, setContributions] = useState<Record<string, ContributionRow[]>>({});
+    const [contribLoading, setContribLoading] = useState<Record<string, boolean>>({});
+    const [contribForm, setContribForm] = useState<{ date: string; units: string; amount: string }>({ date: format(new Date(), "yyyy-MM-dd"), units: "", amount: "" });
+    const [contribError, setContribError] = useState<string | null>(null);
+
+    function loadContributions(holdingId: string) {
+        setContribLoading((prev) => ({ ...prev, [holdingId]: true }));
+        getVanguardContributions(holdingId)
+            .then((rows) => setContributions((prev) => ({ ...prev, [holdingId]: rows })))
+            .finally(() => setContribLoading((prev) => ({ ...prev, [holdingId]: false })));
+    }
+
+    function toggleContributions(holdingId: string) {
+        if (expandedContribId === holdingId) {
+            setExpandedContribId(null);
+            return;
+        }
+        setExpandedContribId(holdingId);
+        setContribError(null);
+        setContribForm({ date: format(new Date(), "yyyy-MM-dd"), units: "", amount: "" });
+        loadContributions(holdingId);
+    }
+
+    function submitContribution(holdingId: string) {
+        const units = parseFloat(contribForm.units);
+        const amount = parseFloat(contribForm.amount);
+        if (!contribForm.date || isNaN(units) || units <= 0 || isNaN(amount) || amount <= 0) {
+            setContribError("Data, unitățile și suma sunt obligatorii și trebuie să fie pozitive.");
+            return;
+        }
+        setContribError(null);
+        startTransition(async () => {
+            try {
+                const input: VanguardContributionInput = { holdingId, date: contribForm.date, units, amount };
+                const { holding: updated } = await addVanguardContribution(input);
+                setAccounts((prev) =>
+                    prev.map((a) =>
+                        a.id === account.id
+                            ? {
+                                  ...a,
+                                  holdings: a.holdings.map((h) =>
+                                      h.id === holdingId
+                                          ? { ...h, units: Number(updated.units), costBasis: Number(updated.costBasis), currentValue: Number(updated.currentValue), valueUpdatedAt: updated.valueUpdatedAt.toISOString() }
+                                          : h
+                                  ),
+                              }
+                            : a
+                    )
+                );
+                setContribForm({ date: format(new Date(), "yyyy-MM-dd"), units: "", amount: "" });
+                loadContributions(holdingId);
+            } catch (e: any) {
+                setContribError(e.message || "A apărut o eroare.");
+            }
+        });
+    }
+
+    function removeContribution(holdingId: string, contributionId: string) {
+        if (!confirm("Ștergi această contribuție? Unitățile și suma investită se scad din holding.")) return;
+        startTransition(async () => {
+            await deleteVanguardContribution(contributionId);
+            const row = (contributions[holdingId] || []).find((c) => c.id === contributionId);
+            if (row) {
+                setAccounts((prev) =>
+                    prev.map((a) =>
+                        a.id === account.id
+                            ? {
+                                  ...a,
+                                  holdings: a.holdings.map((h) =>
+                                      h.id === holdingId
+                                          ? { ...h, units: (h.units ?? 0) - row.units, costBasis: h.costBasis - row.amount, currentValue: h.currentValue - row.amount }
+                                          : h
+                                  ),
+                              }
+                            : a
+                    )
+                );
+            }
+            loadContributions(holdingId);
+        });
+    }
+
     function loadHistory(holdingId: string) {
         setHistoryLoading((prev) => ({ ...prev, [holdingId]: true }));
         getVanguardPriceHistory(holdingId)
@@ -391,7 +517,13 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
         <Card className="p-0 overflow-hidden border-border">
             <div className="flex items-center justify-between p-5 sm:p-6 hairline-bottom">
                 <div>
-                    <p className="font-medium text-foreground">{account.name}</p>
+                    <div className="flex items-center gap-2">
+                        <p className="font-medium text-foreground">{account.name}</p>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 rounded-full px-2 py-0.5">
+                            <User className="w-3 h-3" />
+                            {ownerBadgeLabel(account.owner, account.ownerLabel)}
+                        </span>
+                    </div>
                     <p className="text-xs text-muted mt-0.5">{account.accountType} · {account.currency}</p>
                 </div>
                 {isAdmin && (
@@ -445,6 +577,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                     <thead>
                         <tr className="border-b border-border bg-white/[0.02]">
                             <th className="px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Fond</th>
+                            <th className="px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Unități</th>
                             <th className="px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Investit</th>
                             <th className="px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Valoare curentă</th>
                             <th className="px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Actualizat</th>
@@ -453,18 +586,20 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                     </thead>
                     <tbody className="divide-y divide-white/5">
                         {account.holdings.length === 0 ? (
-                            <tr><td colSpan={5} className="px-6 py-10 text-center text-faint italic text-sm">Niciun holding în acest cont.</td></tr>
+                            <tr><td colSpan={6} className="px-6 py-10 text-center text-faint italic text-sm">Niciun holding în acest cont.</td></tr>
                         ) : (
                             account.holdings.map((h) => {
                                 const pnl = h.currentValue - h.costBasis;
                                 const pnlPercent = h.costBasis > 0 ? (pnl / h.costBasis) * 100 : 0;
                                 const isExpanded = expandedHistoryId === h.id;
+                                const isContribExpanded = expandedContribId === h.id;
                                 return (
                                     <React.Fragment key={h.id}>
                                         <tr className="hover:bg-white/[0.01] transition-colors group">
                                             <td className="px-6 py-4 text-sm text-foreground">
                                                 {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
                                             </td>
+                                            <td className="px-6 py-4 text-sm text-muted font-num">{h.units !== null ? h.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 }) : "—"}</td>
                                             <td className="px-6 py-4 text-sm text-muted">{formatMoney(h.costBasis, account.currency)}</td>
                                             <td className="px-6 py-4 text-sm">
                                                 {editingValueId === h.id ? (
@@ -485,6 +620,9 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                             <td className="px-6 py-4 text-xs text-muted">{format(new Date(h.valueUpdatedAt), "dd MMM yyyy")}</td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => toggleContributions(h.id)} title="Istoric investiții (dată + unități)" className={cn("p-1.5 rounded-lg hover:bg-white/5", isContribExpanded ? "text-primary" : "text-muted hover:text-primary")}>
+                                                        <History className="w-3.5 h-3.5" />
+                                                    </button>
                                                     {h.ticker && (
                                                         <button onClick={() => toggleHistory(h.id)} title="Istoric preț" className={cn("p-1.5 rounded-lg hover:bg-white/5", isExpanded ? "text-primary" : "text-muted hover:text-primary")}>
                                                             <TrendingUp className="w-3.5 h-3.5" />
@@ -503,9 +641,69 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                 </div>
                                             </td>
                                         </tr>
+                                        {isContribExpanded && (
+                                            <tr className="bg-white/[0.02]">
+                                                <td colSpan={6} className="px-6 py-4">
+                                                    <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs text-muted">Data</label>
+                                                            <input type="date" value={contribForm.date} onChange={(e) => setContribForm({ ...contribForm, date: e.target.value })} className="bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs text-muted">Unități</label>
+                                                            <input type="number" step="0.0001" value={contribForm.units} onChange={(e) => setContribForm({ ...contribForm, units: e.target.value })} className="w-28 bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-xs text-muted">Sumă investită</label>
+                                                            <input type="number" step="0.01" value={contribForm.amount} onChange={(e) => setContribForm({ ...contribForm, amount: e.target.value })} className="w-32 bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                                                        </div>
+                                                        {isAdmin && (
+                                                            <Button variant="primary" size="sm" onClick={() => submitContribution(h.id)} disabled={isPending}>
+                                                                <Plus className="w-3.5 h-3.5 mr-1.5" /> Adaugă
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                    {contribError && <p className="text-sm text-red-400 mb-3">{contribError}</p>}
+                                                    {contribLoading[h.id] ? (
+                                                        <div className="flex items-center gap-2 text-xs text-muted py-6 justify-center">
+                                                            <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă...
+                                                        </div>
+                                                    ) : (contributions[h.id]?.length ?? 0) === 0 ? (
+                                                        <p className="text-xs text-faint italic text-center py-4">Nicio contribuție înregistrată încă — holdingul are doar totalul inițial.</p>
+                                                    ) : (
+                                                        <table className="w-full text-left">
+                                                            <thead>
+                                                                <tr className="text-[10px] text-muted uppercase tracking-wider">
+                                                                    <th className="py-1.5 pr-4 font-medium">Dată</th>
+                                                                    <th className="py-1.5 pr-4 font-medium">Unități</th>
+                                                                    <th className="py-1.5 pr-4 font-medium">Sumă</th>
+                                                                    {isAdmin && <th className="py-1.5 pr-4 font-medium text-right">Acțiuni</th>}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-white/5">
+                                                                {contributions[h.id]!.map((c) => (
+                                                                    <tr key={c.id}>
+                                                                        <td className="py-2 pr-4 text-xs text-muted">{format(new Date(c.date), "dd MMM yyyy")}</td>
+                                                                        <td className="py-2 pr-4 text-xs text-foreground font-num">{c.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 })}</td>
+                                                                        <td className="py-2 pr-4 text-xs text-foreground">{formatMoney(c.amount, account.currency)}</td>
+                                                                        {isAdmin && (
+                                                                            <td className="py-2 pr-4 text-right">
+                                                                                <button onClick={() => removeContribution(h.id, c.id)} className="p-1 rounded text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                                                    <Trash2 className="w-3 h-3" />
+                                                                                </button>
+                                                                            </td>
+                                                                        )}
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )}
                                         {isExpanded && (
                                             <tr className="bg-white/[0.02]">
-                                                <td colSpan={5} className="px-6 py-4">
+                                                <td colSpan={6} className="px-6 py-4">
                                                     {historyLoading[h.id] ? (
                                                         <div className="flex items-center gap-2 text-xs text-muted py-6 justify-center">
                                                             <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă istoricul...

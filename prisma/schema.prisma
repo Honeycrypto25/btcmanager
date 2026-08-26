@@ -670,6 +670,13 @@ model VanguardAccount {
   accountType String? // ISA | GIA | SIPP | JISA | Other
   currency    String  @default("GBP")
 
+  // Who this account belongs to -- "self" | "spouse" | "child" | "other".
+  // Free-form string rather than an enum so a new family member label
+  // doesn't need a migration. ownerLabel holds the display name when
+  // owner is "child" or "other" (e.g. a specific child's name).
+  owner      String  @default("self")
+  ownerLabel String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -702,9 +709,30 @@ model VanguardHolding {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  priceHistory VanguardPriceHistory[]
+  priceHistory  VanguardPriceHistory[]
+  contributions VanguardContribution[]
 
   @@index([userId, accountId])
+}
+
+// One row per top-up made into a holding after its initial creation --
+// records exactly when and how many units were bought, so contribution
+// history (not just the running total) is visible. Adding a contribution
+// increments the parent holding's units/costBasis/currentValue.
+model VanguardContribution {
+  id        String          @id @default(cuid())
+  holdingId String
+  holding   VanguardHolding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+
+  date   DateTime // when the contribution/purchase happened
+  units  Decimal  @db.Decimal(14, 4)
+  amount Decimal  @db.Decimal(12, 2) // cost of this contribution
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([holdingId, date])
 }
 
 // One row per successful auto price lookup (see syncVanguardPrices) —
