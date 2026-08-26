@@ -281,6 +281,22 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
 
     const hasEnoughForChart = (history?.length ?? 0) > 0 && chartData.length >= 2;
 
+    // Average entry price per holding (cost basis ÷ units), vs. an implied
+    // "current price" derived the same way from currentValue ÷ units --
+    // there's no separate live price field for manual holdings, so this is
+    // consistent with what's already shown elsewhere on the page. Only
+    // holdings with units > 0 have a meaningful price at all.
+    const holdingsWithPrice = accounts.flatMap((a) =>
+        a.holdings
+            .filter((h) => h.units !== null && h.units > 0)
+            .map((h) => {
+                const avgPrice = h.costBasis / (h.units as number);
+                const currentPrice = h.currentValue / (h.units as number);
+                const diffPercent = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
+                return { holdingId: h.id, fundName: h.fundName, ticker: h.ticker, accountName: a.name, currency: a.currency, units: h.units as number, avgPrice, currentPrice, diffPercent };
+            })
+    );
+
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -298,6 +314,50 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                     </Card>
                 ))}
             </div>
+
+            <Card className="p-5 sm:p-6">
+                <p className="text-sm font-medium text-foreground mb-1">Preț mediu de intrare</p>
+                <p className="text-xs text-muted mb-4">
+                    Preț mediu = total investit ÷ unități deținute, pe fiecare holding — se recalculează automat
+                    la fiecare contribuție nouă. Prețul curent e derivat din valoarea curentă ÷ unități.
+                </p>
+                {holdingsWithPrice.length === 0 ? (
+                    <p className="text-xs text-faint italic text-center py-6">
+                        Niciun holding cu unități completate încă — prețul mediu are nevoie de unități pentru a fi calculat.
+                    </p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="border-b border-border">
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Fond</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Cont</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Unități</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Preț mediu intrare</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Preț curent</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Diferență</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {holdingsWithPrice.map((h) => (
+                                    <tr key={h.holdingId}>
+                                        <td className="py-2.5 pr-4 text-sm text-foreground">
+                                            {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
+                                        </td>
+                                        <td className="py-2.5 pr-4 text-xs text-muted">{h.accountName}</td>
+                                        <td className="py-2.5 pr-4 text-xs text-muted font-num">{h.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 })}</td>
+                                        <td className="py-2.5 pr-4 text-sm text-foreground font-num">{formatMoney(h.avgPrice, h.currency)}</td>
+                                        <td className="py-2.5 pr-4 text-sm text-foreground font-num">{formatMoney(h.currentPrice, h.currency)}</td>
+                                        <td className={cn("py-2.5 pr-4 text-sm font-medium", h.diffPercent >= 0 ? "text-green-400" : "text-red-400")}>
+                                            {h.diffPercent >= 0 ? "+" : ""}{h.diffPercent.toFixed(1)}%
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
 
             <Card className="p-5 sm:p-6">
                 <p className="text-sm font-medium text-foreground mb-1">Evoluție valoare pe cont</p>
