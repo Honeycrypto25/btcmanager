@@ -19,6 +19,8 @@ export default async function VanguardPage() {
         name: a.name,
         accountType: a.accountType,
         currency: a.currency,
+        owner: a.owner,
+        ownerLabel: a.ownerLabel,
         holdings: a.holdings.map((h: any) => ({
             id: h.id,
             fundName: h.fundName,
