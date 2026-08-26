@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
 import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
@@ -251,12 +251,16 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
 
 function StatsTab({ accounts }: { accounts: AccountRow[] }) {
     const [history, setHistory] = useState<AccountValueSeries[] | null>(null);
+    const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+    const [periodMode, setPeriodMode] = useState<"monthly" | "yearly">("monthly");
 
     useEffect(() => {
         getVanguardAccountValueHistory().then(setHistory);
     }, []);
 
-    const summaries = accounts.map((a) => {
+    const visibleAccounts = selectedAccountId === "all" ? accounts : accounts.filter((a) => a.id === selectedAccountId);
+
+    const summaries = visibleAccounts.map((a) => {
         const invested = a.holdings.reduce((s, h) => s + h.costBasis, 0);
         const value = a.holdings.reduce((s, h) => s + h.currentValue, 0);
         const pnl = value - invested;
@@ -264,29 +268,78 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
         return { ...a, invested, value, pnl, pnlPercent };
     });
 
+    const visibleHistory = history?.filter((s) => selectedAccountId === "all" || s.accountId === selectedAccountId) ?? null;
+
     // Merge all per-account series into one date-indexed dataset for a
     // single multi-line chart (one line per account, sharing an X axis).
     const chartData = React.useMemo(() => {
-        if (!history || history.length === 0) return [];
-        const dates = Array.from(new Set(history.flatMap((s) => s.points.map((p) => p.date)))).sort();
+        if (!visibleHistory || visibleHistory.length === 0) return [];
+        const dates = Array.from(new Set(visibleHistory.flatMap((s) => s.points.map((p) => p.date)))).sort();
         return dates.map((date) => {
             const row: Record<string, number | string> = { date, label: format(new Date(date), "dd MMM") };
-            for (const series of history) {
+            for (const series of visibleHistory) {
                 const point = series.points.find((p) => p.date === date);
                 if (point) row[series.accountId] = point.value;
             }
             return row;
         });
-    }, [history]);
+    }, [visibleHistory]);
 
-    const hasEnoughForChart = (history?.length ?? 0) > 0 && chartData.length >= 2;
+    const hasEnoughForChart = (visibleHistory?.length ?? 0) > 0 && chartData.length >= 2;
+
+    // Portfolio-wide (or single-account, when filtered) value series,
+    // forward-filled across every date so summing accounts doesn't dip to
+    // zero on days where only some of them have a price point -- this is
+    // what the monthly/yearly profitability chart below buckets into
+    // periods. Same best-effort convention as the rest of this page: units
+    // are treated as constant at their current amount, since there's no
+    // historical "units held on date X" record.
+    const totalSeries = React.useMemo(() => {
+        if (!visibleHistory || visibleHistory.length === 0) return [];
+        const dates = Array.from(new Set(visibleHistory.flatMap((s) => s.points.map((p) => p.date)))).sort();
+        const lastKnown: Record<string, number> = {};
+        return dates.map((date) => {
+            let total = 0;
+            for (const series of visibleHistory) {
+                const point = series.points.find((p) => p.date === date);
+                if (point) lastKnown[series.accountId] = point.value;
+                if (lastKnown[series.accountId] !== undefined) total += lastKnown[series.accountId];
+            }
+            return { date, value: total };
+        });
+    }, [visibleHistory]);
+
+    // Buckets totalSeries into calendar months or years and turns each
+    // period into a % return vs. the period before it (last known value of
+    // the prior period → last known value of this period). The very first
+    // period a series appears in has no prior reference, so it's shown as
+    // 0% (a start marker, not a real move).
+    const profitabilityData = React.useMemo(() => {
+        if (totalSeries.length === 0) return [];
+        const keyOf = (date: string) => (periodMode === "monthly" ? date.slice(0, 7) : date.slice(0, 4));
+        const labelOf = (key: string) =>
+            periodMode === "monthly" ? format(new Date(`${key}-01`), "MMM yyyy") : key;
+
+        const lastValueByPeriod = new Map<string, number>();
+        for (const point of totalSeries) {
+            lastValueByPeriod.set(keyOf(point.date), point.value);
+        }
+        const periods = Array.from(lastValueByPeriod.keys()).sort();
+        let prevValue: number | null = null;
+        return periods.map((key) => {
+            const value = lastValueByPeriod.get(key)!;
+            const returnPercent = prevValue && prevValue > 0 ? ((value - prevValue) / prevValue) * 100 : 0;
+            prevValue = value;
+            return { period: key, label: labelOf(key), returnPercent };
+        });
+    }, [totalSeries, periodMode]);
 
     // Average entry price per holding (cost basis ÷ units), vs. an implied
     // "current price" derived the same way from currentValue ÷ units --
     // there's no separate live price field for manual holdings, so this is
     // consistent with what's already shown elsewhere on the page. Only
     // holdings with units > 0 have a meaningful price at all.
-    const holdingsWithPrice = accounts.flatMap((a) =>
+    const holdingsWithPrice = visibleAccounts.flatMap((a) =>
         a.holdings
             .filter((h) => h.units !== null && h.units > 0)
             .map((h) => {
@@ -299,6 +352,32 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
 
     return (
         <div className="space-y-6">
+            {accounts.length > 1 && (
+                <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1 overflow-x-auto w-fit max-w-full">
+                    <button
+                        onClick={() => setSelectedAccountId("all")}
+                        className={cn(
+                            "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap",
+                            selectedAccountId === "all" ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                        )}
+                    >
+                        Toate conturile
+                    </button>
+                    {accounts.map((a) => (
+                        <button
+                            key={a.id}
+                            onClick={() => setSelectedAccountId(a.id)}
+                            className={cn(
+                                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap",
+                                selectedAccountId === a.id ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {a.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {summaries.map((a) => (
                     <Card key={a.id} className="p-5">
@@ -383,7 +462,7 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v}`} width={64} />
                                 <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(2)}`} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                {history!.map((series, i) => (
+                                {visibleHistory!.map((series, i) => (
                                     <Line
                                         key={series.accountId}
                                         type="monotone"
@@ -396,6 +475,58 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                                     />
                                 ))}
                             </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+            </Card>
+
+            <Card className="p-5 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+                    <p className="text-sm font-medium text-foreground">Profitabilitate</p>
+                    <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1 w-fit">
+                        {([
+                            ["monthly", "Lunar"],
+                            ["yearly", "Anual"],
+                        ] as const).map(([key, label]) => (
+                            <button
+                                key={key}
+                                onClick={() => setPeriodMode(key)}
+                                className={cn(
+                                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                                    periodMode === key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <p className="text-xs text-muted mb-4">
+                    Variația procentuală a valorii {selectedAccountId === "all" ? "portofoliului (toate conturile)" : "acestui cont"} față de {periodMode === "monthly" ? "luna" : "anul"} anterior(ă) —
+                    aceeași sursă ca graficul de evoluție de mai sus.
+                </p>
+                {history === null ? (
+                    <div className="flex items-center gap-2 text-xs text-muted py-10 justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Se încarcă...
+                    </div>
+                ) : profitabilityData.length < 2 ? (
+                    <p className="text-xs text-faint italic text-center py-10">
+                        Nu există încă suficiente date pentru {periodMode === "monthly" ? "cel puțin două luni" : "cel puțin doi ani"} — revino după ce mai trece timp și/sau se mai sincronizează prețuri.
+                    </p>
+                ) : (
+                    <div className="h-[240px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={profitabilityData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis dataKey="label" {...chartAxisProps} />
+                                <YAxis {...chartAxisProps} tickFormatter={(v) => `${v}%`} width={48} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(1)}%`} />
+                                <Bar dataKey="returnPercent" radius={[4, 4, 0, 0]}>
+                                    {profitabilityData.map((d, i) => (
+                                        <Cell key={i} fill={d.returnPercent >= 0 ? "#52c98a" : "#d65252"} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
                         </ResponsiveContainer>
                     </div>
                 )}
