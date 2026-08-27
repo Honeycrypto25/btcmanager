@@ -4,7 +4,7 @@ import React, { Suspense, useEffect, useMemo, useRef, useState, useTransition } 
 import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Upload, Landmark, History, Check, X, AlertCircle, Loader2, RefreshCw, Link2, Unlink } from "lucide-react";
+import { Upload, Landmark, History, Check, X, AlertCircle, Loader2, RefreshCw, Link2, Unlink, RotateCw } from "lucide-react";
 import {
   previewBankCsv,
   importBankCsv,
@@ -20,6 +20,7 @@ import {
   bulkIgnoreTransactions,
   bulkAssignAccount,
   disconnectBankConnection,
+  syncTrueLayerNow,
   type ImportBankCsvInput,
 } from "@/app/actions/bank";
 import type { AmountMode } from "@/lib/bank/csv";
@@ -155,6 +156,8 @@ function BankConnectionsCard({ connections }: { connections: BankConnectionRow[]
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ importedCount: number; matchedCount: number } | { error: string } | null>(null);
 
   const connected = searchParams.get("bankConnected");
   const connectError = searchParams.get("bankConnectError");
@@ -178,6 +181,23 @@ function BankConnectionsCard({ connections }: { connections: BankConnectionRow[]
     });
   };
 
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await syncTrueLayerNow();
+      const importedCount = result.results.reduce((sum, r) => sum + r.importedCount, 0);
+      const matchedCount = result.results.reduce((sum, r) => sum + r.matchedCount, 0);
+      const firstError = result.results.find((r) => r.error)?.error;
+      setSyncResult(firstError ? { error: firstError } : { importedCount, matchedCount });
+      router.refresh();
+    } catch (err) {
+      setSyncResult({ error: err instanceof Error ? err.message : "Sincronizarea a eșuat." });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <Card className="p-5 sm:p-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -185,12 +205,24 @@ function BankConnectionsCard({ connections }: { connections: BankConnectionRow[]
           <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-1">Sincronizare automată (Open Banking)</h3>
           <p className="text-xs text-faint">Tranzacțiile sunt aduse automat zilnic — fără export/import CSV manual.</p>
         </div>
-        <a href="/api/truelayer/connect">
-          <Button className="flex items-center gap-2 whitespace-nowrap">
-            <Link2 className="w-4 h-4" />
-            Conectează cont bancar
-          </Button>
-        </a>
+        <div className="flex items-center gap-2">
+          {connections.length > 0 && (
+            <button
+              onClick={handleSyncNow}
+              disabled={isSyncing}
+              className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50"
+            >
+              {isSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+              Sincronizează acum
+            </button>
+          )}
+          <a href="/api/truelayer/connect">
+            <Button className="flex items-center gap-2 whitespace-nowrap">
+              <Link2 className="w-4 h-4" />
+              Conectează cont bancar
+            </Button>
+          </a>
+        </div>
       </div>
 
       {connected && (
@@ -203,6 +235,18 @@ function BankConnectionsCard({ connections }: { connections: BankConnectionRow[]
         <div className="flex items-center gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           Conectarea a eșuat ({connectError}). Încearcă din nou.
+        </div>
+      )}
+      {syncResult && "error" in syncResult && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          Sincronizarea a eșuat: {syncResult.error}
+        </div>
+      )}
+      {syncResult && "importedCount" in syncResult && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-400/30 bg-green-500/10 px-3 py-2 text-xs text-green-300">
+          <Check className="w-3.5 h-3.5 shrink-0" />
+          Sincronizat — {syncResult.importedCount} tranzacții noi, {syncResult.matchedCount} potrivite automat cu chitanțe.
         </div>
       )}
 

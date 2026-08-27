@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { parseCsv, applyColumnMapping, computeRowHash, type ColumnMapping } from "@/lib/bank/csv";
 import { scoreMatch, matchStatusForConfidence, type MatchableReceipt } from "@/lib/bank/matching";
 import { runMatchingForTransactions } from "@/lib/bank/run-matching";
+import { syncAllTrueLayerConnections } from "@/lib/bank/truelayer-sync";
 import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
 
 async function requireUserId(): Promise<string> {
@@ -29,6 +30,13 @@ export async function listBankAccounts() {
 export async function listBankConnections() {
     const userId = await requireUserId();
     return db.bankConnection.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+}
+
+export async function syncTrueLayerNow() {
+    await requireAdmin();
+    const result = await syncAllTrueLayerConnections();
+    revalidatePath("/self-employed/bank");
+    return result;
 }
 
 export async function disconnectBankConnection(id: string) {
