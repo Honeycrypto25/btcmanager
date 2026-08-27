@@ -8,13 +8,14 @@ import {
     fetchTransactions,
     type TrueLayerTransaction,
 } from "@/lib/bank/truelayer";
+import { normalizeDescription } from "@/lib/bank/csv";
 import crypto from "crypto";
 
 /** Same hash shape as computeRowHash in lib/bank/csv.ts (date + description
  * + amount + debit/credit, per user) so a transaction pulled via the API
  * dedupes correctly against one already imported by CSV, and vice versa. */
 function computeTransactionHash(userId: string, transactionDate: Date, description: string, amount: number, debitCredit: "DEBIT" | "CREDIT"): string {
-    const key = `${userId}|${transactionDate.toISOString().slice(0, 10)}|${description.trim().toLowerCase()}|${amount.toFixed(2)}|${debitCredit}`;
+    const key = `${userId}|${transactionDate.toISOString().slice(0, 10)}|${normalizeDescription(description)}|${amount.toFixed(2)}|${debitCredit}`;
     return crypto.createHash("sha256").update(key).digest("hex");
 }
 

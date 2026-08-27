@@ -129,9 +129,21 @@ export function applyColumnMapping(
     return { transactions, skipped };
 }
 
+/** Collapses internal whitespace (including the literal tab some bank CSV
+ * exports pad fixed-width fields with) down to single spaces, on top of
+ * trimming the ends. Two descriptions of the SAME transaction can otherwise
+ * differ only in whitespace between two import sources (e.g. a bank's CSV
+ * export vs. its Open Banking API, which normalises spacing) and silently
+ * defeat the hash-based dedup below, importing the same transaction twice. */
+export function normalizeDescription(description: string): string {
+    return description.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 /** Stable per-user row hash — prevents importing the same transaction twice
- * even across separate CSV uploads (e.g. overlapping date ranges). */
+ * even across separate CSV uploads (e.g. overlapping date ranges), AND
+ * across import sources (CSV vs. the TrueLayer sync in
+ * lib/bank/truelayer-sync.ts, which computes this exact same hash). */
 export function computeRowHash(userId: string, row: ParsedTransactionRow): string {
-    const key = `${userId}|${row.transactionDate.toISOString().slice(0, 10)}|${row.description.trim().toLowerCase()}|${row.amount.toFixed(2)}|${row.debitCredit}`;
+    const key = `${userId}|${row.transactionDate.toISOString().slice(0, 10)}|${normalizeDescription(row.description)}|${row.amount.toFixed(2)}|${row.debitCredit}`;
     return crypto.createHash("sha256").update(key).digest("hex");
 }
