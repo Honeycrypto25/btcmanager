@@ -469,13 +469,21 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
     const distanceLabel = unit === "imperial" ? "mi" : "km";
     const formatDistance = (miles: number) => (unit === "imperial" ? miles : milesToKm(miles)).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-    const consumptionData = analytics.consumptionSeries.map((s) => ({
+    // `index` (not the formatted date string) drives the X axis: several
+    // fill-ups can legitimately land on the same calendar day, and Recharts'
+    // category axis + tooltip lookup breaks when data points share an X
+    // value (duplicate ticks collapse and hover stops resolving to a point).
+    // A unique per-point index keeps every point addressable; the real date
+    // is still shown via tickFormatter/labelFormatter.
+    const consumptionData = analytics.consumptionSeries.map((s, index) => ({
+        index,
         date: format(new Date(s.date), "dd MMM yy"),
         consumption: unit === "imperial" ? s.mpg : mpgToL100km(s.mpg),
         costPerDistance: unit === "imperial" ? s.costPerMile : costPerMileToCostPerKm(s.costPerMile),
     }));
 
-    const priceData = analytics.priceEvolution.map((p) => ({
+    const priceData = analytics.priceEvolution.map((p, index) => ({
+        index,
         date: format(new Date(p.date), "dd MMM yy"),
         price: p.pricePerLitre,
         station: p.station || "—",
@@ -555,9 +563,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={consumptionData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[i]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => Number(v).toFixed(2)} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => Number(v).toFixed(2)} labelFormatter={(i) => consumptionData[i]?.date ?? ""} />
                                 <Line type="monotone" dataKey="consumption" name={consumptionUnitLabel} stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -574,9 +582,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={consumptionData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[i]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatGBP(Number(v))} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatGBP(Number(v))} labelFormatter={(i) => consumptionData[i]?.date ?? ""} />
                                 <Line type="monotone" dataKey="costPerDistance" name={`Cost${costUnitLabel}`} stroke="#d6a24c" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -593,9 +601,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={priceData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="date" {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => priceData[i]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(3)}/L`} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(3)}/L`} labelFormatter={(i) => priceData[i]?.date ?? ""} />
                                 <Line type="monotone" dataKey="price" name="Preț/litru" stroke="#7aa8d6" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
