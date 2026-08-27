@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { exchangeCodeForToken, fetchAccounts } from "@/lib/bank/truelayer";
+import { exchangeCodeForToken, fetchAccounts, CANONICAL_REDIRECT_URI } from "@/lib/bank/truelayer";
 
 const RETURN_PATH = "/self-employed/bank";
 
@@ -32,8 +32,7 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        const redirectUri = new URL("/api/truelayer/callback", req.url).toString();
-        const token = await exchangeCodeForToken(code, redirectUri);
+        const token = await exchangeCodeForToken(code, CANONICAL_REDIRECT_URI);
         const accounts = await fetchAccounts(token.access_token);
         const providerBankName = accounts[0]?.provider?.display_name ?? null;
 

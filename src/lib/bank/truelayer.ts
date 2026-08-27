@@ -25,6 +25,17 @@ function clientSecret(): string {
     return requireEnv("TRUELAYER_CLIENT_SECRET");
 }
 
+/** The apex domain (no "www.") — this is the exact string saved in the
+ * TrueLayer Console's Redirect URIs allow-list. evama.net redirects the
+ * apex to www. at the Vercel edge, so a request-derived origin always ends
+ * up as "https://www.evama.net/..." by the time our route handler sees it
+ * — that mismatches the Console entry and TrueLayer rejects it with
+ * "Invalid redirect_uri". Hardcoding the apex form here sidesteps that:
+ * TrueLayer redirects the browser back to this exact apex URL, which then
+ * gets the same apex->www redirect (preserving the query string and any
+ * cookies scoped to www.evama.net), landing safely on our callback route. */
+export const CANONICAL_REDIRECT_URI = "https://evama.net/api/truelayer/callback";
+
 /** Builds the hosted TrueLayer authorisation URL the user is redirected to
  * in order to pick their bank and log in. `state` is an opaque, unguessable
  * value we generate and verify on callback (CSRF protection). `redirectUri`
