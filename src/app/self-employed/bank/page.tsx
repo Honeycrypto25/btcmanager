@@ -6,17 +6,18 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { listBankAccounts, listBankTransactions, listImportBatches, listReceiptsForManualMatch } from "@/app/actions/bank";
+import { listBankAccounts, listBankTransactions, listImportBatches, listReceiptsForManualMatch, listBankConnections } from "@/app/actions/bank";
 import { BankClient } from "@/components/self-employed/BankClient";
 
 export default async function BankPage() {
     const session = await requireSectionAccess("selfEmployed");
 
-    const [accounts, transactions, batches, matchableReceipts] = await Promise.all([
+    const [accounts, transactions, batches, matchableReceipts, connections] = await Promise.all([
         listBankAccounts(),
         listBankTransactions(),
         listImportBatches(),
         listReceiptsForManualMatch(),
+        listBankConnections(),
     ]);
 
     const serializedTransactions = transactions.map((t: any) => ({
@@ -46,9 +47,17 @@ export default async function BankPage() {
 
     const serializedAccounts = accounts.map((a: any) => ({ id: a.id, name: a.name, currency: a.currency }));
 
+    const serializedConnections = connections.map((c: any) => ({
+        id: c.id,
+        providerBankName: c.providerBankName,
+        lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
+        lastSyncError: c.lastSyncError,
+        createdAt: c.createdAt.toISOString(),
+    }));
+
     return (
         <DashboardLayout>
-            <BankClient accounts={serializedAccounts} transactions={serializedTransactions} batches={serializedBatches} matchableReceipts={matchableReceipts} />
+            <BankClient accounts={serializedAccounts} transactions={serializedTransactions} batches={serializedBatches} matchableReceipts={matchableReceipts} connections={serializedConnections} />
         </DashboardLayout>
     );
 }

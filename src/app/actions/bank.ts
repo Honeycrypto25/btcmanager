@@ -6,7 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { parseCsv, applyColumnMapping, computeRowHash, type ColumnMapping } from "@/lib/bank/csv";
-import { findBestMatch, scoreMatch, matchStatusForConfidence, type MatchableReceipt, type MatchableTransaction } from "@/lib/bank/matching";
+import { scoreMatch, matchStatusForConfidence, type MatchableReceipt } from "@/lib/bank/matching";
+import { runMatchingForTransactions } from "@/lib/bank/run-matching";
 import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
 
 async function requireUserId(): Promise<string> {
@@ -21,6 +22,24 @@ async function requireUserId(): Promise<string> {
 export async function listBankAccounts() {
     const userId = await requireUserId();
     return db.bankAccount.findMany({ where: { userId }, orderBy: { name: "asc" } });
+}
+
+// --- TrueLayer (Open Banking) connections ---
+
+export async function listBankConnections() {
+    const userId = await requireUserId();
+    return db.bankConnection.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+}
+
+export async function disconnectBankConnection(id: string) {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const existing = await db.bankConnection.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) throw new Error("Not found");
+    // Accounts created from this connection are kept (and their imported
+    // transactions with them) — only the live sync is severed.
+    await db.bankConnection.delete({ where: { id } });
+    revalidatePath("/self-employed/bank");
 }
 
 export async function createBankAccount(name: string, currency?: string) {
@@ -116,56 +135,6 @@ export async function importBankCsv(input: ImportBankCsvInput) {
     return { batchId: batch.id, rowCount: rows.length, importedCount, duplicateCount, matchedCount };
 }
 
-async function runMatchingForTransactions(userId: string, transactionIds: string[]) {
-    const [transactions, candidateReceipts] = await Promise.all([
-        db.bankTransaction.findMany({ where: { id: { in: transactionIds }, debitCredit: "DEBIT" } }),
-        db.receipt.findMany({ where: { userId, status: { in: ["unmatched", "needs_review"] } } }),
-    ]);
-
-    const receiptCandidates: MatchableReceipt[] = candidateReceipts.map((r: any) => ({
-        id: r.id,
-        merchant: r.merchant,
-        amount: r.amount !== null ? Number(r.amount) : null,
-        receiptDate: r.receiptDate,
-        paymentMethod: r.paymentMethod,
-    }));
-
-    let matchedCount = 0;
-
-    for (const tx of transactions) {
-        const txCandidate: MatchableTransaction = {
-            id: tx.id,
-            description: tx.description,
-            amount: Number(tx.amount),
-            transactionDate: tx.transactionDate,
-        };
-        const best = findBestMatch(txCandidate, receiptCandidates);
-        if (!best) continue;
-
-        const status = matchStatusForConfidence(best.confidence);
-        await db.bankTransaction.update({
-            where: { id: tx.id },
-            data: { receiptId: best.receiptId, matchConfidence: best.confidence, matchStatus: status },
-        });
-        await db.receipt.update({
-            where: { id: best.receiptId },
-            data: {
-                matchedTransactionId: tx.id,
-                matchConfidence: best.confidence,
-                status: status === "matched" ? "matched" : "needs_review",
-            },
-        });
-
-        // Remove this receipt from further candidacy in this batch so two
-        // transactions don't both claim the same receipt.
-        const idx = receiptCandidates.findIndex((r) => r.id === best.receiptId);
-        if (idx >= 0) receiptCandidates.splice(idx, 1);
-
-        matchedCount += 1;
-    }
-
-    return matchedCount;
-}
 
 /** Called after a receipt is created/edited with enough detail to match
  * (amount + date) — receipts are often uploaded before the bank statement

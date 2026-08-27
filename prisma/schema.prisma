@@ -42,6 +42,7 @@ model User {
   bankAccounts         BankAccount[]
   bankImportBatches    BankImportBatch[]
   bankTransactions     BankTransaction[]
+  bankConnections      BankConnection[]
   vehicles             Vehicle[]
   fuelEntries          FuelEntry[]
   maintenanceRecords   MaintenanceRecord[]
@@ -427,11 +428,48 @@ model BankAccount {
   name      String
   currency  String?
 
+  // Set only for accounts created automatically via an Open Banking sync
+  // (see BankConnection below) — lets the sync job find-or-create the same
+  // BankAccount on every run instead of duplicating it. Manually created
+  // accounts (CSV-only workflow) leave both null.
+  connectionId      String?
+  connection        BankConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  externalAccountId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   importBatches BankImportBatch[]
   transactions  BankTransaction[]
+
+  @@unique([userId, externalAccountId])
+  @@index([userId])
+}
+
+/** An authorised Open Banking (TrueLayer) connection to one bank login —
+ * one row per consent, covering however many accounts the user selected
+ * during authorisation. The sync cron re-discovers those accounts on every
+ * run (see lib/bank/truelayer-sync.ts) rather than caching a fixed list,
+ * so newly added/removed accounts on the bank's side stay in sync. */
+model BankConnection {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider         String  @default("truelayer")
+  providerBankName String? // e.g. "Sainsbury's Bank" — from TrueLayer's provider metadata, display only
+
+  accessToken          String
+  refreshToken         String
+  accessTokenExpiresAt DateTime
+
+  lastSyncedAt  DateTime?
+  lastSyncError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts BankAccount[]
 
   @@index([userId])
 }

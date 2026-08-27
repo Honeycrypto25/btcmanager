@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Upload, Landmark, History, Check, X, AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { Upload, Landmark, History, Check, X, AlertCircle, Loader2, RefreshCw, Link2, Unlink } from "lucide-react";
 import {
   previewBankCsv,
   importBankCsv,
@@ -18,6 +19,7 @@ import {
   undoTransactionConversion,
   bulkIgnoreTransactions,
   bulkAssignAccount,
+  disconnectBankConnection,
   type ImportBankCsvInput,
 } from "@/app/actions/bank";
 import type { AmountMode } from "@/lib/bank/csv";
@@ -51,6 +53,14 @@ interface MatchableReceipt {
   amount: number | null;
   receiptDate: string | null;
   category: string | null;
+}
+
+interface BankConnectionRow {
+  id: string;
+  providerBankName: string | null;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  createdAt: string;
 }
 
 interface BatchRow {
@@ -94,7 +104,7 @@ function matchBadge(status: string) {
 
 type Tab = "import" | "transactions" | "history";
 
-export function BankClient({ accounts, transactions, batches, matchableReceipts }: { accounts: Account[]; transactions: TransactionRow[]; batches: BatchRow[]; matchableReceipts: MatchableReceipt[] }) {
+export function BankClient({ accounts, transactions, batches, matchableReceipts, connections }: { accounts: Account[]; transactions: TransactionRow[]; batches: BatchRow[]; matchableReceipts: MatchableReceipt[]; connections: BankConnectionRow[] }) {
   const [tab, setTab] = useState<Tab>("transactions");
 
   return (
@@ -127,10 +137,104 @@ export function BankClient({ accounts, transactions, batches, matchableReceipts 
         </div>
       </div>
 
+      <Suspense fallback={null}>
+        <BankConnectionsCard connections={connections} />
+      </Suspense>
+
       {tab === "import" && <ImportTab accounts={accounts} />}
       {tab === "transactions" && <TransactionsTab transactions={transactions} accounts={accounts} matchableReceipts={matchableReceipts} />}
       {tab === "history" && <HistoryTab batches={batches} />}
     </div>
+  );
+}
+
+// --- Automatic sync (TrueLayer / Open Banking) ---
+
+function BankConnectionsCard({ connections }: { connections: BankConnectionRow[] }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const connected = searchParams.get("bankConnected");
+  const connectError = searchParams.get("bankConnectError");
+
+  useEffect(() => {
+    if (connected || connectError) {
+      const timeout = setTimeout(() => router.replace("/self-employed/bank"), 6000);
+      return () => clearTimeout(timeout);
+    }
+  }, [connected, connectError, router]);
+
+  const handleDisconnect = (id: string) => {
+    setPendingId(id);
+    startTransition(async () => {
+      try {
+        await disconnectBankConnection(id);
+        router.refresh();
+      } finally {
+        setPendingId(null);
+      }
+    });
+  };
+
+  return (
+    <Card className="p-5 sm:p-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-1">Sincronizare automată (Open Banking)</h3>
+          <p className="text-xs text-faint">Tranzacțiile sunt aduse automat zilnic — fără export/import CSV manual.</p>
+        </div>
+        <a href="/api/truelayer/connect">
+          <Button className="flex items-center gap-2 whitespace-nowrap">
+            <Link2 className="w-4 h-4" />
+            Conectează cont bancar
+          </Button>
+        </a>
+      </div>
+
+      {connected && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-400/30 bg-green-500/10 px-3 py-2 text-xs text-green-300">
+          <Check className="w-3.5 h-3.5 shrink-0" />
+          Cont bancar conectat — prima sincronizare rulează la următorul ciclu automat (o dată pe zi).
+        </div>
+      )}
+      {connectError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          Conectarea a eșuat ({connectError}). Încearcă din nou.
+        </div>
+      )}
+
+      {connections.length === 0 ? (
+        <p className="text-sm text-faint italic">Niciun cont bancar conectat încă.</p>
+      ) : (
+        <div className="space-y-2">
+          {connections.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-white/[0.02] px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{c.providerBankName || "Cont bancar"}</p>
+                <p className="text-xs text-faint">
+                  {c.lastSyncError
+                    ? `Eroare la ultima sincronizare: ${c.lastSyncError}`
+                    : c.lastSyncedAt
+                    ? `Ultima sincronizare: ${format(new Date(c.lastSyncedAt), "d MMM yyyy, HH:mm")}`
+                    : "Încă nu a rulat prima sincronizare"}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDisconnect(c.id)}
+                disabled={isPending && pendingId === c.id}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-red-400/30 hover:text-red-300 disabled:opacity-50 shrink-0"
+              >
+                {isPending && pendingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+                Deconectează
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
