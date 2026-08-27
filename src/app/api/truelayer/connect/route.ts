@@ -18,7 +18,8 @@ export async function GET(req: NextRequest) {
     }
 
     const state = crypto.randomBytes(24).toString("hex");
-    const res = NextResponse.redirect(buildAuthUrl(state));
+    const redirectUri = new URL("/api/truelayer/callback", req.url).toString();
+    const res = NextResponse.redirect(buildAuthUrl(state, redirectUri));
     res.cookies.set("tl_oauth_state", state, {
         httpOnly: true,
         secure: true,

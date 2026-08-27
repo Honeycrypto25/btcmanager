@@ -25,19 +25,23 @@ function clientSecret(): string {
     return requireEnv("TRUELAYER_CLIENT_SECRET");
 }
 
-function redirectUri(): string {
-    // Must exactly match a Redirect URI configured in the TrueLayer Console.
-    return process.env.TRUELAYER_REDIRECT_URI || `${requireEnv("NEXTAUTH_URL")}/api/truelayer/callback`;
-}
-
 /** Builds the hosted TrueLayer authorisation URL the user is redirected to
  * in order to pick their bank and log in. `state` is an opaque, unguessable
- * value we generate and verify on callback (CSRF protection). */
-export function buildAuthUrl(state: string): string {
+ * value we generate and verify on callback (CSRF protection). `redirectUri`
+ * must be passed in by the caller (computed from the *actual incoming
+ * request's* origin, e.g. via `new URL("/api/truelayer/callback", req.url)`)
+ * rather than derived from an env var here — evama.net redirects the apex
+ * domain to www., so a statically configured origin (NEXTAUTH_URL or a
+ * fixed env var) can silently disagree with whichever host the browser is
+ * actually on, and TrueLayer requires an exact string match against the
+ * Redirect URIs allow-listed in the Console. Using the request's own origin
+ * keeps this correct regardless of www vs apex (both must still be added
+ * to the Console's allow-list). */
+export function buildAuthUrl(state: string, redirectUri: string): string {
     const params = new URLSearchParams({
         response_type: "code",
         client_id: clientId(),
-        redirect_uri: redirectUri(),
+        redirect_uri: redirectUri,
         scope: "info accounts balance transactions offline_access",
         // uk-ob-all: all UK Open Banking regulated providers. uk-oauth-all
         // covers a handful of UK banks that support OAuth outside standard
@@ -69,12 +73,14 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
     return res.json();
 }
 
-export async function exchangeCodeForToken(code: string): Promise<TokenResponse> {
+/** `redirectUri` must be byte-identical to the one used in buildAuthUrl for
+ * this same auth attempt (OAuth2 requirement) — see the note above. */
+export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<TokenResponse> {
     return tokenRequest({
         grant_type: "authorization_code",
         client_id: clientId(),
         client_secret: clientSecret(),
-        redirect_uri: redirectUri(),
+        redirect_uri: redirectUri,
         code,
     });
 }

@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        const token = await exchangeCodeForToken(code);
+        const redirectUri = new URL("/api/truelayer/callback", req.url).toString();
+        const token = await exchangeCodeForToken(code, redirectUri);
         const accounts = await fetchAccounts(token.access_token);
         const providerBankName = accounts[0]?.provider?.display_name ?? null;
 
