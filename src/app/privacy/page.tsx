@@ -1,11 +1,11 @@
-export const metadata = { title: "Privacy Policy — BTC Manager" };
+export const metadata = { title: "Privacy Policy — Personal Dashboard" };
 
 export default function PrivacyPage() {
     return (
         <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px", lineHeight: 1.6, color: "#e5e5e0", background: "#0a0a09" }}>
             <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>Privacy Policy</h1>
             <p style={{ marginBottom: 16 }}>
-                BTC Manager is a personal finance tracking application used by a single account holder to manage
+                Personal Dashboard is a personal finance tracking application used by a single account holder to manage
                 their own bitcoin, investment, vehicle and expense records.
             </p>
             <p style={{ marginBottom: 16 }}>

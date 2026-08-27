@@ -115,7 +115,7 @@ export function InstallBanner() {
                 </div>
 
                 <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">Instalează BTC Manager</p>
+                    <p className="text-sm font-medium text-foreground">Instalează Personal Dashboard</p>
                     {showIosHint ? (
                         <p className="mt-0.5 text-xs leading-relaxed text-muted">
                             Apasă <Share className="inline h-3.5 w-3.5 -mt-0.5" /> (Share) din Safari, apoi{" "}

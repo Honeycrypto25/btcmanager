@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { Bitcoin, Mail, Loader2, ArrowRight, KeyRound } from 'lucide-react';
+import { LayoutDashboard, Mail, Loader2, ArrowRight, KeyRound } from 'lucide-react';
 import { Button, Card } from '@/components/ui/core';
 import { useRouter } from 'next/navigation';
 
@@ -93,10 +93,10 @@ export default function SignInPage() {
             <Card className="relative w-full max-w-[26rem] space-y-7 p-6 sm:p-9">
                 <div className="text-center space-y-2.5">
                     <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-                        <Bitcoin className="h-6 w-6" />
+                        <LayoutDashboard className="h-6 w-6" />
                     </div>
                     <p className="text-[10px] font-medium uppercase tracking-[0.3em] text-faint">Private access</p>
-                    <h1 className="font-display text-2xl font-medium text-foreground">BTC Manager</h1>
+                    <h1 className="font-display text-2xl font-medium text-foreground">Personal Dashboard</h1>
                     <p className="mx-auto max-w-sm text-sm leading-6 text-muted">
                         {step === 'email' ? 'Sign in with your authorized email to access your portfolio.' : `Enter the code sent to ${email}`}
                     </p>

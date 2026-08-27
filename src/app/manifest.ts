@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "BTC Manager",
-    short_name: "BTC Manager",
-    description: "Bitcoin portfolio tracking and DCA analysis.",
+    name: "Personal Dashboard",
+    short_name: "Personal Dashboard",
+    description: "Personal finance, investments and asset tracking.",
     start_url: "/",
     display: "standalone",
     background_color: "#0a0a09",

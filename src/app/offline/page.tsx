@@ -6,7 +6,7 @@ export default function OfflinePage() {
           Offline Mode
         </p>
         <h1 className="mt-4 font-display text-3xl text-foreground sm:text-5xl">
-          BTC Manager is temporarily offline
+          Personal Dashboard is temporarily offline
         </h1>
         <p className="mt-4 text-sm leading-7 text-stone-300">
           Your device appears to be offline right now. Reconnect to the internet and reopen the

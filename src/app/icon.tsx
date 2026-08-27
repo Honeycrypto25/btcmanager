@@ -27,7 +27,7 @@ export default function Icon() {
           border: "8px solid rgba(243, 199, 122, 0.32)",
         }}
       >
-        BM
+        PD
       </div>
     ),
     size

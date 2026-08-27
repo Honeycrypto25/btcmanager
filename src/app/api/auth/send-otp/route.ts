@@ -104,15 +104,15 @@ export async function POST(req: Request) {
 
         // 4. Send Email via Resend
         await resend.emails.send({
-            from: process.env.EMAIL_FROM || "BTC Manager <login@evama.net>",
+            from: process.env.EMAIL_FROM || "Personal Dashboard <login@evama.net>",
             to: normalizedEmail,
-            subject: `${otp} — your BTC Manager login code`,
+            subject: `${otp} — your Personal Dashboard login code`,
             html: `
                 <div style="background:#0a0a09; padding:40px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
                     <div style="max-width:440px; margin:0 auto;">
                         <div style="text-align:center; margin-bottom:28px;">
                             <span style="display:inline-flex; align-items:center; gap:8px; color:#8a8f98; font-size:11px; font-weight:600; letter-spacing:0.2em; text-transform:uppercase;">
-                                BTC Manager
+                                Personal Dashboard
                             </span>
                         </div>
                         <div style="background:#141311; border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:36px 32px;">

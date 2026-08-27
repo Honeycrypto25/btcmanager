@@ -27,14 +27,14 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BTC Manager",
-  description: "Bitcoin portfolio tracking and DCA analysis.",
+  title: "Personal Dashboard",
+  description: "Personal finance, investments and asset tracking.",
   manifest: "/manifest.webmanifest",
-  applicationName: "BTC Manager",
+  applicationName: "Personal Dashboard",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "BTC Manager",
+    title: "Personal Dashboard",
   },
   formatDetection: {
     telephone: false,

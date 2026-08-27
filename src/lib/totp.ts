@@ -85,7 +85,7 @@ export function generateTotpSecret(): string {
 
 /** Genereaza QR code pentru Google Authenticator */
 export async function generateQrCodeUrl(email: string, secret: string): Promise<string | null> {
-    const issuer = 'BTC Manager';
+    const issuer = 'Personal Dashboard';
     const otpauth = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
     try {
         return await QRCode.toDataURL(otpauth);
