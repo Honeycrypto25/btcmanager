@@ -196,7 +196,17 @@ export async function getReceipt(id: string) {
     const userId = await requireUserId();
     const receipt = await db.receipt.findUnique({ where: { id } });
     if (!receipt || receipt.userId !== userId) throw new Error("Not found");
-    return receipt;
+
+    // When the automatic matcher found a candidate but wasn't confident
+    // enough to auto-confirm (status === "needs_review"), matchedTransactionId
+    // already points at that candidate — surface it so the receipt page can
+    // show a "suggested match, confirm or reject" prompt right where the
+    // user is looking, instead of making them go find it in the Bank tab.
+    const suggestedTransaction = receipt.matchedTransactionId
+        ? await db.bankTransaction.findUnique({ where: { id: receipt.matchedTransactionId } })
+        : null;
+
+    return { ...receipt, suggestedTransaction };
 }
 
 // --- Merchant rules ---

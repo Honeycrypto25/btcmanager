@@ -32,7 +32,7 @@ const STATUS_STYLES: Record<string, string> = {
     matched: "bg-green-500/10 text-green-300 border-green-400/30",
 };
 const STATUS_LABELS: Record<string, string> = {
-    needs_review: "De completat",
+    needs_review: "Posibilă potrivire",
     unmatched: "Nepotrivită",
     matched: "Potrivită",
 };
@@ -225,7 +225,7 @@ export function ReceiptsClient({ initialReceipts, r2Configured, categories }: { 
                                     className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                                 >
                                     <option value="" className="bg-surface">Toate</option>
-                                    <option value="needs_review" className="bg-surface">De completat</option>
+                                    <option value="needs_review" className="bg-surface">Posibilă potrivire</option>
                                     <option value="unmatched" className="bg-surface">Nepotrivită</option>
                                     <option value="matched" className="bg-surface">Potrivită</option>
                                 </select>
@@ -363,7 +363,7 @@ function StatsTab({ receipts }: { receipts: ReceiptRow[] }) {
                     { label: "Total", value: statusSummary.total },
                     { label: "Convertite în cheltuială", value: statusSummary.converted },
                     { label: "Potrivite cu bancă", value: statusSummary.matched },
-                    { label: "De completat", value: statusSummary.needsReview },
+                    { label: "Posibilă potrivire", value: statusSummary.needsReview },
                     { label: "Nepotrivite", value: statusSummary.unmatched },
                 ].map((s) => (
                     <Card key={s.label} className="p-4">

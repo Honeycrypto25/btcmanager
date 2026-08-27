@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button } from "@/components/ui/core";
-import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car, Receipt as ReceiptIcon, Undo2 } from "lucide-react";
+import { ArrowLeft, Trash2, Sparkles, ScanText, ImageOff, Loader2, ExternalLink, Car, Receipt as ReceiptIcon, Undo2, Check, X, Landmark } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
     updateReceiptDetails,
@@ -17,6 +17,7 @@ import {
     undoReceiptExpenseConversion,
     type ReceiptDetailsInput,
 } from "@/app/actions/receipts";
+import { confirmMatch, rejectMatch } from "@/app/actions/bank";
 
 interface ReceiptData {
     id: string;
@@ -39,6 +40,9 @@ interface ReceiptData {
     fuelQuantityLitres: number | null;
     isFullTank: boolean | null;
     convertedExpenseId: string | null;
+    matchedTransactionId: string | null;
+    matchConfidence: number | null;
+    suggestedTransaction: { id: string; transactionDate: string; description: string; amount: number } | null;
 }
 
 export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt: ReceiptData; categories: string[]; vehicles: { id: string; name: string }[] }) {
@@ -73,6 +77,11 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
     const [ocrText, setOcrText] = useState(receipt.ocrRawText);
     const [convertedExpenseId, setConvertedExpenseId] = useState(receipt.convertedExpenseId);
     const [convertError, setConvertError] = useState<string | null>(null);
+    const [matchState, setMatchState] = useState<{ status: string; suggestedTransaction: ReceiptData["suggestedTransaction"] }>({
+        status: receipt.status,
+        suggestedTransaction: receipt.suggestedTransaction,
+    });
+    const [matchActionPending, setMatchActionPending] = useState(false);
 
     useEffect(() => {
         fetch(`/api/self-employed/receipts/${receipt.id}/file`)
@@ -103,6 +112,32 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                 setSaved(true);
             } catch (e: any) {
                 setError(e.message || "Nu s-a putut salva.");
+            }
+        });
+    }
+
+    function acceptSuggestedMatch() {
+        if (!matchState.suggestedTransaction) return;
+        setMatchActionPending(true);
+        startTransition(async () => {
+            try {
+                await confirmMatch(matchState.suggestedTransaction!.id, receipt.id);
+                setMatchState((prev) => ({ ...prev, status: "matched" }));
+            } finally {
+                setMatchActionPending(false);
+            }
+        });
+    }
+
+    function rejectSuggestedMatch() {
+        if (!matchState.suggestedTransaction) return;
+        setMatchActionPending(true);
+        startTransition(async () => {
+            try {
+                await rejectMatch(matchState.suggestedTransaction!.id);
+                setMatchState({ status: "unmatched", suggestedTransaction: null });
+            } finally {
+                setMatchActionPending(false);
             }
         });
     }
@@ -224,6 +259,59 @@ export function ReceiptDetailClient({ receipt, categories, vehicles }: { receipt
                 </button>
                 <h1 className="font-display text-2xl font-medium tracking-tight text-foreground">Editează chitanța</h1>
             </div>
+
+            {matchState.status === "needs_review" && matchState.suggestedTransaction && (
+                <Card className="p-4 sm:p-5 border-amber-400/30 bg-amber-500/[0.04]">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-500/10 text-amber-300">
+                            <Landmark className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground mb-0.5">Posibilă potrivire găsită în tranzacțiile bancare</p>
+                            <p className="text-xs text-muted mb-3">
+                                {new Date(matchState.suggestedTransaction.transactionDate).toLocaleDateString("ro-RO", { day: "numeric", month: "short", year: "numeric" })}
+                                {" · "}
+                                {matchState.suggestedTransaction.description}
+                                {" · "}
+                                <span className="font-num text-foreground">£{matchState.suggestedTransaction.amount.toFixed(2)}</span>
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <Button size="sm" onClick={acceptSuggestedMatch} disabled={matchActionPending}>
+                                    {matchActionPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-1.5" />}
+                                    Confirmă potrivirea
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={rejectSuggestedMatch} disabled={matchActionPending}>
+                                    <X className="w-3.5 h-3.5 mr-1.5" />
+                                    Respinge
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
+            {matchState.status === "matched" && matchState.suggestedTransaction && (
+                <Card className="p-4 sm:p-5 border-green-400/30 bg-green-500/[0.04]">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-green-400/30 bg-green-500/10 text-green-300">
+                            <Check className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">Potrivită cu o tranzacție bancară</p>
+                            <p className="text-xs text-muted">
+                                {new Date(matchState.suggestedTransaction.transactionDate).toLocaleDateString("ro-RO", { day: "numeric", month: "short", year: "numeric" })}
+                                {" · "}
+                                {matchState.suggestedTransaction.description}
+                                {" · "}
+                                <span className="font-num text-foreground">£{matchState.suggestedTransaction.amount.toFixed(2)}</span>
+                            </p>
+                        </div>
+                        <button onClick={rejectSuggestedMatch} disabled={matchActionPending} className="text-xs text-muted hover:text-foreground shrink-0">
+                            Anulează
+                        </button>
+                    </div>
+                </Card>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="p-3 flex flex-col items-center justify-center min-h-[320px] bg-black/20 gap-3">
