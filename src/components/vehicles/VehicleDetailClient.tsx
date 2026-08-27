@@ -563,9 +563,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={consumptionData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[i]?.date ?? ""} {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[Number(i)]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => Number(v).toFixed(2)} labelFormatter={(i) => consumptionData[i]?.date ?? ""} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => Number(v).toFixed(2)} labelFormatter={(i) => consumptionData[Number(i)]?.date ?? ""} />
                                 <Line type="monotone" dataKey="consumption" name={consumptionUnitLabel} stroke="#52c98a" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -582,9 +582,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={consumptionData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[i]?.date ?? ""} {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => consumptionData[Number(i)]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatGBP(Number(v))} labelFormatter={(i) => consumptionData[i]?.date ?? ""} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatGBP(Number(v))} labelFormatter={(i) => consumptionData[Number(i)]?.date ?? ""} />
                                 <Line type="monotone" dataKey="costPerDistance" name={`Cost${costUnitLabel}`} stroke="#d6a24c" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
@@ -601,9 +601,9 @@ function StatsTab({ analytics }: { analytics: AnalyticsData }) {
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={priceData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="index" tickFormatter={(i) => priceData[i]?.date ?? ""} {...chartAxisProps} />
+                                <XAxis dataKey="index" tickFormatter={(i) => priceData[Number(i)]?.date ?? ""} {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v.toFixed(2)}`} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(3)}/L`} labelFormatter={(i) => priceData[i]?.date ?? ""} />
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `£${Number(v).toFixed(3)}/L`} labelFormatter={(i) => priceData[Number(i)]?.date ?? ""} />
                                 <Line type="monotone" dataKey="price" name="Preț/litru" stroke="#7aa8d6" strokeWidth={2} dot={{ r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
