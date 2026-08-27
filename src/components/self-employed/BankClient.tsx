@@ -205,19 +205,19 @@ function BankConnectionsCard({ connections }: { connections: BankConnectionRow[]
           <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-1">Sincronizare automată (Open Banking)</h3>
           <p className="text-xs text-faint">Tranzacțiile sunt aduse automat zilnic — fără export/import CSV manual.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           {connections.length > 0 && (
             <button
               onClick={handleSyncNow}
               disabled={isSyncing}
-              className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50"
+              className="flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground disabled:opacity-50 w-full sm:w-auto"
             >
               {isSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
               Sincronizează acum
             </button>
           )}
-          <a href="/api/truelayer/connect">
-            <Button className="flex items-center gap-2 whitespace-nowrap">
+          <a href="/api/truelayer/connect" className="w-full sm:w-auto">
+            <Button className="flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto">
               <Link2 className="w-4 h-4" />
               Conectează cont bancar
             </Button>
