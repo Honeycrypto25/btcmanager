@@ -8,7 +8,7 @@ import {
     Wallet,
     History,
     Lock,
-    Bitcoin,
+    LayoutGrid,
     LogOut,
     TrendingUp,
     TrendingDown,
@@ -204,9 +204,9 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
                     <div className="mb-2 flex items-center justify-between gap-3 px-1">
                         <div className="flex items-center gap-3">
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-                                <Bitcoin className="h-5 w-5" />
+                                <LayoutGrid className="h-5 w-5" />
                             </div>
-                            <p className="font-display text-lg font-medium leading-none text-foreground">Portfolio</p>
+                            <p className="font-display text-lg font-medium leading-none text-foreground">Personal Dashboard</p>
                         </div>
 
                         <button

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/components/ui/core';
-import { Bitcoin, Menu } from 'lucide-react';
+import { LayoutDashboard, Menu } from 'lucide-react';
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -19,9 +19,9 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
                     <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5">
                             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-                                <Bitcoin className="h-4 w-4" />
+                                <LayoutDashboard className="h-4 w-4" />
                             </div>
-                            <p className="font-display text-base font-medium leading-none text-foreground">Portfolio</p>
+                            <p className="font-display text-base font-medium leading-none text-foreground">Personal Dashboard</p>
                         </div>
 
                         <button
