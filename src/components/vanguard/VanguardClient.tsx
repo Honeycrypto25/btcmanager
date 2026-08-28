@@ -18,9 +18,11 @@ import {
     addVanguardContribution,
     deleteVanguardContribution,
     getVanguardContributions,
+    getVanguardHoldingSignals,
     type VanguardAccountInput,
     type VanguardHoldingInput,
     type VanguardContributionInput,
+    type VanguardHoldingSignal,
 } from "@/app/actions/vanguard";
 
 const OWNER_OPTIONS: { value: string; label: string }[] = [
@@ -251,12 +253,25 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
 
 function StatsTab({ accounts }: { accounts: AccountRow[] }) {
     const [history, setHistory] = useState<AccountValueSeries[] | null>(null);
+    const [signals, setSignals] = useState<VanguardHoldingSignal[] | null>(null);
     const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
     const [periodMode, setPeriodMode] = useState<"monthly" | "yearly">("monthly");
 
     useEffect(() => {
         getVanguardAccountValueHistory().then(setHistory);
+        getVanguardHoldingSignals().then(setSignals);
     }, []);
+
+    const signalByHoldingId = React.useMemo(() => {
+        const map = new Map<string, VanguardHoldingSignal>();
+        for (const sig of signals ?? []) map.set(sig.holdingId, sig);
+        return map;
+    }, [signals]);
+
+    // A signal needs a handful of distinct daily prices captured over the
+    // trailing 3 months before it's trustworthy -- a fresh ticker/ISIN
+    // might only have 1-2 points so far, which isn't a real "average".
+    const MIN_SIGNAL_SAMPLES = 5;
 
     const visibleAccounts = selectedAccountId === "all" ? accounts : accounts.filter((a) => a.id === selectedAccountId);
 
@@ -346,7 +361,29 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                 const avgPrice = h.costBasis / (h.units as number);
                 const currentPrice = h.currentValue / (h.units as number);
                 const diffPercent = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
-                return { holdingId: h.id, fundName: h.fundName, ticker: h.ticker, accountName: a.name, currency: a.currency, units: h.units as number, avgPrice, currentPrice, diffPercent };
+
+                const sig = signalByHoldingId.get(h.id);
+                const hasSignal = !!sig && sig.avg3mPrice !== null && sig.avg3mSampleSize >= MIN_SIGNAL_SAMPLES;
+                const avg3mPrice = hasSignal ? (sig!.avg3mPrice as number) : null;
+                const signalCurrentPrice = sig?.currentPrice ?? currentPrice;
+                const vsAvg3mPercent = hasSignal ? ((signalCurrentPrice - avg3mPrice!) / avg3mPrice!) * 100 : null;
+                const isBuySignal = hasSignal && signalCurrentPrice <= (avg3mPrice as number);
+
+                return {
+                    holdingId: h.id,
+                    fundName: h.fundName,
+                    ticker: h.ticker,
+                    accountName: a.name,
+                    currency: a.currency,
+                    units: h.units as number,
+                    avgPrice,
+                    currentPrice,
+                    diffPercent,
+                    avg3mPrice,
+                    vsAvg3mPercent,
+                    isBuySignal,
+                    hasSignal,
+                };
             })
     );
 
@@ -398,7 +435,11 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                 <p className="text-sm font-medium text-foreground mb-1">Preț mediu de intrare</p>
                 <p className="text-xs text-muted mb-4">
                     Preț mediu = total investit ÷ unități deținute, pe fiecare holding — se recalculează automat
-                    la fiecare contribuție nouă. Prețul curent e derivat din valoarea curentă ÷ unități.
+                    la fiecare contribuție nouă. Prețul curent e derivat din valoarea curentă ÷ unități. Coloana
+                    &bdquo;Medie 3 luni&rdquo; e media prețurilor zilnice reale înregistrate în ultimele 90 de zile
+                    (vezi sincronizarea automată de preț) — cerință: cel puțin {MIN_SIGNAL_SAMPLES.toString()} prețuri
+                    distincte în fereastră, altfel apare &bdquo;date insuficiente&rdquo;. Semnalul e verde când prețul
+                    curent e sub această medie (istoric, moment bun de cumpărat) și roșu când e peste.
                 </p>
                 {holdingsWithPrice.length === 0 ? (
                     <p className="text-xs text-faint italic text-center py-6">
@@ -415,6 +456,8 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                                     <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Preț mediu intrare</th>
                                     <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Preț curent</th>
                                     <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Diferență</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Medie 3 luni</th>
+                                    <th className="py-2 pr-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Semnal</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
@@ -429,6 +472,29 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                                         <td className="py-2.5 pr-4 text-sm text-foreground font-num">{formatMoney(h.currentPrice, h.currency)}</td>
                                         <td className={cn("py-2.5 pr-4 text-sm font-medium", h.diffPercent >= 0 ? "text-green-400" : "text-red-400")}>
                                             {h.diffPercent >= 0 ? "+" : ""}{h.diffPercent.toFixed(1)}%
+                                        </td>
+                                        <td className="py-2.5 pr-4 text-sm text-foreground font-num">
+                                            {h.hasSignal ? formatMoney(h.avg3mPrice as number, h.currency) : <span className="text-faint">—</span>}
+                                        </td>
+                                        <td className="py-2.5 pr-4">
+                                            {h.hasSignal ? (
+                                                <span
+                                                    className={cn(
+                                                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
+                                                        h.isBuySignal
+                                                            ? "bg-green-500/10 border-green-400/30 text-green-400"
+                                                            : "bg-red-500/10 border-red-400/30 text-red-400"
+                                                    )}
+                                                    title={h.isBuySignal ? "Preț curent sub media ultimelor 3 luni" : "Preț curent peste media ultimelor 3 luni"}
+                                                >
+                                                    {h.isBuySignal ? "Sub medie" : "Peste medie"}
+                                                    {" "}
+                                                    ({(h.vsAvg3mPercent as number) >= 0 ? "+" : ""}
+                                                    {(h.vsAvg3mPercent as number).toFixed(1)}%)
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-faint italic">date insuficiente</span>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

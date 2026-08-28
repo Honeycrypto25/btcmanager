@@ -334,3 +334,52 @@ export async function getVanguardTotals() {
     const value = holdings.reduce((s: number, h: any) => s + Number(h.currentValue), 0);
     return { invested, value, pnl: value - invested, pnlPercent: invested > 0 ? ((value - invested) / invested) * 100 : 0, holdingCount: holdings.length };
 }
+
+export interface VanguardHoldingSignal {
+    holdingId: string;
+    currentPrice: number | null;
+    avg3mPrice: number | null;
+    avg3mSampleSize: number;
+    currency: string;
+}
+
+/** "Is now a decent time to buy" signal per holding, driven by the
+ * holding's own recorded price history (see lib/vanguard-price-sync.ts) —
+ * distinct from costBasis/units (the entry price already shown in the
+ * "Preț mediu de intrare" table), this adds the trailing-3-month average
+ * of the daily NAV/market prices actually captured for that holding.
+ *
+ * Only holdings with a ticker/ISIN accumulate price history at all (the
+ * daily auto-sync skips purely manual holdings), so a manual-only holding
+ * comes back with avg3mPrice: null / avg3mSampleSize: 0 — the UI shows
+ * "date insuficiente" rather than fabricate a signal from nothing. The
+ * same "not enough samples yet" guard applies to a holding that just got
+ * its ticker/ISIN added a few days ago. */
+export async function getVanguardHoldingSignals(): Promise<VanguardHoldingSignal[]> {
+    const userId = await requireUserId();
+    const holdings = await db.vanguardHolding.findMany({
+        where: { userId, ticker: { not: null } },
+        include: { priceHistory: { orderBy: { capturedAt: "desc" } } },
+    });
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    return (holdings as any[]).map((h) => {
+        const recent = h.priceHistory.filter((p: any) => p.capturedAt >= ninetyDaysAgo);
+        const avg3mPrice =
+            recent.length > 0 ? recent.reduce((s: number, p: any) => s + Number(p.price), 0) / recent.length : null;
+        const currentPrice =
+            h.priceHistory.length > 0
+                ? Number(h.priceHistory[0].price)
+                : h.units && Number(h.units) > 0
+                  ? Number(h.currentValue) / Number(h.units)
+                  : null;
+        return {
+            holdingId: h.id as string,
+            currentPrice,
+            avg3mPrice,
+            avg3mSampleSize: recent.length,
+            currency: (recent[0]?.currency ?? h.priceHistory[0]?.currency ?? "GBP") as string,
+        };
+    });
+}
