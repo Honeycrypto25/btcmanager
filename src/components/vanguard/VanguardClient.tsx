@@ -586,8 +586,8 @@ function StatsTab({ accounts }: { accounts: AccountRow[] }) {
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="label" {...chartAxisProps} />
                                 <YAxis {...chartAxisProps} tickFormatter={(v) => `${v}%`} width={48} />
-                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v).toFixed(1)}%`} />
-                                <Bar dataKey="returnPercent" radius={[4, 4, 0, 0]}>
+                                <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${Number(v).toFixed(1)}%`, "Randament"]} />
+                                <Bar dataKey="returnPercent" name="Randament" radius={[4, 4, 0, 0]}>
                                     {profitabilityData.map((d, i) => (
                                         <Cell key={i} fill={d.returnPercent >= 0 ? "#52c98a" : "#d65252"} />
                                     ))}
