@@ -98,6 +98,108 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
     return { signature, feeLamports };
 }
 
+// --- Ultra API (used for the Eva buy — see the comment below) ---
+//
+// The classic Swap API above (a.k.a. "Metis") flat-out refuses to quote
+// some very thin/low-liquidity SPL tokens with a routing-level
+// TOKEN_NOT_TRADABLE error, even when a real route exists — confirmed by
+// hand for EVA (~$3k pool): /swap/v1/quote rejects USDC->EVA outright,
+// while Jupiter's newer Ultra order/execute API finds a route through
+// SOL (USDC->SOL->EVA) at ~-2.2% price impact. Ultra also does its own
+// submission/landing (no separate sendRawTransaction/confirmTransaction
+// step needed) and reports the ACTUAL filled output amount rather than a
+// pre-trade quote. Used only for eva-dca.ts's buy step; the SOL module
+// keeps using the classic Swap API above since it works fine there and
+// there's no reason to touch working code.
+const ULTRA_API_BASE = "https://lite-api.jup.ag/ultra/v1";
+
+export interface UltraOrderResponse {
+    inputMint: string;
+    outputMint: string;
+    inAmount: string;
+    outAmount: string;
+    priceImpactPct: string;
+    transaction: string | null; // null if no route / no taker provided
+    requestId: string;
+    [key: string]: unknown;
+}
+
+/**
+ * Ultra has no slippageBps request param — unlike the classic Swap API, it
+ * manages execution slippage itself as part of "handling ... transaction
+ * landing" (per Jupiter's docs), so EvaSettings.slippageBps is not
+ * consulted for this call.
+ */
+export async function getUltraOrder(params: {
+    inputMint: string;
+    outputMint: string;
+    amount: string; // raw/atomic units
+    taker: string; // wallet that will sign — required to get back a signable `transaction`
+}): Promise<UltraOrderResponse> {
+    const qs = new URLSearchParams({
+        inputMint: params.inputMint,
+        outputMint: params.outputMint,
+        amount: params.amount,
+        taker: params.taker,
+    });
+    const order = await jupiterFetch<UltraOrderResponse>(`${ULTRA_API_BASE}/order?${qs.toString()}`);
+    if (!order.transaction) {
+        throw new Error(
+            `Jupiter Ultra order returned no route/transaction for ${params.inputMint} -> ${params.outputMint} (requestId ${order.requestId})`
+        );
+    }
+    return order;
+}
+
+interface UltraExecuteResponse {
+    status: "Success" | "Failed";
+    signature: string;
+    code: number;
+    error?: string;
+    inputAmountResult?: string;
+    outputAmountResult?: string;
+}
+
+/** Signs and submits an Ultra order. Returns the actual filled output amount (raw units), not the pre-trade quote. */
+export async function executeUltraOrder(
+    order: UltraOrderResponse,
+    keypair: Keypair
+): Promise<{ signature: string; outAmountRaw: string; feeLamports: number }> {
+    const tx = VersionedTransaction.deserialize(Buffer.from(order.transaction as string, "base64"));
+    tx.sign([keypair]);
+    const signedTransaction = Buffer.from(tx.serialize()).toString("base64");
+
+    const executed = await jupiterFetch<UltraExecuteResponse>(`${ULTRA_API_BASE}/execute`, {
+        method: "POST",
+        body: JSON.stringify({ signedTransaction, requestId: order.requestId }),
+    });
+
+    if (executed.status !== "Success") {
+        throw new Error(`Ultra swap failed: ${executed.error ?? "unknown error"} (code ${executed.code}, tx ${executed.signature})`);
+    }
+
+    // Ultra handles submission/landing itself, so — unlike executeSwap
+    // above — there's no confirmTransaction step here. The execute
+    // response doesn't include the network fee, so read it back the same
+    // retry-tolerant way as executeSwap does.
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    let feeLamports = 0;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const txInfo = await connection.getTransaction(executed.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+        if (txInfo?.meta) {
+            feeLamports = txInfo.meta.fee;
+            break;
+        }
+        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+
+    return {
+        signature: executed.signature,
+        outAmountRaw: executed.outputAmountResult ?? order.outAmount,
+        feeLamports,
+    };
+}
+
 // --- Trigger API (used for the take-profit sell order) ---
 
 interface CreateOrderResponse {
