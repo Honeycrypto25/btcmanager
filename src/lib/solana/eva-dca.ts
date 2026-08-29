@@ -269,6 +269,12 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
             amount: toRawAmount(buyAmountUsd, USDC_DECIMALS),
             taker: keypair.publicKey.toBase58(),
         });
+        // The pre-trade quote's implied price — kept only for display (see
+        // EvaLot.quotedPriceUsd), so the settings/stats UI can show how much
+        // slippage happened between this quote and the actual fill below.
+        const quotedEvaAmount = fromRawAmount(order.outAmount, EVA_DECIMALS);
+        const quotedPriceUsd = quotedEvaAmount > 0 ? buyAmountUsd / quotedEvaAmount : null;
+
         const { signature: buyTxSignature, outAmountRaw, feeLamports } = await executeUltraOrder(order, keypair);
 
         // Actual filled amount, not the pre-trade quote — meaningful here
@@ -289,6 +295,7 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
                 buyAmountUsd,
                 evaAcquired,
                 buyPriceUsd,
+                quotedPriceUsd,
                 buyFeeUsd,
                 buyTxSignature,
                 evaRemaining: evaAcquired,
