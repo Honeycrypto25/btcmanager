@@ -5,6 +5,12 @@ export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const SOL_DECIMALS = 9;
 export const USDC_DECIMALS = 6;
 
+// Eva (SPL token) — second single-token DCA module, same bot wallet/APIs
+// as SOL above. Mint + decimals confirmed via Jupiter's token API.
+export const EVA_MINT = "9jxs9w5YRnPfchbW8f8hwhBSTvedSSvntfxvpqbL1jVH";
+export const EVA_DECIMALS = 9;
+export const EVA_SYMBOL = "Eva";
+
 export const JUPITER_API_BASE = "https://api.jup.ag";
 
 /** Jupiter Trigger API rejects orders below roughly this USD value. */

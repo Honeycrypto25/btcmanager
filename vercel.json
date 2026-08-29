@@ -33,6 +33,10 @@
       "schedule": "30 9 * * *"
     },
     {
+      "path": "/api/cron/eva-dca",
+      "schedule": "40 9 * * *"
+    },
+    {
       "path": "/api/cron/truelayer-sync",
       "schedule": "15 4 * * *"
     }

@@ -32,7 +32,8 @@ import {
     Coins,
     Hexagon,
     Diamond,
-    Repeat
+    Repeat,
+    Sparkles
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -81,6 +82,8 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'DCA automat', href: '/solana', icon: Coins },
             { name: 'Statistici', href: '/solana/stats', icon: BarChart3 },
+            { name: 'Eva (DCA)', href: '/solana/eva', icon: Sparkles },
+            { name: 'Eva Statistici', href: '/solana/eva/stats', icon: BarChart3 },
         ],
     },
     {

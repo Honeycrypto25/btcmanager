@@ -227,14 +227,22 @@ export async function getHistoricalTriggerOrder(wallet: string, orderKey: string
 
 // --- Price API (used only to compute target price / display, not for polling decisions) ---
 
-export async function getSolPriceUsd(): Promise<number> {
-    // Price API v2 was deprecated (Aug 2025) and stopped reliably returning
-    // data — v3 has a different response shape: no `data` wrapper, and the
-    // field is `usdPrice` (number) instead of `price` (string).
+/**
+ * Generic single-mint USD price lookup — used by both the SOL and Eva
+ * modules (getSolPriceUsd below just calls this with SOL_MINT). Price API
+ * v2 was deprecated (Aug 2025) and stopped reliably returning data — v3
+ * has a different response shape: no `data` wrapper, and the field is
+ * `usdPrice` (number) instead of `price` (string).
+ */
+export async function getTokenPriceUsd(mint: string): Promise<number> {
     const res = await jupiterFetch<Record<string, { usdPrice: number }>>(
-        `${JUPITER_API_BASE}/price/v3?ids=${SOL_MINT}`
+        `${JUPITER_API_BASE}/price/v3?ids=${mint}`
     );
-    const entry = res[SOL_MINT];
-    if (!entry) throw new Error("Jupiter price API returned no data for SOL");
+    const entry = res[mint];
+    if (!entry) throw new Error(`Jupiter price API returned no data for mint ${mint}`);
     return entry.usdPrice;
+}
+
+export async function getSolPriceUsd(): Promise<number> {
+    return getTokenPriceUsd(SOL_MINT);
 }
