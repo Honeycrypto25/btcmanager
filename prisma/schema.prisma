@@ -986,10 +986,10 @@ model EvaSettings {
   takeProfitPercent Decimal @db.Decimal(6, 2)
   sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of EVA sold per lot at target
   // EVA's on-chain liquidity is thin (~$3k pool per Jupiter's token API,
-  // "organicScore": "low", ~134 holders at the time this was added) — 300
-  // (3%) by default vs. SOL's 50 (0.5%), so ordinary price movement between
+  // "organicScore": "low", ~134 holders at the time this was added) — 500
+  // (5%) by default vs. SOL's 50 (0.5%), so ordinary price movement between
   // quote and execution doesn't make the buy swap fail outright.
-  slippageBps       Int     @default(300)
+  slippageBps       Int     @default(500)
 
   lastRunAt     DateTime?
   lastRunStatus String? // "ok" | "skipped" | "error"

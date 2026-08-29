@@ -77,11 +77,11 @@ export async function upsertEvaSettings(input: EvaSettingsInput) {
             intervalHours: input.intervalHours,
             takeProfitPercent: input.takeProfitPercent,
             sellAmountUsd: input.sellAmountUsd,
-            // 300 bps (3%) default — EVA's on-chain liquidity is thin
+            // 500 bps (5%) default — EVA's on-chain liquidity is thin
             // (~$3k pool, "organicScore": "low" per Jupiter's token API),
             // so it needs much more slippage headroom than SOL's 0.5%
             // default. Still fully user-editable.
-            slippageBps: input.slippageBps ?? 300,
+            slippageBps: input.slippageBps ?? 500,
             sweepEnabled: input.sweepEnabled,
             sweepMinBalanceEva: input.sweepMinBalanceEva,
         },
@@ -92,7 +92,7 @@ export async function upsertEvaSettings(input: EvaSettingsInput) {
             intervalHours: input.intervalHours,
             takeProfitPercent: input.takeProfitPercent,
             sellAmountUsd: input.sellAmountUsd,
-            slippageBps: input.slippageBps ?? 300,
+            slippageBps: input.slippageBps ?? 500,
             sweepEnabled: input.sweepEnabled,
             sweepMinBalanceEva: input.sweepMinBalanceEva,
         },

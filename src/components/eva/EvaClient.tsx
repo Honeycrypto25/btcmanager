@@ -41,9 +41,9 @@ export function EvaClient({
         // matching comment in src/app/actions/eva.ts for the full derivation.
         takeProfitPercent: initialSettings ? Number(initialSettings.takeProfitPercent) : 11.11,
         sellAmountUsd: initialSettings ? Number(initialSettings.sellAmountUsd) : 10,
-        // 300 bps (3%) default, not SOL's 50 (0.5%) — EVA's on-chain
+        // 500 bps (5%) default, not SOL's 50 (0.5%) — EVA's on-chain
         // liquidity is thin, so it needs more slippage headroom.
-        slippageBps: initialSettings?.slippageBps ?? 300,
+        slippageBps: initialSettings?.slippageBps ?? 500,
         sweepEnabled: initialSettings?.sweepEnabled ?? false,
         sweepMinBalanceEva: initialSettings ? Number(initialSettings.sweepMinBalanceEva) : 0,
     });
@@ -150,7 +150,7 @@ export function EvaClient({
             <div className="flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
-                    Lichiditate redusă pe EVA (pool mic, puțini deținători) — slippage-ul implicit e setat la 3% (300 bps), mult peste cel de la SOL (0.5%), ca swap-urile să nu eșueze din cauza mișcării de preț dintre cotație și execuție. Poți ajusta valoarea mai jos, dar un slippage prea mic va face cumpărările să eșueze frecvent.
+                    Lichiditate redusă pe EVA (pool mic, puțini deținători) — slippage-ul implicit e setat la 5% (500 bps), mult peste cel de la SOL (0.5%), ca swap-urile să nu eșueze din cauza mișcării de preț dintre cotație și execuție. Poți ajusta valoarea mai jos, dar un slippage prea mic va face cumpărările să eșueze frecvent.
                 </span>
             </div>
 
@@ -287,12 +287,12 @@ export function EvaClient({
                             className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
                         />
                     </Field>
-                    <Field label="Slippage la cumpărare (bps, 300 = 3%)">
+                    <Field label="Slippage la cumpărare (bps, 500 = 5%)">
                         <input
                             type="number"
                             value={form.slippageBps}
                             disabled={!editing}
-                            onChange={(e) => setForm({ ...form, slippageBps: parseInt(e.target.value) || 300 })}
+                            onChange={(e) => setForm({ ...form, slippageBps: parseInt(e.target.value) || 500 })}
                             className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
                         />
                     </Field>
