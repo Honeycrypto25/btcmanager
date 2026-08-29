@@ -5,11 +5,11 @@ import { loadBotKeypair } from "./wallet";
 import { runEvaSweepForUser } from "./eva-sweep";
 import {
     createTriggerSellOrder,
-    executeSwap,
+    executeUltraOrder,
     getActiveTriggerOrders,
     getHistoricalTriggerOrder,
     getTokenPriceUsd,
-    getSwapQuote,
+    getUltraOrder,
 } from "./jupiter";
 import { EVA_DECIMALS, EVA_MINT, MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
@@ -254,17 +254,26 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
             throw new Error(`sellAmountUsd must be at least $${MIN_TRIGGER_ORDER_USD} (Jupiter Trigger API minimum)`);
         }
 
-        // 1) Buy: USDC -> EVA
+        // 1) Buy: USDC -> EVA. Uses Jupiter's Ultra order/execute API, not
+        // the classic Swap API the SOL module uses — EVA's thin liquidity
+        // makes the classic /swap/v1/quote reject it outright with
+        // TOKEN_NOT_TRADABLE, even though a real (if pricier) route exists
+        // through SOL. Confirmed by hand before switching this over; see
+        // the comment above getUltraOrder in jupiter.ts for the full story.
+        // settings.slippageBps is not used here — Ultra manages its own
+        // execution slippage.
         const buyAmountUsd = Number(settings.buyAmountUsd);
-        const quote = await getSwapQuote({
+        const order = await getUltraOrder({
             inputMint: USDC_MINT,
             outputMint: EVA_MINT,
             amount: toRawAmount(buyAmountUsd, USDC_DECIMALS),
-            slippageBps: settings.slippageBps,
+            taker: keypair.publicKey.toBase58(),
         });
-        const { signature: buyTxSignature, feeLamports } = await executeSwap(quote, keypair);
+        const { signature: buyTxSignature, outAmountRaw, feeLamports } = await executeUltraOrder(order, keypair);
 
-        const evaAcquired = fromRawAmount(quote.outAmount, EVA_DECIMALS);
+        // Actual filled amount, not the pre-trade quote — meaningful here
+        // given EVA's price impact is a few percent, not a rounding error.
+        const evaAcquired = fromRawAmount(outAmountRaw, EVA_DECIMALS);
         const buyPriceUsd = buyAmountUsd / evaAcquired;
         // Network fee is paid in SOL (the gas token) regardless of which
         // SPL token is being traded — convert to USD via the SOL price at
