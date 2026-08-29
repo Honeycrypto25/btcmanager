@@ -341,7 +341,7 @@ export function EvaStatsClient({
                     positive={stats.totalRealizedPnlUsd >= 0}
                 />
                 <StatCard label="Fee-uri totale" value={formatUsdFee(stats.totalFeesUsd)} />
-                <StatCard label="EVA deținut" value={`${stats.evaHeld.toFixed(4)} EVA`} />
+                <StatCard label="EVA deținut" value={`${stats.evaHeld.toFixed(3)} EVA`} />
                 <StatCard label="Ordine active" value={String(stats.openOrders)} />
             </div>
 
@@ -438,7 +438,7 @@ export function EvaStatsClient({
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => `${Number(v).toFixed(4)} EVA`}
+                                formatter={(v) => `${Number(v).toFixed(3)} EVA`}
                             />
                             <Bar dataKey="eva" name="EVA cumpărat" fill="rgba(214,162,76,0.7)" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -486,7 +486,7 @@ export function EvaStatsClient({
                         <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                         <Tooltip
                             contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                            formatter={(v) => `${Number(v).toFixed(4)} EVA`}
+                            formatter={(v) => `${Number(v).toFixed(3)} EVA`}
                         />
                         <Bar dataKey="eva" name="EVA retras" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -587,14 +587,16 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
-            <table className="w-full min-w-[1320px] text-left text-sm">
+            <table className="w-full min-w-[1560px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
                         <th className="pb-2 pr-4">Status</th>
                         <th className="pb-2 pr-4">Sumă</th>
                         <th className="pb-2 pr-4">EVA primit</th>
+                        <th className="pb-2 pr-4">Preț cotat</th>
                         <th className="pb-2 pr-4">Preț cumpărare</th>
+                        <th className="pb-2 pr-4">Slippage</th>
                         <th className="pb-2 pr-4">Fee</th>
                         <th className="pb-2 pr-4">Preț țintă</th>
                         <th className="pb-2 pr-4">Preț curent</th>
@@ -614,6 +616,12 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                         const isOpen = PENDING_STATUSES.has(lot.status);
                         const pctChange =
                             isOpen && currentPriceUsd ? ((currentPriceUsd - Number(lot.buyPriceUsd)) / Number(lot.buyPriceUsd)) * 100 : null;
+                        // How much the actual fill price differed from the pre-trade quote
+                        // (order fetched from Jupiter Ultra right before signing) — positive
+                        // means the fill was worse (paid more per EVA) than quoted.
+                        const buySlippagePct = lot.quotedPriceUsd
+                            ? ((Number(lot.buyPriceUsd) - Number(lot.quotedPriceUsd)) / Number(lot.quotedPriceUsd)) * 100
+                            : null;
                         return (
                             <tr key={lot.id} className="border-t border-white/[0.06]">
                                 <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
@@ -623,8 +631,12 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                     </span>
                                 </td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
-                                <td className="py-2 pr-4 text-foreground">{Number(lot.evaAcquired).toFixed(4)}</td>
+                                <td className="py-2 pr-4 text-foreground">{Number(lot.evaAcquired).toFixed(3)}</td>
+                                <td className="py-2 pr-4 text-faint">{lot.quotedPriceUsd ? formatUsd(Number(lot.quotedPriceUsd)) : "—"}</td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                                <td className={cn("py-2 pr-4 font-medium", buySlippagePct === null ? "text-faint" : buySlippagePct > 0 ? "text-red-300" : "text-emerald-300")}>
+                                    {buySlippagePct === null ? "—" : `${buySlippagePct >= 0 ? "+" : ""}${buySlippagePct.toFixed(2)}%`}
+                                </td>
                                 <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
                                 <td className="py-2 pr-4 text-foreground">{isOpen && currentPriceUsd ? formatUsd(currentPriceUsd) : "—"}</td>
@@ -635,7 +647,7 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                 <td className={cn("py-2 pr-4", lot.realizedPnlUsd && Number(lot.realizedPnlUsd) < 0 ? "text-red-300" : "text-emerald-300")}>
                                     {lot.realizedPnlUsd ? formatUsd(Number(lot.realizedPnlUsd)) : "—"}
                                 </td>
-                                <td className="py-2 pr-4 text-foreground">{Number(lot.evaRemaining).toFixed(4)}</td>
+                                <td className="py-2 pr-4 text-foreground">{Number(lot.evaRemaining).toFixed(3)}</td>
                                 <td className="py-2 pr-4 text-faint" title={lot.lastCheckedAt ? new Date(lot.lastCheckedAt).toLocaleString("ro-RO") : undefined}>
                                     {lot.lastCheckedAt
                                         ? formatDistanceToNow(new Date(lot.lastCheckedAt), { addSuffix: true })
@@ -699,8 +711,8 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                                     {sweep.status === "SUCCESS" ? "Trimis" : "Eșuat"}
                                 </span>
                             </td>
-                            <td className="py-2 pr-4 text-foreground">{Number(sweep.balanceBeforeEva).toFixed(4)} EVA</td>
-                            <td className="py-2 pr-4 text-foreground">{Number(sweep.amountEva).toFixed(4)} EVA</td>
+                            <td className="py-2 pr-4 text-foreground">{Number(sweep.balanceBeforeEva).toFixed(3)} EVA</td>
+                            <td className="py-2 pr-4 text-foreground">{Number(sweep.amountEva).toFixed(3)} EVA</td>
                             <td className="py-2 pr-4 text-faint">{sweep.manual ? "manual" : "automat"}</td>
                             <td className="py-2 pr-4 text-red-300">{sweep.errorMessage ?? "—"}</td>
                             <td className="py-2 text-faint">

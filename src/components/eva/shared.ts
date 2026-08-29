@@ -8,6 +8,7 @@ export interface LotDTO {
     buyAmountUsd: string;
     evaAcquired: string;
     buyPriceUsd: string;
+    quotedPriceUsd: string | null;
     buyFeeUsd: string;
     buyTxSignature: string | null;
     boughtAt: string;

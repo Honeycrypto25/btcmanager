@@ -1059,7 +1059,12 @@ model EvaLot {
   // --- Buy side (always set once the lot exists) ---
   buyAmountUsd   Decimal  @db.Decimal(12, 4) // USD actually spent
   evaAcquired    Decimal  @db.Decimal(20, 9) // EVA received from the swap
-  buyPriceUsd    Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / evaAcquired
+  buyPriceUsd    Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / evaAcquired (ACTUAL fill)
+  // Price implied by Jupiter Ultra's pre-trade order/quote, fetched right
+  // before signing — compared against buyPriceUsd (the actual fill) in the
+  // UI to show how much slippage/price-movement happened between quoting
+  // and execution. Null for lots created before this field was added.
+  quotedPriceUsd Decimal? @db.Decimal(14, 4)
   buyFeeUsd      Decimal  @default(0) @db.Decimal(10, 4) // network + Jupiter fee, converted to USD
   buyTxSignature String?
   boughtAt       DateTime @default(now())
