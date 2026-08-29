@@ -54,6 +54,9 @@ model User {
   solanaSettings       SolanaSettings?
   solanaLots           SolanaLot[]
   solanaSweeps         SolanaSweep[]
+  evaSettings          EvaSettings?
+  evaLots              EvaLot[]
+  evaSweeps            EvaSweep[]
   evmSettings          EvmSettings?
   evmLots              EvmLot[]
   evmSweeps            EvmSweep[]
@@ -939,6 +942,154 @@ model SolanaLot {
   solRemaining Decimal @db.Decimal(20, 9)
 
   // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of solSold + buyFeeUsd share)
+  // Null until the sell fills.
+  realizedPnlUsd Decimal? @db.Decimal(12, 4)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, boughtAt])
+}
+
+// --- Eva (SPL token) DCA bot ---
+// Second single-token Solana DCA module, reusing the exact same bot wallet
+// as the SOL module above (SOLANA_PRIVATE_KEY / SOLANA_RPC_URL — no new
+// secrets) and the exact same Jupiter Swap + Trigger APIs, just trading
+// EVA_MINT (see src/lib/solana/constants.ts) against USDC instead of SOL.
+// Deliberately a field-for-field mirror of SolanaSettings/SolanaLot/
+// SolanaSweep rather than a shared generic multi-token model, matching the
+// established convention in this codebase for "add a new token to trade"
+// (see the BNB/EVM modules for the same pattern) — the more generic
+// PolygonTokenSettings model belongs to a different strategy (reverse-DCA)
+// and is not reused here.
+
+model EvaSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enabled Boolean @default(false)
+
+  // Public key only — never the private key. Same wallet as SolanaSettings;
+  // shown in the UI so the user can verify/fund the right wallet.
+  walletAddress String
+
+  buyAmountUsd      Decimal @db.Decimal(10, 2) // e.g. 10.00 — spent each cycle
+  intervalHours     Int     @default(24)
+  // Default 11.11, not 10 — see the comment above the equivalent constant
+  // in src/app/actions/eva.ts for the derivation ("recover the 10 USDC
+  // invested and keep 10% of the tokens acquired as profit" only works out
+  // to a round number on the SELL side, not on the target-price percent).
+  takeProfitPercent Decimal @db.Decimal(6, 2)
+  sellAmountUsd     Decimal @db.Decimal(10, 2) // USD value of EVA sold per lot at target
+  // EVA's on-chain liquidity is thin (~$3k pool per Jupiter's token API,
+  // "organicScore": "low", ~134 holders at the time this was added) — 500
+  // (5%) by default vs. SOL's 50 (0.5%), so ordinary price movement between
+  // quote and execution doesn't make the buy swap fail outright.
+  slippageBps       Int     @default(500)
+
+  lastRunAt     DateTime?
+  lastRunStatus String? // "ok" | "skipped" | "error"
+  lastRunError  String? @db.Text
+
+  // --- Monthly auto-sweep to a cold wallet ---
+  // Off by default — must be explicitly turned on after verifying with the
+  // manual "Trimite acum" test. Sends the SAME env var destination as the
+  // Solana sweep (SOLANA_SWEEP_DESTINATION) — deliberately not a separate
+  // env var, per the user's explicit request to keep one cold wallet for
+  // both tokens. Never stored in the database — see the equivalent
+  // SolanaSettings comment.
+  sweepEnabled       Boolean @default(false)
+  // No SOL-style gas reserve is needed here — gas for the SPL transfer is
+  // paid in SOL regardless of the EVA balance — so this defaults to 0
+  // (sweep the full EVA balance every month).
+  sweepMinBalanceEva Decimal @default(0) @db.Decimal(20, 9)
+
+  lastSweepAt     DateTime?
+  lastSweepStatus String? // "ok" | "skipped" | "error"
+  lastSweepError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per executed (or attempted) monthly sweep — the excess EVA above
+// sweepMinBalanceEva, sent to SOLANA_SWEEP_DESTINATION as an SPL-token
+// transfer. Kept even for failed attempts (status=FAILED, txSignature null)
+// so the history is a complete audit trail, not just successes.
+model EvaSweep {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status            String // "SUCCESS" | "FAILED"
+  balanceBeforeEva  Decimal  @db.Decimal(20, 9) // on-chain wallet balance right before the transfer
+  amountEva         Decimal  @db.Decimal(20, 9) // amount actually sent (0 for a failed/skipped attempt)
+  destination       String // snapshot of SOLANA_SWEEP_DESTINATION at the time — env var could change later
+  txSignature       String?
+  errorMessage      String? @db.Text
+  manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum EvaLotStatus {
+  PENDING_SELL_ORDER // buy succeeded, sell trigger order creation failed/not yet attempted
+  OPEN // sell trigger order live on Jupiter, waiting for price target
+  FILLED // sell trigger order executed
+  CANCELLED // sell trigger order cancelled (manually, via the UI)
+  FAILED // the buy itself failed — no EVA acquired
+}
+
+// One row per DCA cycle ("lot") — links a buy to its take-profit sell so
+// P&L and fees can be computed per lot, independent of internal Jupiter/
+// on-chain ids (see lotId comment on jupiterOrderId below).
+model EvaLot {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status EvaLotStatus @default(PENDING_SELL_ORDER)
+
+  // --- Buy side (always set once the lot exists) ---
+  buyAmountUsd   Decimal  @db.Decimal(12, 4) // USD actually spent
+  evaAcquired    Decimal  @db.Decimal(20, 9) // EVA received from the swap
+  buyPriceUsd    Decimal  @db.Decimal(14, 4) // effective price = buyAmountUsd / evaAcquired
+  buyFeeUsd      Decimal  @default(0) @db.Decimal(10, 4) // network + Jupiter fee, converted to USD
+  buyTxSignature String?
+  boughtAt       DateTime @default(now())
+
+  // --- Sell trigger order (set once the order is created) ---
+  targetPriceUsd       Decimal? @db.Decimal(14, 4)
+  sellAmountEvaPlanned Decimal? @db.Decimal(20, 9) // EVA put up for sale in the order
+  jupiterOrderKey      String? // Jupiter's own order id — internal lot id above is what ties buy+sell together for P&L
+  sellOrderCreatedAt   DateTime?
+  sellOrderTxSignature String?
+
+  // --- Sell fill (set once Jupiter's keeper fills the order) ---
+  soldAt          DateTime?
+  evaSold         Decimal?  @db.Decimal(20, 9)
+  sellProceedsUsd Decimal?  @db.Decimal(14, 4)
+  sellFeeUsd      Decimal?  @db.Decimal(10, 4)
+  sellTxSignature String?
+
+  // Last time reconcileOpenLots() checked this lot's order against
+  // Jupiter — set on every daily cron run for every OPEN lot (cheap now
+  // that it's a batched lookup, not one API call per lot), regardless of
+  // whether the status actually changed. Shown in the UI so it's obvious
+  // the bot is still watching, not just what the last known status was.
+  lastCheckedAt DateTime?
+
+  // EVA from this lot that is not part of the sell order (or not yet sold)
+  // — stays in the wallet as a long-term holding.
+  evaRemaining Decimal @db.Decimal(20, 9)
+
+  // (sellProceedsUsd - sellFeeUsd) - (buyAmountUsd-equivalent of evaSold + buyFeeUsd share)
   // Null until the sell fills.
   realizedPnlUsd Decimal? @db.Decimal(12, 4)
 
