@@ -341,13 +341,156 @@ export async function getVanguardAccountSummaries(provider?: string) {
 }
 
 /** Total invested/value across all Vanguard holdings for this user — used
- * by both /vanguard and the unified /investments overview. */
+ * by both /vanguard and the unified /investments overview. Also returns
+ * accountCount and the summed pendingCash (uninvested cash sitting in an
+ * account, e.g. Eva-Maria's Fidelity accounts before their first holding
+ * exists) alongside holdingCount, so a caller can tell "no accounts set up
+ * yet" apart from "accounts exist but nothing invested yet" — those read
+ * very differently on /investments (see InvestmentsOverviewClient). */
 export async function getVanguardTotals(provider?: string) {
     const userId = await requireUserId();
-    const holdings = await db.vanguardHolding.findMany({ where: { userId, ...(provider ? { account: { provider } } : {}) } });
+    const accounts = await db.vanguardAccount.findMany({
+        where: { userId, ...(provider ? { provider } : {}) },
+        include: { holdings: true },
+    });
+    const holdings = (accounts as any[]).flatMap((a) => a.holdings);
     const invested = holdings.reduce((s: number, h: any) => s + Number(h.costBasis), 0);
     const value = holdings.reduce((s: number, h: any) => s + Number(h.currentValue), 0);
-    return { invested, value, pnl: value - invested, pnlPercent: invested > 0 ? ((value - invested) / invested) * 100 : 0, holdingCount: holdings.length };
+    const pendingCash = (accounts as any[]).reduce((s, a) => s + (a.pendingCash !== null && a.pendingCash !== undefined ? Number(a.pendingCash) : 0), 0);
+    return {
+        invested,
+        value,
+        pnl: value - invested,
+        pnlPercent: invested > 0 ? ((value - invested) / invested) * 100 : 0,
+        holdingCount: holdings.length,
+        accountCount: accounts.length,
+        pendingCash,
+    };
+}
+
+export interface VanguardRoiPeriodRow {
+    period: string; // week: Monday YYYY-MM-DD, month: YYYY-MM, year: YYYY
+    invested: number;
+    currentValue: number;
+    units: number;
+    roiAmount: number;
+    roiPercent: number;
+}
+
+function mondayKeyUtc(date: Date): string {
+    const d = new Date(date);
+    const day = d.getUTCDay();
+    const diff = (day + 6) % 7; // days since Monday
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() - diff);
+    return d.toISOString().slice(0, 10);
+}
+function monthKeyUtc(date: Date): string {
+    return date.toISOString().slice(0, 7);
+}
+function yearKeyUtc(date: Date): string {
+    return String(date.getUTCFullYear());
+}
+
+type RoiBucket = { invested: number; currentValue: number; units: number };
+
+function addToBucket(map: Map<string, RoiBucket>, key: string, invested: number, currentValue: number, units: number) {
+    const b = map.get(key) ?? { invested: 0, currentValue: 0, units: 0 };
+    b.invested += invested;
+    b.currentValue += currentValue;
+    b.units += units;
+    map.set(key, b);
+}
+
+function bucketsToRows(map: Map<string, RoiBucket>): VanguardRoiPeriodRow[] {
+    return Array.from(map.entries())
+        .sort((a, b) => b[0].localeCompare(a[0])) // newest first
+        .map(([period, b]) => {
+            const roiAmount = b.currentValue - b.invested;
+            return {
+                period,
+                invested: b.invested,
+                currentValue: b.currentValue,
+                units: b.units,
+                roiAmount,
+                roiPercent: b.invested > 0 ? (roiAmount / b.invested) * 100 : 0,
+            };
+        });
+}
+
+/** ROI by cohort: for each week/month/year, how much was invested THAT
+ * period, and what those specific units are worth TODAY — same idea as
+ * the BTC ROI page (/btc/roi), built here from VanguardContribution (the
+ * per-purchase ledger) instead of a raw transaction table.
+ *
+ * Built per-holding rather than globally, since each holding has its own
+ * current price (Vanguard/Fidelity can hold different funds, or the same
+ * fund at accounts with different currencies) — a contribution's
+ * currentValue is (its units) × (that holding's currentValue ÷ its total
+ * units), not a single portfolio-wide price.
+ *
+ * Not every holding has a full contribution ledger (e.g. Fidelity's CSV
+ * import sets a flat costBasis/units total with no per-date breakdown, and
+ * holdings predating the contribution-ledger feature may too) — whatever
+ * cost/units aren't accounted for by that holding's own contribution rows
+ * (the "residual") is folded into the EARLIEST period the holding has any
+ * evidence for (its earliest contribution date, or valueUpdatedAt if it
+ * has no contributions at all), mirroring the same lump-sum approximation
+ * already used for the Overview page's weekly/monthly/yearly breakdown —
+ * so the periods always sum to the true total instead of silently
+ * dropping undated money. */
+export async function getVanguardRoiByPeriod(provider?: string): Promise<{
+    weekly: VanguardRoiPeriodRow[];
+    monthly: VanguardRoiPeriodRow[];
+    yearly: VanguardRoiPeriodRow[];
+}> {
+    const userId = await requireUserId();
+    const accounts = await db.vanguardAccount.findMany({
+        where: { userId, ...(provider ? { provider } : {}) },
+        include: { holdings: { include: { contributions: true } } },
+    });
+
+    const weekMap = new Map<string, RoiBucket>();
+    const monthMap = new Map<string, RoiBucket>();
+    const yearMap = new Map<string, RoiBucket>();
+
+    for (const account of accounts as any[]) {
+        for (const holding of account.holdings) {
+            const totalUnits = Number(holding.units ?? 0);
+            const totalCostBasis = Number(holding.costBasis);
+            const totalCurrentValue = Number(holding.currentValue);
+            const pricePerUnit = totalUnits > 0 ? totalCurrentValue / totalUnits : 0;
+
+            let loggedUnits = 0;
+            let loggedCost = 0;
+            let earliestDate: Date | null = null;
+
+            for (const c of holding.contributions) {
+                const cUnits = Number(c.units);
+                const cAmount = Number(c.amount);
+                loggedUnits += cUnits;
+                loggedCost += cAmount;
+                if (!earliestDate || c.date < earliestDate) earliestDate = c.date;
+
+                const cValue = cUnits * pricePerUnit;
+                addToBucket(weekMap, mondayKeyUtc(c.date), cAmount, cValue, cUnits);
+                addToBucket(monthMap, monthKeyUtc(c.date), cAmount, cValue, cUnits);
+                addToBucket(yearMap, yearKeyUtc(c.date), cAmount, cValue, cUnits);
+            }
+
+            const residualUnits = totalUnits - loggedUnits;
+            const residualCost = totalCostBasis - loggedCost;
+            if (Math.abs(residualCost) > 0.01 || Math.abs(residualUnits) > 0.0001) {
+                const fallbackDate = earliestDate ?? holding.valueUpdatedAt;
+                const residualValue = residualUnits * pricePerUnit;
+                addToBucket(weekMap, mondayKeyUtc(fallbackDate), residualCost, residualValue, residualUnits);
+                addToBucket(monthMap, monthKeyUtc(fallbackDate), residualCost, residualValue, residualUnits);
+                addToBucket(yearMap, yearKeyUtc(fallbackDate), residualCost, residualValue, residualUnits);
+            }
+        }
+    }
+
+    return { weekly: bucketsToRows(weekMap), monthly: bucketsToRows(monthMap), yearly: bucketsToRows(yearMap) };
 }
 
 export interface VanguardHoldingSignal {

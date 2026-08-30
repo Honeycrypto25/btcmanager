@@ -467,7 +467,7 @@ export function OverviewClient({
                                     <Landmark className="w-5 h-5" />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-sm font-medium text-foreground">Vanguard</p>
+                                    <p className="text-sm font-medium text-foreground">SIPP & ISA</p>
                                     <p className="text-xs text-faint font-num">
                                         {view.vanguard.accounts.length} {view.vanguard.accounts.length === 1 ? 'cont' : 'conturi'} &middot; {fmt(view.vanguard.invested)} invested
                                     </p>
@@ -673,7 +673,7 @@ function VanguardDetailCard({
         <Card>
             <div className="flex items-center gap-2 mb-4">
                 <Landmark className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-medium text-foreground">Vanguard &middot; stats &amp; performance</h3>
+                <h3 className="text-sm font-medium text-foreground">SIPP & ISA &middot; stats &amp; performance</h3>
             </div>
 
             <div className={cn("grid grid-cols-2 gap-4 pb-4 mb-4 border-b border-border", showBestWorst ? "sm:grid-cols-4" : "sm:grid-cols-2")}>

@@ -14,6 +14,8 @@ interface AssetFigures {
 
 interface VanguardTotals extends AssetFigures {
     holdingCount: number;
+    accountCount: number;
+    pendingCash: number;
 }
 
 function formatUSD(amount: number): string {
@@ -111,11 +113,28 @@ export function InvestmentsOverviewClient({
                         </Link>
                     </div>
                     <Card className="p-5 sm:p-6">
-                        {vanguard.holdingCount === 0 ? (
+                        {vanguard.accountCount === 0 ? (
                             <div className="flex items-center justify-between">
-                                <p className="text-sm text-faint italic">Niciun holding Vanguard adăugat încă.</p>
+                                <p className="text-sm text-faint italic">Niciun cont Vanguard adăugat încă.</p>
                                 <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
                                     Adaugă <ArrowRight className="w-3 h-3" />
+                                </Link>
+                            </div>
+                        ) : vanguard.holdingCount === 0 ? (
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Landmark className="w-4 h-4 text-faint" />
+                                    <div>
+                                        <p className="text-sm text-foreground">
+                                            {vanguard.accountCount} {vanguard.accountCount === 1 ? "cont" : "conturi"} · niciun holding încă
+                                        </p>
+                                        {vanguard.pendingCash > 0 && (
+                                            <p className="text-xs text-amber-300 mt-1">{formatGBP(vanguard.pendingCash)} în așteptare de investit</p>
+                                        )}
+                                    </div>
+                                </div>
+                                <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
+                                    Detalii <ArrowRight className="w-3 h-3" />
                                 </Link>
                             </div>
                         ) : (
@@ -143,11 +162,28 @@ export function InvestmentsOverviewClient({
                         </Link>
                     </div>
                     <Card className="p-5 sm:p-6">
-                        {fidelity.holdingCount === 0 ? (
+                        {fidelity.accountCount === 0 ? (
                             <div className="flex items-center justify-between">
-                                <p className="text-sm text-faint italic">Niciun holding Fidelity adăugat încă.</p>
+                                <p className="text-sm text-faint italic">Niciun cont Fidelity adăugat încă.</p>
                                 <Link href="/fidelity" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
                                     Adaugă <ArrowRight className="w-3 h-3" />
+                                </Link>
+                            </div>
+                        ) : fidelity.holdingCount === 0 ? (
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Building2 className="w-4 h-4 text-faint" />
+                                    <div>
+                                        <p className="text-sm text-foreground">
+                                            {fidelity.accountCount} {fidelity.accountCount === 1 ? "cont" : "conturi"} · niciun holding încă
+                                        </p>
+                                        {fidelity.pendingCash > 0 && (
+                                            <p className="text-xs text-amber-300 mt-1">{formatGBP(fidelity.pendingCash)} în așteptare de investit</p>
+                                        )}
+                                    </div>
+                                </div>
+                                <Link href="/fidelity" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
+                                    Detalii <ArrowRight className="w-3 h-3" />
                                 </Link>
                             </div>
                         ) : (
