@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useTransition } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User } from "lucide-react";
+import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User, Upload } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
@@ -19,6 +19,8 @@ import {
     deleteVanguardContribution,
     getVanguardContributions,
     getVanguardHoldingSignals,
+    importFidelityAccountsCsv,
+    listVanguardAccountsSerialized,
     type VanguardAccountInput,
     type VanguardHoldingInput,
     type VanguardContributionInput,
@@ -106,6 +108,37 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
     const [accountForm, setAccountForm] = useState<VanguardAccountInput>({ name: "", accountType: "ISA", currency: "GBP", owner: "self", ownerLabel: "" });
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [importMessage, setImportMessage] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    async function handleImportFidelityCsv(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // allow re-selecting the same file (e.g. re-import after a mistake)
+        if (!file) return;
+
+        setImporting(true);
+        setImportMessage(null);
+        try {
+            const text = await file.text();
+            // Currently Fidelity-only and specific to Eva-Maria's two child
+            // accounts -- the app has no other Fidelity-holding family
+            // member yet, so this isn't asked for on every import.
+            const res = await importFidelityAccountsCsv(text, "Eva-Maria");
+            setAccounts(await listVanguardAccountsSerialized());
+
+            const parts: string[] = [];
+            if (res.accountsCreated) parts.push(`${res.accountsCreated} cont${res.accountsCreated > 1 ? "uri noi" : " nou"}`);
+            if (res.holdingsCreated) parts.push(`${res.holdingsCreated} holding${res.holdingsCreated > 1 ? "uri noi" : " nou"}`);
+            if (res.holdingsUpdated) parts.push(`${res.holdingsUpdated} holding${res.holdingsUpdated > 1 ? "uri actualizate" : " actualizat"}`);
+            if (res.pendingAccountNumbers.length) parts.push(`${res.pendingAccountNumbers.length} cont(uri) încă în așteptare — doar cash, nimic investit încă`);
+            setImportMessage(parts.length ? `Import reușit: ${parts.join(", ")}.` : "Import reușit — nimic nou de actualizat.");
+        } catch (err: any) {
+            setImportMessage(`Eroare la import: ${err?.message || "necunoscută"}.`);
+        } finally {
+            setImporting(false);
+        }
+    }
 
     function submitAccount() {
         if (!accountForm.name.trim()) {
@@ -168,13 +201,29 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                     </div>
                     <VanguardSyncButton onSynced={() => setSyncTick((t) => t + 1)} />
                     {tab === "list" && isAdmin && (
-                        <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
-                            {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                            {showAccountForm ? "Anulează" : "Adaugă cont"}
-                        </Button>
+                        <>
+                            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportFidelityCsv} />
+                            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                                {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                                {importing ? "Se importă..." : "Import Fidelity CSV"}
+                            </Button>
+                            <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
+                                {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                                {showAccountForm ? "Anulează" : "Adaugă cont"}
+                            </Button>
+                        </>
                     )}
                 </div>
             </div>
+
+            {importMessage && (
+                <Card className={cn("p-3 text-xs flex items-center justify-between gap-3", importMessage.startsWith("Eroare") ? "border-red-400/30 bg-red-500/10 text-red-300" : "border-green-400/30 bg-green-500/10 text-green-300")}>
+                    <span>{importMessage}</span>
+                    <button onClick={() => setImportMessage(null)} className="opacity-70 hover:opacity-100">
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </Card>
+            )}
 
             {tab === "stats" ? (
                 <StatsTab accounts={accounts} />

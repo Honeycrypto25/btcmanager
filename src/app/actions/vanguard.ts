@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
+import { parseFidelityAccountDetails } from "@/lib/vanguard/fidelity-csv";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -382,4 +383,141 @@ export async function getVanguardHoldingSignals(): Promise<VanguardHoldingSignal
             currency: (recent[0]?.currency ?? h.priceHistory[0]?.currency ?? "GBP") as string,
         };
     });
+}
+
+
+// --- Fidelity CSV import (Eva-Maria's Junior ISA / Junior SIPP) ---
+//
+// Sergiu re-uploads Fidelity's "Account summary" CSV export every month or
+// two. Both of Eva-Maria's accounts invest in a single fund (the same
+// Vanguard FTSE Global All Cap Index Fund already tracked for Sergiu's own
+// SIPP), so this reuses that fund's ticker/ISIN -- its price history (and
+// the 3-month buy/wait signal) is then already populated for these
+// holdings too, with no separate setup.
+//
+// Accounts are matched across uploads by the Fidelity account number
+// embedded in the account's name -- "Junior ISA (AS10427098)" -- rather
+// than a dedicated DB column, since that's the only identifier Fidelity's
+// export carries and it doesn't change between uploads. A first-time
+// import creates the account; every import after that just updates the
+// existing one. An account with no invested holding yet (money still
+// settling/pending, all value sitting in cashAvailableGBP) is left with
+// no holding at all -- there's nothing yet to price -- and is reported
+// back as "pending" instead of silently doing nothing.
+
+const FIDELITY_CHILD_FUND_ISIN = "GB00BD3RZ582";
+const FIDELITY_CHILD_FUND_NAME = "FTSE Global All Cap Index Fund Accumulation";
+
+export interface FidelityImportResult {
+    accountsCreated: number;
+    accountsUpdated: number;
+    holdingsCreated: number;
+    holdingsUpdated: number;
+    pendingAccountNumbers: string[];
+}
+
+export async function importFidelityAccountsCsv(csvText: string, ownerLabel: string): Promise<FidelityImportResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+
+    const blocks = parseFidelityAccountDetails(csvText);
+    const result: FidelityImportResult = {
+        accountsCreated: 0,
+        accountsUpdated: 0,
+        holdingsCreated: 0,
+        holdingsUpdated: 0,
+        pendingAccountNumbers: [],
+    };
+
+    const existingAccounts = await db.vanguardAccount.findMany({ where: { userId }, include: { holdings: true } });
+
+    for (const block of blocks) {
+        let account = (existingAccounts as any[]).find((a) => a.name.includes(`(${block.accountNumber})`));
+
+        if (!account) {
+            const accountType = /isa/i.test(block.product) ? "JISA" : /sipp/i.test(block.product) ? "SIPP" : "Other";
+            const created = await db.vanguardAccount.create({
+                data: {
+                    userId,
+                    name: `${block.product} (${block.accountNumber})`,
+                    accountType,
+                    currency: block.currency,
+                    owner: "child",
+                    ownerLabel,
+                },
+            });
+            account = { ...created, holdings: [] as any[] };
+            (existingAccounts as any[]).push(account);
+            result.accountsCreated++;
+        } else {
+            result.accountsUpdated++;
+        }
+
+        const fundAssets = block.assets.filter((a) => a.quantity !== null && a.quantity > 0 && !/^cash$/i.test(a.holdingName));
+
+        if (fundAssets.length === 0) {
+            result.pendingAccountNumbers.push(block.accountNumber);
+            continue;
+        }
+
+        for (const asset of fundAssets) {
+            // Every child account so far holds only this one fund -- match
+            // by ticker/ISIN (stable across uploads) rather than Fidelity's
+            // free-text asset name.
+            const existingHolding = (account.holdings as any[]).find((h) => h.ticker === FIDELITY_CHILD_FUND_ISIN);
+            const units = asset.quantity as number;
+            const costBasis = asset.bookCostGBP ?? asset.valueGBP ?? 0;
+            const currentValue = asset.valueGBP ?? costBasis;
+
+            if (existingHolding) {
+                await db.vanguardHolding.update({
+                    where: { id: existingHolding.id },
+                    data: { units, costBasis, currentValue, valueUpdatedAt: new Date() },
+                });
+                result.holdingsUpdated++;
+            } else {
+                await db.vanguardHolding.create({
+                    data: {
+                        userId,
+                        accountId: account.id,
+                        fundName: FIDELITY_CHILD_FUND_NAME,
+                        ticker: FIDELITY_CHILD_FUND_ISIN,
+                        units,
+                        costBasis,
+                        currentValue,
+                    },
+                });
+                result.holdingsCreated++;
+            }
+        }
+    }
+
+    revalidatePath("/vanguard");
+    revalidatePath("/investments");
+    return result;
+}
+
+/** Same shape as listVanguardAccounts(), pre-serialized to plain
+ * numbers/strings -- lets client components (e.g. after a CSV import)
+ * refresh their local account list without duplicating the Decimal→number
+ * mapping that page.tsx already does for the initial server render. */
+export async function listVanguardAccountsSerialized() {
+    const accounts = await listVanguardAccounts();
+    return (accounts as any[]).map((a) => ({
+        id: a.id as string,
+        name: a.name as string,
+        accountType: a.accountType as string | null,
+        currency: a.currency as string,
+        owner: a.owner as string,
+        ownerLabel: a.ownerLabel as string | null,
+        holdings: a.holdings.map((h: any) => ({
+            id: h.id as string,
+            fundName: h.fundName as string,
+            ticker: h.ticker as string | null,
+            units: h.units ? Number(h.units) : null,
+            costBasis: Number(h.costBasis),
+            currentValue: Number(h.currentValue),
+            valueUpdatedAt: h.valueUpdatedAt.toISOString() as string,
+        })),
+    }));
 }
