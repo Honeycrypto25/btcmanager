@@ -23,6 +23,7 @@ export interface VanguardAccountInput {
     currency?: string;
     owner?: string; // "self" | "spouse" | "child" | "other"
     ownerLabel?: string;
+    provider?: string; // "vanguard" | "fidelity" -- which page this account belongs on
 }
 
 export async function createVanguardAccount(input: VanguardAccountInput) {
@@ -36,9 +37,11 @@ export async function createVanguardAccount(input: VanguardAccountInput) {
             currency: input.currency || "GBP",
             owner: input.owner || "self",
             ownerLabel: input.ownerLabel || null,
+            provider: input.provider || "vanguard",
         },
     });
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
     return account;
 }
@@ -50,12 +53,17 @@ export async function deleteVanguardAccount(id: string) {
     if (!existing || existing.userId !== userId) throw new Error("Not found");
     await db.vanguardAccount.delete({ where: { id } }); // cascades holdings
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
 }
 
-export async function listVanguardAccounts() {
+export async function listVanguardAccounts(provider?: string) {
     const userId = await requireUserId();
-    return db.vanguardAccount.findMany({ where: { userId }, orderBy: { createdAt: "asc" }, include: { holdings: true } });
+    return db.vanguardAccount.findMany({
+        where: { userId, ...(provider ? { provider } : {}) },
+        orderBy: { createdAt: "asc" },
+        include: { holdings: true },
+    });
 }
 
 // --- Vanguard holdings (manually entered/updated — no live pricing feed) ---
@@ -102,6 +110,7 @@ export async function createVanguardHolding(input: VanguardHoldingInput) {
         },
     });
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
     return holding;
 }
@@ -119,6 +128,7 @@ export async function updateVanguardHoldingValue(id: string, currentValue: numbe
         data: { currentValue, units: units ?? existing.units, valueUpdatedAt: new Date() },
     });
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
     return holding;
 }
@@ -130,6 +140,7 @@ export async function deleteVanguardHolding(id: string) {
     if (!existing || existing.userId !== userId) throw new Error("Not found");
     await db.vanguardHolding.delete({ where: { id } });
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
 }
 
@@ -169,6 +180,7 @@ export async function addVanguardContribution(input: VanguardContributionInput) 
     ]);
 
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
     return { contribution, holding: updatedHolding };
 }
@@ -194,6 +206,7 @@ export async function deleteVanguardContribution(id: string) {
     ]);
 
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
 }
 
@@ -252,10 +265,10 @@ export async function getVanguardPriceHistory(holdingId: string) {
  * don't contribute a time series here -- their value only ever shows up
  * in the current totals elsewhere on the page, not in this chart.
  */
-export async function getVanguardAccountValueHistory() {
+export async function getVanguardAccountValueHistory(provider?: string) {
     const userId = await requireUserId();
     const accounts = await db.vanguardAccount.findMany({
-        where: { userId },
+        where: { userId, ...(provider ? { provider } : {}) },
         orderBy: { createdAt: "asc" },
         include: { holdings: { include: { priceHistory: { orderBy: { capturedAt: "asc" } } } } },
     });
@@ -304,10 +317,10 @@ export async function getVanguardAccountValueHistory() {
 /** Per-account invested/value/pnl summary (native GBP figures) — used by
  * the Overview page's Vanguard card, which lists each account separately
  * since there will be several (own, spouse's, children's, ...). */
-export async function getVanguardAccountSummaries() {
+export async function getVanguardAccountSummaries(provider?: string) {
     const userId = await requireUserId();
     const accounts = await db.vanguardAccount.findMany({
-        where: { userId },
+        where: { userId, ...(provider ? { provider } : {}) },
         orderBy: { createdAt: "asc" },
         include: { holdings: true },
     });
@@ -329,9 +342,9 @@ export async function getVanguardAccountSummaries() {
 
 /** Total invested/value across all Vanguard holdings for this user — used
  * by both /vanguard and the unified /investments overview. */
-export async function getVanguardTotals() {
+export async function getVanguardTotals(provider?: string) {
     const userId = await requireUserId();
-    const holdings = await db.vanguardHolding.findMany({ where: { userId } });
+    const holdings = await db.vanguardHolding.findMany({ where: { userId, ...(provider ? { account: { provider } } : {}) } });
     const invested = holdings.reduce((s: number, h: any) => s + Number(h.costBasis), 0);
     const value = holdings.reduce((s: number, h: any) => s + Number(h.currentValue), 0);
     return { invested, value, pnl: value - invested, pnlPercent: invested > 0 ? ((value - invested) / invested) * 100 : 0, holdingCount: holdings.length };
@@ -445,6 +458,7 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
                     currency: block.currency,
                     owner: "child",
                     ownerLabel,
+                    provider: "fidelity",
                     pendingCash: block.cashAvailableGBP ?? 0,
                     pendingCashUpdatedAt: new Date(),
                 },
@@ -503,6 +517,7 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
     }
 
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
     return result;
 }
@@ -511,8 +526,8 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
  * numbers/strings -- lets client components (e.g. after a CSV import)
  * refresh their local account list without duplicating the Decimal→number
  * mapping that page.tsx already does for the initial server render. */
-export async function listVanguardAccountsSerialized() {
-    const accounts = await listVanguardAccounts();
+export async function listVanguardAccountsSerialized(provider?: string) {
+    const accounts = await listVanguardAccounts(provider);
     return (accounts as any[]).map((a) => ({
         id: a.id as string,
         name: a.name as string,
@@ -520,6 +535,7 @@ export async function listVanguardAccountsSerialized() {
         currency: a.currency as string,
         owner: a.owner as string,
         ownerLabel: a.ownerLabel as string | null,
+        provider: a.provider as string,
         pendingCash: a.pendingCash !== null && a.pendingCash !== undefined ? Number(a.pendingCash) : null,
         pendingCashUpdatedAt: a.pendingCashUpdatedAt ? a.pendingCashUpdatedAt.toISOString() : null,
         holdings: a.holdings.map((h: any) => ({
@@ -594,6 +610,7 @@ export async function importVanguardTransactionsPdf(base64: string): Promise<Van
                 accountType: extract.wrapperType ?? "Other",
                 currency: "GBP",
                 owner: "self",
+                provider: "vanguard",
             },
         });
         account = { ...created, holdings: [] as any[] };
@@ -667,6 +684,7 @@ export async function importVanguardTransactionsPdf(base64: string): Promise<Van
         });
 
         revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
         revalidatePath("/investments");
 
         return {
@@ -682,6 +700,7 @@ export async function importVanguardTransactionsPdf(base64: string): Promise<Van
     }
 
     revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
     revalidatePath("/investments");
 
     return {

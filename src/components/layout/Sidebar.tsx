@@ -27,6 +27,7 @@ import {
     Folder,
     BellRing,
     PiggyBank,
+    Building2,
     Target,
     Layers,
     Coins,
@@ -73,6 +74,7 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'Overview unificat', href: '/investments', icon: Layers },
             { name: 'Vanguard', href: '/vanguard', icon: PiggyBank },
+            { name: 'Fidelity', href: '/fidelity', icon: Building2 },
             { name: 'Goals', href: '/goals', icon: Target },
         ],
     },

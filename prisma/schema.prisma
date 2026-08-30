@@ -711,6 +711,14 @@ model VanguardAccount {
   accountType String? // ISA | GIA | SIPP | JISA | Other
   currency    String  @default("GBP")
 
+  // Which platform this account is actually held at -- "vanguard" |
+  // "fidelity". Distinct from the fund itself: both platforms can (and
+  // currently do) hold the exact same Vanguard OEIC fund by ISIN, so this
+  // is what the /vanguard vs /fidelity pages filter on, not accountType
+  // or owner. Defaults to "vanguard" since every account existed there
+  // before this field was added.
+  provider String @default("vanguard")
+
   // Who this account belongs to -- "self" | "spouse" | "child" | "other".
   // Free-form string rather than an enum so a new family member label
   // doesn't need a migration. ownerLabel holds the display name when

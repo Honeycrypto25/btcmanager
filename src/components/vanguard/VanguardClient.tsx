@@ -102,7 +102,8 @@ function formatMoney(amount: number, currency: string): string {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
 }
 
-export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRow[] }) {
+export function VanguardClient({ initialAccounts, provider }: { initialAccounts: AccountRow[]; provider: "vanguard" | "fidelity" }) {
+    const providerLabel = provider === "fidelity" ? "Fidelity" : "Vanguard";
     const isAdmin = useIsAdmin();
     const [accounts, setAccounts] = useState(initialAccounts);
     const [syncTick, setSyncTick] = useState(0);
@@ -128,7 +129,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
             // accounts -- the app has no other Fidelity-holding family
             // member yet, so this isn't asked for on every import.
             const res = await importFidelityAccountsCsv(text, "Eva-Maria");
-            setAccounts(await listVanguardAccountsSerialized());
+            setAccounts(await listVanguardAccountsSerialized(provider));
 
             const parts: string[] = [];
             if (res.accountsCreated) parts.push(`${res.accountsCreated} cont${res.accountsCreated > 1 ? "uri noi" : " nou"}`);
@@ -164,7 +165,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
             }
             const base64 = btoa(binary);
             const res = await importVanguardTransactionsPdf(base64);
-            setAccounts(await listVanguardAccountsSerialized());
+            setAccounts(await listVanguardAccountsSerialized(provider));
 
             const parts: string[] = [];
             if (res.accountCreated) parts.push(`cont nou creat (${res.accountName})`);
@@ -187,7 +188,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
         setError(null);
         startTransition(async () => {
             try {
-                const created = await createVanguardAccount(accountForm);
+                const created = await createVanguardAccount({ ...accountForm, provider });
                 setAccounts((prev) => [...prev, { id: created.id, name: created.name, accountType: created.accountType, currency: created.currency, owner: created.owner, ownerLabel: created.ownerLabel, pendingCash: null, pendingCashUpdatedAt: null, holdings: [] }]);
                 setAccountForm({ name: "", accountType: "ISA", currency: "GBP", owner: "self", ownerLabel: "" });
                 setShowAccountForm(false);
@@ -198,7 +199,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
     }
 
     function removeAccount(id: string) {
-        if (!confirm("Ștergi acest cont Vanguard? Se șterg și holdingurile din el.")) return;
+        if (!confirm(`Ștergi acest cont ${providerLabel}? Se șterg și holdingurile din el.`)) return;
         startTransition(async () => {
             await deleteVanguardAccount(id);
             setAccounts((prev) => prev.filter((a) => a.id !== id));
@@ -213,7 +214,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
-                        <span className="gradient-text">Vanguard</span>
+                        <span className="gradient-text">{providerLabel}</span>
                     </h1>
                     <p className="text-muted text-sm">
                         {accounts.length} conturi · Valoare totală {formatMoney(totalValue, "GBP")} · Investit {formatMoney(totalInvested, "GBP")}
@@ -241,16 +242,24 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                     <VanguardSyncButton onSynced={() => setSyncTick((t) => t + 1)} />
                     {tab === "list" && isAdmin && (
                         <>
-                            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportFidelityCsv} />
-                            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-                                {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                                {importing ? "Se importă..." : "Import Fidelity CSV"}
-                            </Button>
-                            <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={handleImportVanguardPdf} />
-                            <Button variant="secondary" onClick={() => pdfInputRef.current?.click()} disabled={importing}>
-                                {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                                {importing ? "Se importă..." : "Import Vanguard PDF"}
-                            </Button>
+                            {provider === "fidelity" && (
+                                <>
+                                    <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportFidelityCsv} />
+                                    <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                                        {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                                        {importing ? "Se importă..." : "Import Fidelity CSV"}
+                                    </Button>
+                                </>
+                            )}
+                            {provider === "vanguard" && (
+                                <>
+                                    <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={handleImportVanguardPdf} />
+                                    <Button variant="secondary" onClick={() => pdfInputRef.current?.click()} disabled={importing}>
+                                        {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                                        {importing ? "Se importă..." : "Import Vanguard PDF"}
+                                    </Button>
+                                </>
+                            )}
                             <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
                                 {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
                                 {showAccountForm ? "Anulează" : "Adaugă cont"}
@@ -270,12 +279,12 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
             )}
 
             {tab === "stats" ? (
-                <StatsTab accounts={accounts} />
+                <StatsTab accounts={accounts} provider={provider} />
             ) : (
                 <>
                     <Card className="p-4 border-white/10 bg-white/[0.02]">
                         <p className="text-xs text-muted leading-relaxed">
-                            Vanguard nu are un API public pentru investitori individuali. Dacă un holding are completate atât
+                            {providerLabel} nu are un API public pentru investitori individuali. Dacă un holding are completate atât
                             Ticker/ISIN cât și Unități, prețul i se actualizează automat o dată pe zi — pentru ETF-uri (ex. VWRL)
                             din prețul de la bursa din Londra, iar pentru fonduri OEIC (ex. &bdquo;FTSE Global All Cap&rdquo;) din
                             ISIN, printr-o sursă publică ce se poate opri fără avertisment dacă își schimbă pagina. Fără ambele
@@ -331,7 +340,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                     {accounts.length === 0 ? (
                         <Card className="p-16 text-center">
                             <Landmark className="w-6 h-6 mx-auto mb-2 opacity-40 text-faint" />
-                            <p className="text-faint italic">Niciun cont Vanguard adăugat încă.</p>
+                            <p className="text-faint italic">Niciun cont {providerLabel} adăugat încă.</p>
                         </Card>
                     ) : (
                         accounts.map((account) => (
@@ -344,16 +353,16 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
     );
 }
 
-function StatsTab({ accounts }: { accounts: AccountRow[] }) {
+function StatsTab({ accounts, provider }: { accounts: AccountRow[]; provider: "vanguard" | "fidelity" }) {
     const [history, setHistory] = useState<AccountValueSeries[] | null>(null);
     const [signals, setSignals] = useState<VanguardHoldingSignal[] | null>(null);
     const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
     const [periodMode, setPeriodMode] = useState<"monthly" | "yearly">("monthly");
 
     useEffect(() => {
-        getVanguardAccountValueHistory().then(setHistory);
+        getVanguardAccountValueHistory(provider).then(setHistory);
         getVanguardHoldingSignals().then(setSignals);
-    }, []);
+    }, [provider]);
 
     const signalByHoldingId = React.useMemo(() => {
         const map = new Map<string, VanguardHoldingSignal>();
