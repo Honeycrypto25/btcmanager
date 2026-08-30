@@ -603,6 +603,12 @@ export function OverviewClient({
                 <VanguardEvolutionChart series={view.vanguardSeries} fmt={fmt} />
             )}
 
+            {/* Total combined bars: everything (BTC + T212 + Vanguard + Fidelity)
+                under one bar per period, week/month/year -- no per-asset
+                breakdown, just "how much is it all worth". The per-asset
+                version with the breakdown is MonthlyBarsChart right below. */}
+            <TotalBarsChart weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} />
+
             {/* Monthly bars: invested + current value, per asset (incl. Vanguard & Fidelity) */}
             <MonthlyBarsChart weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} hasVanguard={!!vanguardOnly} hasFidelity={!!fidelity} />
 
@@ -1423,6 +1429,162 @@ function TrailingPeriodsCard({
             <p className="text-[10px] text-faint mt-3 leading-relaxed">
                 &quot;vs prior&quot; compares the average monthly investment to the equal-length period right before it.
             </p>
+        </Card>
+    );
+}
+
+/** Everything combined (BTC + T212 + Vanguard + Fidelity) under one bar per
+ * period -- deliberately the simple version of MonthlyBarsChart right below
+ * it, with no per-asset breakdown or isolate toggle: just "how much is it
+ * all worth this week/month/year". Reads row.combinedTotal, which already
+ * sums every asset (see withVanguard/withFidelity above). */
+function TotalBarsChart({
+    weeklyRows,
+    monthlyRows,
+    yearlyRows,
+    fmt,
+}: {
+    weeklyRows: PeriodRowWithVanguard[];
+    monthlyRows: PeriodRowWithVanguard[];
+    yearlyRows: PeriodRowWithVanguard[];
+    fmt: (n: number) => string;
+}) {
+    const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    const chronological = useMemo(() => {
+        const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
+        return [...rows].reverse().map((row) => ({
+            label: row.label,
+            invested: row.combinedTotal.invested,
+            value: row.combinedTotal.value,
+        }));
+    }, [weeklyRows, monthlyRows, yearlyRows, granularity]);
+
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+        }
+    }, [chronological]);
+
+    const totals = useMemo(() => {
+        const invested = chronological.reduce((s, r) => s + r.invested, 0);
+        const value = chronological.reduce((s, r) => s + r.value, 0);
+        return { invested, value, pnlPercent: invested !== 0 ? ((value - invested) / invested) * 100 : 0 };
+    }, [chronological]);
+
+    const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
+
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload || !payload.length) return null;
+        const point = payload[0]?.payload;
+        if (!point) return null;
+        return (
+            <div className="bg-surface-strong border border-border px-3 py-2 rounded-lg space-y-1 min-w-[170px]">
+                <p className="text-faint text-xs mb-1.5">{label}</p>
+                <div className="flex items-center gap-2 justify-between">
+                    <span className="text-faint text-xs">Invested</span>
+                    <span className="text-xs font-num text-faint">{fmt(point.invested)}</span>
+                </div>
+                <div className="flex items-center gap-2 justify-between">
+                    <span className="text-foreground text-xs font-medium">Value</span>
+                    <span className={cn("text-xs font-num font-medium", point.invested !== 0 ? pnlColor(point.value - point.invested) : "text-foreground")}>
+                        {fmt(point.value)}
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
+    if (chronological.length === 0) {
+        return (
+            <Card>
+                <h3 className="text-sm font-medium text-foreground mb-1">Total invested vs. value</h3>
+                <div className="h-[220px] flex items-center justify-center text-muted text-sm">Not enough data yet.</div>
+            </Card>
+        );
+    }
+
+    const perPeriodWidth = 90;
+    const minWidth = Math.max(500, chronological.length * perPeriodWidth);
+
+    return (
+        <Card>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-1">
+                <div>
+                    <h3 className="text-sm font-medium text-foreground">Total invested vs. value</h3>
+                    <p className="text-xs text-faint mt-0.5">
+                        Everything combined &mdash; BTC, Trading 212, Vanguard &amp; Fidelity together, no breakdown
+                    </p>
+                </div>
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                    {([
+                        { key: 'week' as const, label: 'Week' },
+                        { key: 'month' as const, label: 'Month' },
+                        { key: 'year' as const, label: 'Year' },
+                    ]).map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setGranularity(opt.key)}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                granularity === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 py-4 mb-4 border-b border-border font-num">
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Invested</span>
+                    <span className="text-sm font-medium text-foreground">{fmt(totals.invested)}</span>
+                </div>
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Value</span>
+                    <span className="text-sm font-medium text-foreground">{fmt(totals.value)}</span>
+                </div>
+                <div>
+                    <span className="text-[10px] text-faint uppercase tracking-wider mr-1.5">Return</span>
+                    <span className={cn("text-sm font-medium", pnlColor(totals.pnlPercent))}>
+                        {totals.pnlPercent >= 0 ? '+' : ''}{totals.pnlPercent.toFixed(1)}%
+                    </span>
+                </div>
+            </div>
+
+            <div ref={scrollRef} className="overflow-x-auto pb-1">
+                <div className="h-[220px]" style={{ minWidth }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chronological} barGap={2} barCategoryGap="20%">
+                            <CartesianGrid strokeDasharray="none" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis
+                                dataKey="label"
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickLine={false}
+                            />
+                            <YAxis
+                                stroke="rgba(255,255,255,0.08)"
+                                tick={{ fontSize: 10, fill: '#565550' }}
+                                tickFormatter={(val) => fmt(val)}
+                                width={56}
+                                tickLine={false}
+                                axisLine={false}
+                            />
+                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                            <Bar dataKey="invested" name="Invested" fill="#7aa8d6" fillOpacity={0.12} stroke="#7aa8d6" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            <Bar dataKey="value" name="Value" fill="#7aa8d6" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+            {chronological.length > 12 && (
+                <p className="text-[10px] text-faint text-center mt-1">
+                    Showing recent {granularity}s &mdash; scroll left for earlier history
+                </p>
+            )}
         </Card>
     );
 }
