@@ -738,7 +738,9 @@ export async function importVanguardTransactionsPdf(base64: string): Promise<Van
     const extract = await extractVanguardTransactionsFromPdf(buffer);
 
     if (!extract.accountNumber) {
-        throw new Error("Nu am găsit un număr de cont în PDF -- verifică dacă e un extras Vanguard valid.");
+        throw new Error(
+            "Nu am găsit un număr de cont în PDF -- verifică că e raportul \"Client transaction listings\" descărcat din Vanguard (nu \"Portfolio Valuation\"). Nimic nu a fost modificat."
+        );
     }
 
     const existingAccounts = await db.vanguardAccount.findMany({ where: { userId }, include: { holdings: true } });

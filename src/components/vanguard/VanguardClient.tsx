@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User, Upload } from "lucide-react";
+import { Plus, X, Trash2, Pencil, Landmark, Check, TrendingUp, Loader2, List, BarChart3, History, User, Upload, Info } from "lucide-react";
 import { VanguardSyncButton } from "@/components/vanguard/VanguardSyncButton";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
@@ -173,10 +173,10 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
             if (res.accountCreated) parts.push(`cont nou creat (${res.accountName})`);
             if (res.contributionsCreated) parts.push(`${res.contributionsCreated} tranzacție${res.contributionsCreated > 1 ? "i noi" : " nouă"} adăugată${res.contributionsCreated > 1 ? "e" : ""}`);
             if (res.contributionsSkippedAsDuplicate) parts.push(`${res.contributionsSkippedAsDuplicate} deja importată${res.contributionsSkippedAsDuplicate > 1 ? "e" : ""} (ignorată${res.contributionsSkippedAsDuplicate > 1 ? "e" : ""})`);
-            if (res.transactionsFound === 0) parts.push("niciun cumpărare găsită în PDF (poate fi un extras de valoare, nu de tranzacții)");
-            setImportMessage(parts.length ? `Import reușit: ${parts.join(", ")}.` : "Import reușit — nimic nou de adăugat.");
+            if (res.transactionsFound === 0) parts.push("nicio tranzacție de cumpărare găsită în PDF -- probabil nu e raportul \"Client transaction listings\" (istoricul existent nu a fost modificat)");
+            setImportMessage(parts.length ? `Import reușit: ${parts.join(", ")}.` : "Import reușit — nimic nou de adăugat, istoricul existent e neschimbat.");
         } catch (err: any) {
-            setImportMessage(`Eroare la import: ${err?.message || "necunoscută"}.`);
+            setImportMessage(`Eroare la import: ${err?.message || "necunoscută"}. Istoricul existent nu a fost modificat.`);
         } finally {
             setImporting(false);
         }
@@ -284,6 +284,19 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
                 <StatsTab accounts={accounts} provider={provider} />
             ) : (
                 <>
+                    {provider === "vanguard" && isAdmin && (
+                        <Card className="p-4 border-primary/20 bg-primary/[0.04] flex items-start gap-3">
+                            <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                            <p className="text-xs text-muted leading-relaxed">
+                                <span className="text-foreground font-medium">Ce să descarci pentru import: </span>
+                                din contul tău Vanguard &rarr; Report generator &rarr; tipul de raport &bdquo;Client transaction
+                                listings&rdquo; (NU &bdquo;Portfolio Valuation&rdquo;, care nu conține tranzacțiile necesare) &rarr;
+                                alege perioada &rarr; Download as PDF. Dacă încarci alt fișier din greșeală, importul nu găsește
+                                nicio tranzacție și nu modifică istoricul existent — primești doar un mesaj că nu s-a adăugat nimic.
+                            </p>
+                        </Card>
+                    )}
+
                     <Card className="p-4 border-white/10 bg-white/[0.02]">
                         <p className="text-xs text-muted leading-relaxed">
                             {providerLabel} nu are un API public pentru investitori individuali. Dacă un holding are completate atât
