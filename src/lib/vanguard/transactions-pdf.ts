@@ -30,6 +30,21 @@ function toNumber(s: string | undefined | null): number | null {
  * needs -- plain text extraction alone doesn't require it. */
 async function extractPdfText(buffer: Buffer): Promise<string> {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    // pdfjs-dist normally spins up its parsing worker by resolving
+    // "./pdf.worker.mjs" relative to its own bundled location. That
+    // relative lookup breaks once Next.js/Turbopack bundles pdf.mjs into a
+    // single renamed chunk on Vercel -- the worker file is no longer next
+    // to it on disk, so pdfjs falls back to its "fake worker" (in-thread)
+    // path, which *also* tries that same broken relative import and fails
+    // with "Cannot find module '.../pdf.worker.mjs'". Explicitly resolving
+    // the real installed worker file via require.resolve() (a literal
+    // string, so Vercel's build-output file tracer picks it up and ships
+    // it with the function) avoids the broken relative lookup entirely.
+    const { createRequire } = await import("module");
+    const require = createRequire(import.meta.url);
+    pdfjs.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+
     const data = new Uint8Array(buffer);
     const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
 
