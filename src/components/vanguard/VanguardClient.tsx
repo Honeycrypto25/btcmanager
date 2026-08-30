@@ -82,6 +82,8 @@ interface AccountRow {
     currency: string;
     owner: string;
     ownerLabel: string | null;
+    pendingCash: number | null;
+    pendingCashUpdatedAt: string | null;
     holdings: HoldingRow[];
 }
 
@@ -149,7 +151,7 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
         startTransition(async () => {
             try {
                 const created = await createVanguardAccount(accountForm);
-                setAccounts((prev) => [...prev, { id: created.id, name: created.name, accountType: created.accountType, currency: created.currency, owner: created.owner, ownerLabel: created.ownerLabel, holdings: [] }]);
+                setAccounts((prev) => [...prev, { id: created.id, name: created.name, accountType: created.accountType, currency: created.currency, owner: created.owner, ownerLabel: created.ownerLabel, pendingCash: null, pendingCashUpdatedAt: null, holdings: [] }]);
                 setAccountForm({ name: "", accountType: "ISA", currency: "GBP", owner: "self", ownerLabel: "" });
                 setShowAccountForm(false);
             } catch (e: any) {
@@ -830,7 +832,14 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                             {ownerBadgeLabel(account.owner, account.ownerLabel)}
                         </span>
                     </div>
-                    <p className="text-xs text-muted mt-0.5">{account.accountType} · {account.currency}</p>
+                    <p className="text-xs text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span>{account.accountType} · {account.currency}</span>
+                        {!!account.pendingCash && account.pendingCash > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-300 bg-amber-500/10 border border-amber-400/20 rounded-full px-2 py-0.5" title={account.pendingCashUpdatedAt ? `La ${format(new Date(account.pendingCashUpdatedAt), "dd MMM yyyy")}` : undefined}>
+                                {formatMoney(account.pendingCash, account.currency)} în așteptare
+                            </span>
+                        )}
+                    </p>
                 </div>
                 {isAdmin && (
                     <div className="flex gap-2">
@@ -892,7 +901,13 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                     </thead>
                     <tbody className="divide-y divide-white/5">
                         {account.holdings.length === 0 ? (
-                            <tr><td colSpan={6} className="px-6 py-10 text-center text-faint italic text-sm">Niciun holding în acest cont.</td></tr>
+                            <tr>
+                                <td colSpan={6} className="px-6 py-10 text-center text-faint italic text-sm">
+                                    {account.pendingCash && account.pendingCash > 0
+                                        ? `Niciun holding încă — ${formatMoney(account.pendingCash, account.currency)} în așteptare de investit${account.pendingCashUpdatedAt ? ` (la ${format(new Date(account.pendingCashUpdatedAt), "dd MMM yyyy")})` : ""}.`
+                                        : "Niciun holding în acest cont."}
+                                </td>
+                            </tr>
                         ) : (
                             account.holdings.map((h) => {
                                 const pnl = h.currentValue - h.costBasis;

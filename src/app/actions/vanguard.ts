@@ -444,12 +444,21 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
                     currency: block.currency,
                     owner: "child",
                     ownerLabel,
+                    pendingCash: block.cashAvailableGBP ?? 0,
+                    pendingCashUpdatedAt: new Date(),
                 },
             });
             account = { ...created, holdings: [] as any[] };
             (existingAccounts as any[]).push(account);
             result.accountsCreated++;
         } else {
+            // Cash available moves every time money settles into a
+            // holding (or a fresh contribution lands) -- keep it current
+            // on every re-import, not just the first one.
+            await db.vanguardAccount.update({
+                where: { id: account.id },
+                data: { pendingCash: block.cashAvailableGBP ?? 0, pendingCashUpdatedAt: new Date() },
+            });
             result.accountsUpdated++;
         }
 
@@ -510,6 +519,8 @@ export async function listVanguardAccountsSerialized() {
         currency: a.currency as string,
         owner: a.owner as string,
         ownerLabel: a.ownerLabel as string | null,
+        pendingCash: a.pendingCash !== null && a.pendingCash !== undefined ? Number(a.pendingCash) : null,
+        pendingCashUpdatedAt: a.pendingCashUpdatedAt ? a.pendingCashUpdatedAt.toISOString() : null,
         holdings: a.holdings.map((h: any) => ({
             id: h.id as string,
             fundName: h.fundName as string,

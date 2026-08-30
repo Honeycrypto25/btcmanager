@@ -718,6 +718,15 @@ model VanguardAccount {
   owner      String  @default("self")
   ownerLabel String?
 
+  // Cash sitting in the account not yet invested into a holding -- e.g.
+  // a Fidelity contribution that's still settling. Set by
+  // importFidelityAccountsCsv() from the export's "Cash available"
+  // column; stays null for accounts never populated by that importer.
+  // Deliberately not folded into currentValue on a holding: it isn't
+  // one until it's actually bought, so it can't have a unit price yet.
+  pendingCash          Decimal?  @db.Decimal(12, 2)
+  pendingCashUpdatedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
