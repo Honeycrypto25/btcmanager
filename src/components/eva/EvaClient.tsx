@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Sparkles, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertEvaSettings, runEvaDcaNow, runEvaSweepNow, type EvaSettingsInput } from "@/app/actions/eva";
-import { formatUsd, type SettingsDTO } from "./shared";
+import { formatUsd, formatPrice, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 /** Vercel Cron for /api/cron/eva-dca runs daily at 09:40 UTC (see vercel.json) — this just mirrors that schedule for display. */
@@ -136,7 +136,7 @@ export function EvaClient({
                     <div>
                         <h1 className="font-display text-xl font-medium text-foreground">Eva — DCA automat</h1>
                         <p className="text-sm text-muted">
-                            {evaPriceUsd ? `Preț curent: ${formatUsd(evaPriceUsd)}` : "Preț curent indisponibil momentan"}
+                            {evaPriceUsd ? `Preț curent: ${formatPrice(evaPriceUsd)}` : "Preț curent indisponibil momentan"}
                         </p>
                     </div>
                 </div>
