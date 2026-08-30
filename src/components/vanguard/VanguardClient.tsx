@@ -20,6 +20,7 @@ import {
     getVanguardContributions,
     getVanguardHoldingSignals,
     importFidelityAccountsCsv,
+    importVanguardTransactionsPdf,
     listVanguardAccountsSerialized,
     type VanguardAccountInput,
     type VanguardHoldingInput,
@@ -142,6 +143,42 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
         }
     }
 
+    const pdfInputRef = useRef<HTMLInputElement>(null);
+
+    async function handleImportVanguardPdf(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (!file) return;
+
+        setImporting(true);
+        setImportMessage(null);
+        try {
+            const buffer = await file.arrayBuffer();
+            // Chunked rather than String.fromCharCode(...bytes) in one call --
+            // that blows the call-stack argument limit for a PDF of any real size.
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            const CHUNK = 8192;
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+            }
+            const base64 = btoa(binary);
+            const res = await importVanguardTransactionsPdf(base64);
+            setAccounts(await listVanguardAccountsSerialized());
+
+            const parts: string[] = [];
+            if (res.accountCreated) parts.push(`cont nou creat (${res.accountName})`);
+            if (res.contributionsCreated) parts.push(`${res.contributionsCreated} tranzacție${res.contributionsCreated > 1 ? "i noi" : " nouă"} adăugată${res.contributionsCreated > 1 ? "e" : ""}`);
+            if (res.contributionsSkippedAsDuplicate) parts.push(`${res.contributionsSkippedAsDuplicate} deja importată${res.contributionsSkippedAsDuplicate > 1 ? "e" : ""} (ignorată${res.contributionsSkippedAsDuplicate > 1 ? "e" : ""})`);
+            if (res.transactionsFound === 0) parts.push("niciun cumpărare găsită în PDF (poate fi un extras de valoare, nu de tranzacții)");
+            setImportMessage(parts.length ? `Import reușit: ${parts.join(", ")}.` : "Import reușit — nimic nou de adăugat.");
+        } catch (err: any) {
+            setImportMessage(`Eroare la import: ${err?.message || "necunoscută"}.`);
+        } finally {
+            setImporting(false);
+        }
+    }
+
     function submitAccount() {
         if (!accountForm.name.trim()) {
             setError("Numele contului este obligatoriu.");
@@ -208,6 +245,11 @@ export function VanguardClient({ initialAccounts }: { initialAccounts: AccountRo
                             <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
                                 {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
                                 {importing ? "Se importă..." : "Import Fidelity CSV"}
+                            </Button>
+                            <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={handleImportVanguardPdf} />
+                            <Button variant="secondary" onClick={() => pdfInputRef.current?.click()} disabled={importing}>
+                                {importing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                                {importing ? "Se importă..." : "Import Vanguard PDF"}
                             </Button>
                             <Button variant="primary" onClick={() => setShowAccountForm(!showAccountForm)}>
                                 {showAccountForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}

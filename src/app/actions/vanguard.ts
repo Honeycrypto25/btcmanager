@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { parseFidelityAccountDetails } from "@/lib/vanguard/fidelity-csv";
+import { extractVanguardTransactionsFromPdf } from "@/lib/vanguard/transactions-pdf";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -531,4 +532,166 @@ export async function listVanguardAccountsSerialized() {
             valueUpdatedAt: h.valueUpdatedAt.toISOString() as string,
         })),
     }));
+}
+
+
+// --- Vanguard "Client transaction listings" PDF import (Sergiu's own account) ---
+//
+// Vanguard's own report generator only offers this report as a PDF -- no
+// CSV/Excel option -- so lib/vanguard/transactions-pdf.ts extracts and
+// parses the "Investment transactions" table's "Bought" rows straight out
+// of the PDF text (verified against a real 2-page export).
+//
+// Unlike the Fidelity importer, this one feeds the app's existing
+// contribution-history model instead of overwriting the holding's
+// units/costBasis directly: each parsed purchase becomes (or already has
+// a matching) VanguardContribution row, and the holding's units/costBasis
+// are then set to the SUM of all its contributions. That's what makes
+// re-importing the same statement (or a later one covering an overlapping
+// date range) safe -- a transaction already recorded as a contribution is
+// recognised by date + units and skipped, rather than being added again
+// on top of an already-correct running total. currentValue is left alone
+// for an existing holding (the daily price sync already keeps it current);
+// a holding created by this import gets a same-day best-guess currentValue
+// (= costBasis), the same convention addVanguardContribution() already
+// uses for a brand new top-up.
+
+const VANGUARD_PDF_FUND_ISIN = "GB00BD3RZ582";
+const VANGUARD_PDF_FUND_NAME = "FTSE Global All Cap Index Fund Accumulation";
+const CONTRIBUTION_MATCH_EPSILON = 0.0001;
+
+export interface VanguardPdfImportResult {
+    accountMatched: boolean;
+    accountCreated: boolean;
+    accountName: string;
+    transactionsFound: number;
+    contributionsCreated: number;
+    contributionsSkippedAsDuplicate: number;
+    unitsAfter: number;
+    costBasisAfter: number;
+}
+
+export async function importVanguardTransactionsPdf(base64: string): Promise<VanguardPdfImportResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+
+    const buffer = Buffer.from(base64, "base64");
+    const extract = await extractVanguardTransactionsFromPdf(buffer);
+
+    if (!extract.accountNumber) {
+        throw new Error("Nu am găsit un număr de cont în PDF -- verifică dacă e un extras Vanguard valid.");
+    }
+
+    const existingAccounts = await db.vanguardAccount.findMany({ where: { userId }, include: { holdings: true } });
+    let account = (existingAccounts as any[]).find((a) => a.name.includes(`(${extract.accountNumber})`));
+    let accountCreated = false;
+
+    if (!account) {
+        const created = await db.vanguardAccount.create({
+            data: {
+                userId,
+                name: `${extract.wrapperType ?? "Vanguard"} (${extract.accountNumber})`,
+                accountType: extract.wrapperType ?? "Other",
+                currency: "GBP",
+                owner: "self",
+            },
+        });
+        account = { ...created, holdings: [] as any[] };
+        accountCreated = true;
+    }
+
+    let holding = (account.holdings as any[]).find((h) => h.ticker === VANGUARD_PDF_FUND_ISIN);
+    let holdingCreated = false;
+    if (!holding && extract.transactions.length > 0) {
+        holding = await db.vanguardHolding.create({
+            data: {
+                userId,
+                accountId: account.id,
+                fundName: VANGUARD_PDF_FUND_NAME,
+                ticker: VANGUARD_PDF_FUND_ISIN,
+                units: 0,
+                costBasis: 0,
+                currentValue: 0,
+            },
+        });
+        holdingCreated = true;
+    }
+
+    let contributionsCreated = 0;
+    let contributionsSkipped = 0;
+
+    if (holding) {
+        const existingContributions = await db.vanguardContribution.findMany({ where: { holdingId: holding.id } });
+
+        for (const tx of extract.transactions) {
+            const txDate = new Date(tx.date);
+            const alreadyImported = (existingContributions as any[]).some(
+                (c) =>
+                    c.date.toISOString().slice(0, 10) === tx.date &&
+                    Math.abs(Number(c.units) - tx.quantity) < CONTRIBUTION_MATCH_EPSILON
+            );
+            if (alreadyImported) {
+                contributionsSkipped++;
+                continue;
+            }
+
+            const created = await db.vanguardContribution.create({
+                data: {
+                    holdingId: holding.id,
+                    date: txDate,
+                    units: tx.quantity,
+                    amount: tx.cost,
+                    notes: "Import extras Vanguard PDF",
+                },
+            });
+            (existingContributions as any[]).push(created);
+            contributionsCreated++;
+        }
+
+        const totals = (existingContributions as any[]).reduce(
+            (acc, c) => ({ units: acc.units + Number(c.units), costBasis: acc.costBasis + Number(c.amount) }),
+            { units: 0, costBasis: 0 }
+        );
+
+        await db.vanguardHolding.update({
+            where: { id: holding.id },
+            data: {
+                units: totals.units,
+                costBasis: totals.costBasis,
+                // A holding this import just created has no price-sync
+                // history yet -- give it a same-day best guess rather than
+                // showing £0 until the next sync. An existing holding's
+                // currentValue is left exactly as the daily sync set it.
+                ...(holdingCreated ? { currentValue: totals.costBasis, valueUpdatedAt: new Date() } : {}),
+            },
+        });
+
+        revalidatePath("/vanguard");
+        revalidatePath("/investments");
+
+        return {
+            accountMatched: !accountCreated,
+            accountCreated,
+            accountName: account.name,
+            transactionsFound: extract.transactions.length,
+            contributionsCreated,
+            contributionsSkippedAsDuplicate: contributionsSkipped,
+            unitsAfter: totals.units,
+            costBasisAfter: totals.costBasis,
+        };
+    }
+
+    revalidatePath("/vanguard");
+    revalidatePath("/investments");
+
+    return {
+        accountMatched: !accountCreated,
+        accountCreated,
+        accountName: account.name,
+        transactionsFound: 0,
+        contributionsCreated: 0,
+        contributionsSkippedAsDuplicate: 0,
+        unitsAfter: 0,
+        costBasisAfter: 0,
+    };
 }
