@@ -1450,6 +1450,7 @@ function TotalBarsChart({
     fmt: (n: number) => string;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
+    const [metric, setMetric] = useState<'value' | 'invested' | 'both'>('value');
     const scrollRef = React.useRef<HTMLDivElement>(null);
 
     const chronological = useMemo(() => {
@@ -1517,23 +1518,43 @@ function TotalBarsChart({
                         Everything combined &mdash; BTC, Trading 212, Vanguard &amp; Fidelity together, no breakdown
                     </p>
                 </div>
-                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
-                    {([
-                        { key: 'week' as const, label: 'Week' },
-                        { key: 'month' as const, label: 'Month' },
-                        { key: 'year' as const, label: 'Year' },
-                    ]).map((opt) => (
-                        <button
-                            key={opt.key}
-                            onClick={() => setGranularity(opt.key)}
-                            className={cn(
-                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                                granularity === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
-                            )}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                        {([
+                            { key: 'value' as const, label: 'Value' },
+                            { key: 'invested' as const, label: 'Invested' },
+                            { key: 'both' as const, label: 'Both' },
+                        ]).map((opt) => (
+                            <button
+                                key={opt.key}
+                                onClick={() => setMetric(opt.key)}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                    metric === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                        {([
+                            { key: 'week' as const, label: 'Week' },
+                            { key: 'month' as const, label: 'Month' },
+                            { key: 'year' as const, label: 'Year' },
+                        ]).map((opt) => (
+                            <button
+                                key={opt.key}
+                                onClick={() => setGranularity(opt.key)}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                    granularity === opt.key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -1574,8 +1595,12 @@ function TotalBarsChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                            <Bar dataKey="invested" name="Invested" fill="#7aa8d6" fillOpacity={0.12} stroke="#7aa8d6" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
-                            <Bar dataKey="value" name="Value" fill="#7aa8d6" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            {metric !== 'value' && (
+                                <Bar dataKey="invested" name="Invested" fill="#7aa8d6" fillOpacity={0.12} stroke="#7aa8d6" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            )}
+                            {metric !== 'invested' && (
+                                <Bar dataKey="value" name="Value" fill="#7aa8d6" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                            )}
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
