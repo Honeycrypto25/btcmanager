@@ -159,11 +159,12 @@ export async function getT212Evolution(gbpToUsd: number): Promise<AssetEvolution
  * Also returns `totals`, since callers on that path need both anyway.
  */
 export async function getVanguardEvolution(
-    gbpToUsd: number
+    gbpToUsd: number,
+    provider?: string
 ): Promise<{ evolution: AssetEvolution; series: ValuePoint[]; totals: VanguardTotalsSnapshot }> {
     const emptyTotals: VanguardTotalsSnapshot = { invested: 0, value: 0, pnl: 0, pnlPercent: 0, accountCount: 0 };
     try {
-        const { totals, series: rawSeries } = await getVanguardReportData();
+        const { totals, series: rawSeries } = await getVanguardReportData(provider);
         const points = rawSeries
             .map((p) => ({ date: p.date, value: p.value * gbpToUsd }))
             .sort((a, b) => a.date.localeCompare(b.date));

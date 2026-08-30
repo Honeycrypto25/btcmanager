@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Card, cn } from "@/components/ui/core";
-import { Bitcoin, BarChart3, Landmark, ArrowRight, Info } from "lucide-react";
+import { Bitcoin, BarChart3, Landmark, Building2, ArrowRight, Info } from "lucide-react";
 
 interface AssetFigures {
     invested: number;
@@ -37,11 +37,13 @@ export function InvestmentsOverviewClient({
     t212,
     btcT212Total,
     vanguard,
+    fidelity,
 }: {
     btc: AssetFigures & { amount: number };
     t212: AssetFigures & { connected: boolean; hasSnapshot: boolean };
     btcT212Total: AssetFigures;
     vanguard: VanguardTotals;
+    fidelity: VanguardTotals;
 }) {
     return (
         <div className="space-y-6">
@@ -56,8 +58,9 @@ export function InvestmentsOverviewClient({
                 <Info className="w-4 h-4 text-muted mt-0.5 shrink-0" />
                 <p className="text-xs text-muted leading-relaxed">
                     BTC și Trading 212 sunt afișate în USD (convenția existentă a aplicației) și au un total combinat, pentru că
-                    ambele reprezintă active de piață cu preț live. Vanguard e afișat separat, în GBP, actualizat manual — nu are
-                    o sursă de preț live conectată, deci nu e adunat în totalul de mai sus.
+                    ambele reprezintă active de piață cu preț live. Vanguard și Fidelity sunt afișate separat, în GBP, actualizate
+                    manual (sau prin import de extras) — nu au o sursă de preț live conectată, deci nu sunt adunate în totalul de
+                    mai sus. Cele două platforme sunt separate una de alta, chiar dacă pot deține același fond.
                 </p>
             </Card>
 
@@ -99,36 +102,70 @@ export function InvestmentsOverviewClient({
                 </Card>
             </div>
 
-            <div className="pt-2">
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-bold text-muted uppercase tracking-wider">Vanguard (separat — actualizat manual)</h2>
-                    <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline">
-                        Gestionează <ArrowRight className="w-3 h-3" />
-                    </Link>
-                </div>
-                <Card className="p-5 sm:p-6">
-                    {vanguard.holdingCount === 0 ? (
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm text-faint italic">Niciun holding Vanguard adăugat încă.</p>
-                            <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
-                                Adaugă <ArrowRight className="w-3 h-3" />
-                            </Link>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Landmark className="w-4 h-4 text-faint" />
-                                <div>
-                                    <p className="font-num text-2xl font-medium text-foreground">{formatGBP(vanguard.value)}</p>
-                                    <p className="text-xs text-muted mt-1">
-                                        {vanguard.holdingCount} holdinguri · Investit {formatGBP(vanguard.invested)}
-                                    </p>
-                                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                <div>
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold text-muted uppercase tracking-wider">Vanguard (separat — actualizat manual)</h2>
+                        <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline">
+                            Gestionează <ArrowRight className="w-3 h-3" />
+                        </Link>
+                    </div>
+                    <Card className="p-5 sm:p-6">
+                        {vanguard.holdingCount === 0 ? (
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm text-faint italic">Niciun holding Vanguard adăugat încă.</p>
+                                <Link href="/vanguard" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
+                                    Adaugă <ArrowRight className="w-3 h-3" />
+                                </Link>
                             </div>
-                            <PnlBadge pnl={vanguard.pnl} pnlPercent={vanguard.pnlPercent} formatter={formatGBP} />
-                        </div>
-                    )}
-                </Card>
+                        ) : (
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Landmark className="w-4 h-4 text-faint" />
+                                    <div>
+                                        <p className="font-num text-2xl font-medium text-foreground">{formatGBP(vanguard.value)}</p>
+                                        <p className="text-xs text-muted mt-1">
+                                            {vanguard.holdingCount} holdinguri · Investit {formatGBP(vanguard.invested)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <PnlBadge pnl={vanguard.pnl} pnlPercent={vanguard.pnlPercent} formatter={formatGBP} />
+                            </div>
+                        )}
+                    </Card>
+                </div>
+
+                <div>
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold text-muted uppercase tracking-wider">Fidelity (separat — actualizat manual)</h2>
+                        <Link href="/fidelity" className="text-xs text-primary flex items-center gap-1 hover:underline">
+                            Gestionează <ArrowRight className="w-3 h-3" />
+                        </Link>
+                    </div>
+                    <Card className="p-5 sm:p-6">
+                        {fidelity.holdingCount === 0 ? (
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm text-faint italic">Niciun holding Fidelity adăugat încă.</p>
+                                <Link href="/fidelity" className="text-xs text-primary flex items-center gap-1 hover:underline shrink-0">
+                                    Adaugă <ArrowRight className="w-3 h-3" />
+                                </Link>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <Building2 className="w-4 h-4 text-faint" />
+                                    <div>
+                                        <p className="font-num text-2xl font-medium text-foreground">{formatGBP(fidelity.value)}</p>
+                                        <p className="text-xs text-muted mt-1">
+                                            {fidelity.holdingCount} holdinguri · Investit {formatGBP(fidelity.invested)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <PnlBadge pnl={fidelity.pnl} pnlPercent={fidelity.pnlPercent} formatter={formatGBP} />
+                            </div>
+                        )}
+                    </Card>
+                </div>
             </div>
         </div>
     );

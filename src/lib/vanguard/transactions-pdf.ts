@@ -24,29 +24,17 @@ function toNumber(s: string | undefined | null): number | null {
 
 /** Extracts plain text from a PDF buffer, one page joined after another
  * with a `---PAGE---` marker (used below to keep a table that spans a
- * page break readable as one continuous row). Uses pdfjs-dist directly
- * rather than a wrapper library like pdf-parse, since pdf-parse pulls in
- * @napi-rs/canvas (a native binary) for image rendering this app never
- * needs -- plain text extraction alone doesn't require it. */
+ * page break readable as one continuous row). Uses unpdf rather than
+ * pdfjs-dist directly (or pdf-parse, which pulls in the @napi-rs/canvas
+ * native binary for image rendering this never needs): unpdf ships a
+ * serverless build of PDF.js with the parsing worker inlined directly into
+ * the bundle, since Vercel's serverless functions can't load a separate
+ * worker file -- plain pdfjs-dist tries to anyway and fails at runtime
+ * ("Setting up fake worker failed: Cannot find module .../pdf.worker.mjs")
+ * once Turbopack bundles it into a single renamed chunk. */
 async function extractPdfText(buffer: Buffer): Promise<string> {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    // pdfjs-dist normally spins up its parsing worker by resolving
-    // "./pdf.worker.mjs" relative to its own bundled location. That
-    // relative lookup breaks once Next.js/Turbopack bundles pdf.mjs into a
-    // single renamed chunk on Vercel -- the worker file is no longer next
-    // to it on disk, so pdfjs falls back to its "fake worker" (in-thread)
-    // path, which *also* tries that same broken relative import and fails
-    // with "Cannot find module '.../pdf.worker.mjs'". Explicitly resolving
-    // the real installed worker file via require.resolve() (a literal
-    // string, so Vercel's build-output file tracer picks it up and ships
-    // it with the function) avoids the broken relative lookup entirely.
-    const { createRequire } = await import("module");
-    const require = createRequire(import.meta.url);
-    pdfjs.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-
-    const data = new Uint8Array(buffer);
-    const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
+    const { getDocumentProxy } = await import("unpdf");
+    const doc = await getDocumentProxy(new Uint8Array(buffer));
 
     let allText = "";
     for (let p = 1; p <= doc.numPages; p++) {

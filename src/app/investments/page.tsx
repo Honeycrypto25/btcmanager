@@ -18,7 +18,11 @@ import { InvestmentsOverviewClient } from "@/components/vanguard/InvestmentsOver
 export default async function InvestmentsPage() {
     const session = await requireSectionAccess("investments");
 
-    const [{ data }, vanguard] = await Promise.all([getOverviewData(), getVanguardTotals()]);
+    const [{ data }, vanguard, fidelity] = await Promise.all([
+        getOverviewData(),
+        getVanguardTotals("vanguard"),
+        getVanguardTotals("fidelity"),
+    ]);
 
     return (
         <DashboardLayout>
@@ -27,6 +31,7 @@ export default async function InvestmentsPage() {
                 t212={data.t212}
                 btcT212Total={{ invested: data.totalInvested, value: data.totalValue, pnl: data.totalPnl, pnlPercent: data.pnlPercent }}
                 vanguard={vanguard}
+                fidelity={fidelity}
             />
         </DashboardLayout>
     );

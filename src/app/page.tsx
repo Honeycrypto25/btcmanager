@@ -7,7 +7,7 @@ import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getOverviewData } from "@/lib/overview-data";
-import { OverviewClient, type VanguardOverviewSnapshot } from "@/components/overview/OverviewClient";
+import { OverviewClient, type VanguardOverviewSnapshot, type AssetFigures } from "@/components/overview/OverviewClient";
 import { getSelfEmployedSummary } from "@/app/actions/self-employed";
 import { getCurrentUkTaxYear } from "@/lib/tax/uk-tax-year";
 import { getVanguardTotals, getVanguardAccountSummaries } from "@/app/actions/vanguard";
@@ -79,19 +79,51 @@ export default async function OverviewPage() {
     // individual lookup already guards its own failures (see
     // lib/overview-evolution.ts) and degrades to nulls/empty rather than
     // throwing, so this block can't take down the rest of the dashboard.
+    //
+    // vanguardOnlyEvo/fidelityEvo split the same VanguardAccount data by
+    // provider (see VanguardAccount.provider), fetched here too since
+    // getVanguardEvolution() already returns both totals and series in one
+    // read. These feed ONLY the weekly/monthly/yearly breakdown further
+    // down (OverviewClient's vanguardOnly/fidelity props) -- `vanguard`/
+    // `vanguardSeries` above stay combined across both platforms, unchanged,
+    // for the existing top card/chart/combined totals.
     let evolution: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null = null;
     let vanguardSeries: ValuePoint[] = [];
+    let vanguardOnly: AssetFigures | null = null;
+    let vanguardOnlySeries: ValuePoint[] = [];
+    let fidelity: AssetFigures | null = null;
+    let fidelitySeries: ValuePoint[] = [];
     try {
-        const [btcEvo, t212Evo, vanguardEvo] = await Promise.all([
+        const [btcEvo, t212Evo, vanguardEvo, vanguardOnlyEvo, fidelityEvo] = await Promise.all([
             getBtcEvolution(),
             getT212Evolution(gbpToUsd),
             getVanguardEvolution(gbpToUsd),
+            getVanguardEvolution(gbpToUsd, "vanguard"),
+            getVanguardEvolution(gbpToUsd, "fidelity"),
         ]);
         evolution = { btc: btcEvo, t212: t212Evo, vanguard: vanguardEvo.evolution };
         vanguardSeries = vanguardEvo.series;
+        vanguardOnly = {
+            invested: vanguardOnlyEvo.totals.invested,
+            value: vanguardOnlyEvo.totals.value,
+            pnl: vanguardOnlyEvo.totals.pnl,
+            pnlPercent: vanguardOnlyEvo.totals.pnlPercent,
+        };
+        vanguardOnlySeries = vanguardOnlyEvo.series;
+        fidelity = {
+            invested: fidelityEvo.totals.invested,
+            value: fidelityEvo.totals.value,
+            pnl: fidelityEvo.totals.pnl,
+            pnlPercent: fidelityEvo.totals.pnlPercent,
+        };
+        fidelitySeries = fidelityEvo.series;
     } catch {
         evolution = null;
         vanguardSeries = [];
+        vanguardOnly = null;
+        vanguardOnlySeries = [];
+        fidelity = null;
+        fidelitySeries = [];
     }
 
     return (
@@ -103,6 +135,10 @@ export default async function OverviewPage() {
                 vanguard={vanguard}
                 evolution={evolution}
                 vanguardSeries={vanguardSeries}
+                vanguardOnly={vanguardOnly}
+                vanguardOnlySeries={vanguardOnlySeries}
+                fidelity={fidelity}
+                fidelitySeries={fidelitySeries}
             />
         </DashboardLayout>
     );

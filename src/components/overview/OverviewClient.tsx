@@ -106,8 +106,9 @@ function scaleRow(row: PeriodRow, factor: number): PeriodRow {
 
 export interface PeriodRowWithVanguard extends PeriodRow {
     vanguard: AssetFigures;
-    /** btc + t212 + vanguard, since row.total from the server only ever
-     * covers btc + t212. */
+    fidelity: AssetFigures;
+    /** btc + t212 + vanguard + fidelity, since row.total from the server only
+     * ever covers btc + t212. */
     combinedTotal: AssetFigures;
 }
 
@@ -179,7 +180,46 @@ function withVanguard(rows: PeriodRow[], periodMap: Map<string, number>, totalIn
             pnl: combinedPnl,
             pnlPercent: combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0,
         };
-        return { ...row, vanguard, combinedTotal };
+        // fidelity starts out zeroed here -- withFidelity() below fills it in
+        // and folds it into combinedTotal as a second pass, same lump-sum
+        // approximation, kept as a separate platform so it doesn't get
+        // double-counted with Vanguard's own money.
+        return { ...row, vanguard, fidelity: ZERO_FIGURES, combinedTotal };
+    });
+    return built.reverse(); // back to newest-first, matching the input order
+}
+
+const ZERO_FIGURES: AssetFigures = { invested: 0, value: 0, pnl: 0, pnlPercent: 0 };
+
+/** Same lump-sum approximation as withVanguard() above, applied as a second
+ * pass on top of its output so Fidelity (Eva-Maria's Junior ISA/SIPP) gets
+ * its own column instead of being merged into Vanguard's figures -- the two
+ * providers can hold the same underlying fund, but the money going in is
+ * tracked per-platform (see VanguardAccount.provider). */
+function withFidelity(rows: PeriodRowWithVanguard[], periodMap: Map<string, number>, totalInvested: number): PeriodRowWithVanguard[] {
+    const chronological = [...rows].reverse(); // rows arrive newest-first
+    let lastValue = 0;
+    let investedAssigned = false;
+    const built = chronological.map((row) => {
+        if (periodMap.has(row.label)) lastValue = periodMap.get(row.label)!;
+        let invested = 0;
+        if (!investedAssigned && lastValue > 0) {
+            invested = totalInvested;
+            investedAssigned = true;
+        }
+        const value = lastValue;
+        const pnl = value - invested;
+        const fidelity: AssetFigures = { invested, value, pnl, pnlPercent: invested > 0 ? (pnl / invested) * 100 : 0 };
+        const combinedInvested = row.combinedTotal.invested + invested;
+        const combinedValue = row.combinedTotal.value + value;
+        const combinedPnl = row.combinedTotal.pnl + pnl;
+        const combinedTotal: AssetFigures = {
+            invested: combinedInvested,
+            value: combinedValue,
+            pnl: combinedPnl,
+            pnlPercent: combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0,
+        };
+        return { ...row, fidelity, combinedTotal };
     });
     return built.reverse(); // back to newest-first, matching the input order
 }
@@ -191,6 +231,10 @@ export function OverviewClient({
     vanguard,
     evolution,
     vanguardSeries,
+    vanguardOnly,
+    vanguardOnlySeries,
+    fidelity,
+    fidelitySeries,
 }: {
     data: OverviewData;
     usdToGbp: number;
@@ -198,6 +242,18 @@ export function OverviewClient({
     vanguard?: VanguardOverviewSnapshot | null;
     evolution?: { btc: AssetEvolution; t212: AssetEvolution; vanguard: AssetEvolution } | null;
     vanguardSeries?: ValuePoint[];
+    /** Vanguard-PLATFORM-only totals/series (excludes Fidelity), used
+     * solely for the weekly/monthly/yearly breakdown below so Fidelity gets
+     * its own column there instead of being folded into Vanguard's --
+     * separate from `vanguard`/`vanguardSeries` above (which stay combined
+     * across both platforms, same as before, for the top card/chart/totals). */
+    vanguardOnly?: AssetFigures | null;
+    vanguardOnlySeries?: ValuePoint[];
+    /** Fidelity-platform totals/series (Eva-Maria's Junior ISA/SIPP),
+     * additive to the weekly/monthly/yearly breakdown only -- see
+     * vanguardOnly above for why this isn't folded into `vanguard`. */
+    fidelity?: AssetFigures | null;
+    fidelitySeries?: ValuePoint[];
 }) {
     const [currency, setCurrency] = useState<Currency>('USD');
     const factor = currency === 'USD' ? 1 : usdToGbp;
@@ -233,8 +289,12 @@ export function OverviewClient({
             btcStats: { ...data.btcStats, avgMonthlyInvested: data.btcStats.avgMonthlyInvested * factor },
             t212Stats: { ...data.t212Stats, avgMonthlyInvested: data.t212Stats.avgMonthlyInvested * factor },
             vanguardSeries: (vanguardSeries ?? []).map((p) => ({ date: p.date, value: p.value * factor })),
+            vanguardOnlyInvested: vanguardOnly ? vanguardOnly.invested * factor : 0,
+            vanguardOnlySeries: (vanguardOnlySeries ?? []).map((p) => ({ date: p.date, value: p.value * factor })),
+            fidelityInvested: fidelity ? fidelity.invested * factor : 0,
+            fidelitySeries: (fidelitySeries ?? []).map((p) => ({ date: p.date, value: p.value * factor })),
         };
-    }, [data, factor, vanguard, vanguardSeries]);
+    }, [data, factor, vanguard, vanguardSeries, vanguardOnly, vanguardOnlySeries, fidelity, fidelitySeries]);
 
     const fmt = (n: number) => `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: n >= 1000 ? 0 : 2 })}`;
     const pnlColor = (n: number) => (n >= 0 ? "text-accent" : "text-red-400");
@@ -245,19 +305,31 @@ export function OverviewClient({
     // top card's evolution chart (all three read from the same
     // vanguardSeries, just bucketed differently). See withVanguard() for
     // the "first period gets the whole invested total" approximation.
-    const vanguardPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.vanguardSeries), [view.vanguardSeries]);
-    const vanguardTotalInvested = view.vanguard?.invested ?? 0;
+    const vanguardOnlyPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.vanguardOnlySeries), [view.vanguardOnlySeries]);
+    const fidelityPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.fidelitySeries), [view.fidelitySeries]);
     const weeklyRowsV = useMemo(
-        () => withVanguard(view.weeklyRows, vanguardPeriodMaps.week, vanguardTotalInvested),
-        [view.weeklyRows, vanguardPeriodMaps, vanguardTotalInvested]
+        () => withFidelity(
+            withVanguard(view.weeklyRows, vanguardOnlyPeriodMaps.week, view.vanguardOnlyInvested),
+            fidelityPeriodMaps.week,
+            view.fidelityInvested
+        ),
+        [view.weeklyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
     );
     const monthlyRowsV = useMemo(
-        () => withVanguard(view.monthlyRows, vanguardPeriodMaps.month, vanguardTotalInvested),
-        [view.monthlyRows, vanguardPeriodMaps, vanguardTotalInvested]
+        () => withFidelity(
+            withVanguard(view.monthlyRows, vanguardOnlyPeriodMaps.month, view.vanguardOnlyInvested),
+            fidelityPeriodMaps.month,
+            view.fidelityInvested
+        ),
+        [view.monthlyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
     );
     const yearlyRowsV = useMemo(
-        () => withVanguard(view.yearlyRows, vanguardPeriodMaps.year, vanguardTotalInvested),
-        [view.yearlyRows, vanguardPeriodMaps, vanguardTotalInvested]
+        () => withFidelity(
+            withVanguard(view.yearlyRows, vanguardOnlyPeriodMaps.year, view.vanguardOnlyInvested),
+            fidelityPeriodMaps.year,
+            view.fidelityInvested
+        ),
+        [view.yearlyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
     );
 
     return (
@@ -531,11 +603,11 @@ export function OverviewClient({
                 <VanguardEvolutionChart series={view.vanguardSeries} fmt={fmt} />
             )}
 
-            {/* Monthly bars: invested + current value, per asset (incl. Vanguard) */}
-            <MonthlyBarsChart weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} hasVanguard={!!view.vanguard} />
+            {/* Monthly bars: invested + current value, per asset (incl. Vanguard & Fidelity) */}
+            <MonthlyBarsChart weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} hasVanguard={!!vanguardOnly} hasFidelity={!!fidelity} />
 
-            {/* Invested breakdown, with Week/Month/Year toggle (incl. Vanguard) */}
-            <PeriodBreakdown weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} pnlColor={pnlColor} hasVanguard={!!view.vanguard} />
+            {/* Invested breakdown, with Week/Month/Year toggle (incl. Vanguard & Fidelity) */}
+            <PeriodBreakdown weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} pnlColor={pnlColor} hasVanguard={!!vanguardOnly} hasFidelity={!!fidelity} />
 
             <p className="text-[10px] text-faint text-center leading-relaxed">
                 {data.t212.connected && data.t212NativeCurrency && data.t212NativeCurrency !== 'USD' && (
@@ -1032,6 +1104,7 @@ function PeriodBreakdown({
     fmt,
     pnlColor,
     hasVanguard,
+    hasFidelity,
 }: {
     weeklyRows: PeriodRowWithVanguard[];
     monthlyRows: PeriodRowWithVanguard[];
@@ -1039,6 +1112,7 @@ function PeriodBreakdown({
     fmt: (n: number) => string;
     pnlColor: (n: number) => string;
     hasVanguard: boolean;
+    hasFidelity: boolean;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
     const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
@@ -1075,7 +1149,7 @@ function PeriodBreakdown({
                     </div>
                     <div className="max-h-[420px] overflow-y-auto pr-1">
                         {rows.map((row) => {
-                            const total = hasVanguard ? row.combinedTotal : row.total;
+                            const total = (hasVanguard || hasFidelity) ? row.combinedTotal : row.total;
                             return (
                                 <div key={row.label} className="py-2.5 border-b border-border last:border-0">
                                     <div className={cn("grid gap-x-3 items-baseline", gridCols)}>
@@ -1096,15 +1170,18 @@ function PeriodBreakdown({
                                         {hasVanguard && (
                                             <AssetSubRow name="Vanguard" figures={row.vanguard} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
                                         )}
+                                        {hasFidelity && (
+                                            <AssetSubRow name="Fidelity" figures={row.fidelity} fmt={fmt} pnlColor={pnlColor} gridCols={gridCols} />
+                                        )}
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
-                    {hasVanguard && (
+                    {(hasVanguard || hasFidelity) && (
                         <p className="text-[10px] text-faint mt-3 leading-relaxed">
-                            Vanguard has no dated contribution history (holdings carry a current total, not a
-                            purchase-by-purchase log), so its full &quot;invested&quot; figure is shown once, in the
+                            {hasVanguard && hasFidelity ? "Vanguard and Fidelity have" : hasVanguard ? "Vanguard has" : "Fidelity has"} no dated contribution history (holdings carry a current total, not a
+                            purchase-by-purchase log), so each platform&apos;s full &quot;invested&quot; figure is shown once, in the
                             earliest period with price data &mdash; every other period shows its real value with no
                             new investment attributed to it.
                         </p>
@@ -1356,15 +1433,17 @@ function MonthlyBarsChart({
     yearlyRows,
     fmt,
     hasVanguard,
+    hasFidelity,
 }: {
     weeklyRows: PeriodRowWithVanguard[];
     monthlyRows: PeriodRowWithVanguard[];
     yearlyRows: PeriodRowWithVanguard[];
     fmt: (n: number) => string;
     hasVanguard: boolean;
+    hasFidelity: boolean;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
-    const [isolated, setIsolated] = useState<'all' | 'BTC' | 'T212' | 'Vanguard'>('all');
+    const [isolated, setIsolated] = useState<'all' | 'BTC' | 'T212' | 'Vanguard' | 'Fidelity'>('all');
     const scrollRef = React.useRef<HTMLDivElement>(null);
 
     const chronological = useMemo(() => {
@@ -1377,6 +1456,8 @@ function MonthlyBarsChart({
             t212Value: row.t212.value,
             vanguardInvested: row.vanguard.invested,
             vanguardValue: row.vanguard.value,
+            fidelityInvested: row.fidelity.invested,
+            fidelityValue: row.fidelity.value,
         }));
     }, [weeklyRows, monthlyRows, yearlyRows, granularity]);
 
@@ -1397,8 +1478,10 @@ function MonthlyBarsChart({
         const t212Value = chronological.reduce((s, r) => s + r.t212Value, 0);
         const vanguardInvested = chronological.reduce((s, r) => s + r.vanguardInvested, 0);
         const vanguardValue = chronological.reduce((s, r) => s + r.vanguardValue, 0);
-        const invested = btcInvested + t212Invested + vanguardInvested;
-        const value = btcValue + t212Value + vanguardValue;
+        const fidelityInvested = chronological.reduce((s, r) => s + r.fidelityInvested, 0);
+        const fidelityValue = chronological.reduce((s, r) => s + r.fidelityValue, 0);
+        const invested = btcInvested + t212Invested + vanguardInvested + fidelityInvested;
+        const value = btcValue + t212Value + vanguardValue + fidelityValue;
         return {
             invested,
             value,
@@ -1406,6 +1489,7 @@ function MonthlyBarsChart({
             btcPercent: btcInvested !== 0 ? ((btcValue - btcInvested) / btcInvested) * 100 : 0,
             t212Percent: t212Invested !== 0 ? ((t212Value - t212Invested) / t212Invested) * 100 : 0,
             vanguardPercent: vanguardInvested !== 0 ? ((vanguardValue - vanguardInvested) / vanguardInvested) * 100 : 0,
+            fidelityPercent: fidelityInvested !== 0 ? ((fidelityValue - fidelityInvested) / fidelityInvested) * 100 : 0,
         };
     }, [chronological]);
 
@@ -1416,8 +1500,8 @@ function MonthlyBarsChart({
         const point = payload[0]?.payload;
         if (!point) return null;
 
-        const totalInvested = point.btcInvested + point.t212Invested + point.vanguardInvested;
-        const totalValue = point.btcValue + point.t212Value + point.vanguardValue;
+        const totalInvested = point.btcInvested + point.t212Invested + point.vanguardInvested + point.fidelityInvested;
+        const totalValue = point.btcValue + point.t212Value + point.vanguardValue + point.fidelityValue;
 
         const Row = ({ color, name, value, filled, valueColorClass }: { color: string; name: string; value: number; filled: boolean; valueColorClass?: string }) => (
             <div className="flex items-center gap-2 justify-between">
@@ -1443,6 +1527,12 @@ function MonthlyBarsChart({
                     <>
                         <Row color="#52c98a" name="Vanguard invested" value={point.vanguardInvested} filled={false} />
                         <Row color="#52c98a" name="Vanguard value" value={point.vanguardValue} filled valueColorClass={point.vanguardInvested !== 0 ? pnlColor(point.vanguardValue - point.vanguardInvested) : undefined} />
+                    </>
+                )}
+                {point.fidelityValue !== 0 && (
+                    <>
+                        <Row color="#c97ad6" name="Fidelity invested" value={point.fidelityInvested} filled={false} />
+                        <Row color="#c97ad6" name="Fidelity value" value={point.fidelityValue} filled valueColorClass={point.fidelityInvested !== 0 ? pnlColor(point.fidelityValue - point.fidelityInvested) : undefined} />
                     </>
                 )}
                 <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-border">
@@ -1538,22 +1628,28 @@ function MonthlyBarsChart({
                                 axisLine={false}
                             />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                            {isolated !== 'T212' && isolated !== 'Vanguard' && (
+                            {isolated !== 'T212' && isolated !== 'Vanguard' && isolated !== 'Fidelity' && (
                                 <>
                                     <Bar dataKey="btcInvested" name="BTC invested" fill="#d6a24c" fillOpacity={0.12} stroke="#d6a24c" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                     <Bar dataKey="btcValue" name="BTC value" fill="#d6a24c" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                 </>
                             )}
-                            {isolated !== 'BTC' && isolated !== 'Vanguard' && (
+                            {isolated !== 'BTC' && isolated !== 'Vanguard' && isolated !== 'Fidelity' && (
                                 <>
                                     <Bar dataKey="t212Invested" name="T212 invested" fill="#7c93b8" fillOpacity={0.12} stroke="#7c93b8" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                     <Bar dataKey="t212Value" name="T212 value" fill="#7c93b8" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                 </>
                             )}
-                            {hasVanguard && isolated !== 'BTC' && isolated !== 'T212' && (
+                            {hasVanguard && isolated !== 'BTC' && isolated !== 'T212' && isolated !== 'Fidelity' && (
                                 <>
                                     <Bar dataKey="vanguardInvested" name="Vanguard invested" fill="#52c98a" fillOpacity={0.12} stroke="#52c98a" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                     <Bar dataKey="vanguardValue" name="Vanguard value" fill="#52c98a" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                </>
+                            )}
+                            {hasFidelity && isolated !== 'BTC' && isolated !== 'T212' && isolated !== 'Vanguard' && (
+                                <>
+                                    <Bar dataKey="fidelityInvested" name="Fidelity invested" fill="#c97ad6" fillOpacity={0.12} stroke="#c97ad6" strokeWidth={1.5} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                                    <Bar dataKey="fidelityValue" name="Fidelity value" fill="#c97ad6" fillOpacity={1} radius={[2, 2, 0, 0]} isAnimationActive={false} />
                                 </>
                             )}
                         </BarChart>
@@ -1628,6 +1724,29 @@ function MonthlyBarsChart({
                             <span className="text-faint">value</span>
                             <span className={cn("font-num font-medium", pnlColor(totals.vanguardPercent))}>
                                 {totals.vanguardPercent >= 0 ? '+' : ''}{totals.vanguardPercent.toFixed(1)}%
+                            </span>
+                        </span>
+                    </button>
+                )}
+                {hasFidelity && (
+                    <button
+                        type="button"
+                        onClick={() => setIsolated(isolated === 'Fidelity' ? 'all' : 'Fidelity')}
+                        className={cn(
+                            "flex items-center gap-3 px-2.5 py-1.5 rounded-lg border transition-colors",
+                            isolated === 'Fidelity' ? "border-[#c97ad6]/40 bg-[#c97ad6]/5" : "border-transparent hover:bg-white/[0.03]",
+                            isolated !== 'all' && isolated !== 'Fidelity' && "opacity-40"
+                        )}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm" style={{ border: '1.5px solid #c97ad6' }} />
+                            <span className="text-faint">Fidelity invested</span>
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#c97ad6' }} />
+                            <span className="text-faint">value</span>
+                            <span className={cn("font-num font-medium", pnlColor(totals.fidelityPercent))}>
+                                {totals.fidelityPercent >= 0 ? '+' : ''}{totals.fidelityPercent.toFixed(1)}%
                             </span>
                         </span>
                     </button>

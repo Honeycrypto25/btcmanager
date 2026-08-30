@@ -29,8 +29,9 @@ export interface ValuePoint {
  * total-value-over-time series in one query pass, since
  * lib/overview-evolution.ts needs both for the same email/report use case.
  */
-export async function getVanguardReportData(): Promise<{ totals: VanguardTotalsSnapshot; series: ValuePoint[] }> {
+export async function getVanguardReportData(provider?: string): Promise<{ totals: VanguardTotalsSnapshot; series: ValuePoint[] }> {
     const accounts = await db.vanguardAccount.findMany({
+        where: provider ? { provider } : undefined,
         include: { holdings: { include: { priceHistory: { orderBy: { capturedAt: "asc" } } } } },
     });
 
