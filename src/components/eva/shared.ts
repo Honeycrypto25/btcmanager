@@ -77,6 +77,18 @@ export function formatUsdFee(n: number): string {
     return formatUsd(n);
 }
 
+/**
+ * For a per-token PRICE (buy/quoted/target/current price of one EVA), not a
+ * dollar AMOUNT (invested/proceeds/P&L, which stay at formatUsd's 2
+ * decimals). EVA trades in the low single dollars, where the difference
+ * between e.g. $2.70 and $2.6963 (rounded to 2dp) hides real price
+ * movement — 4 decimals matches the precision the DB actually stores
+ * these prices at (Decimal(14,4)), so nothing is lost either way.
+ */
+export function formatPrice(n: number): string {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(n);
+}
+
 export const statusMeta: Record<string, { label: string; icon: ElementType; className: string }> = {
     PENDING_SELL_ORDER: { label: "Ordin în curs", icon: Clock, className: "text-amber-300 bg-amber-500/10 border-amber-400/30" },
     OPEN: { label: "Ordin activ", icon: Clock, className: "text-primary bg-primary/10 border-primary/30" },

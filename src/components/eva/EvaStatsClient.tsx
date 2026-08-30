@@ -18,7 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
+import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileEvaOrdersNow } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
@@ -257,7 +257,7 @@ export function EvaStatsClient({
                 <div>
                     <h1 className="font-display text-xl font-medium text-foreground">Eva — Statistici</h1>
                     <p className="text-sm text-muted">
-                        {evaPriceUsd ? `Preț curent: ${formatUsd(evaPriceUsd)}` : "Preț curent indisponibil momentan"}
+                        {evaPriceUsd ? `Preț curent: ${formatPrice(evaPriceUsd)}` : "Preț curent indisponibil momentan"}
                     </p>
                 </div>
             </div>
@@ -387,7 +387,7 @@ export function EvaStatsClient({
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => formatUsd(Number(v))}
+                                formatter={(v) => formatPrice(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             {evaPriceUsd && (
@@ -395,7 +395,7 @@ export function EvaStatsClient({
                                     y={evaPriceUsd}
                                     stroke="#e5e7eb"
                                     strokeDasharray="2 3"
-                                    label={{ value: `Preț curent: ${formatUsd(evaPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
+                                    label={{ value: `Preț curent: ${formatPrice(evaPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
                                 />
                             )}
                             <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
@@ -632,14 +632,14 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                 </td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{Number(lot.evaAcquired).toFixed(3)}</td>
-                                <td className="py-2 pr-4 text-faint">{lot.quotedPriceUsd ? formatUsd(Number(lot.quotedPriceUsd)) : "—"}</td>
-                                <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>
+                                <td className="py-2 pr-4 text-faint">{lot.quotedPriceUsd ? formatPrice(Number(lot.quotedPriceUsd)) : "—"}</td>
+                                <td className="py-2 pr-4 text-foreground">{formatPrice(Number(lot.buyPriceUsd))}</td>
                                 <td className={cn("py-2 pr-4 font-medium", buySlippagePct === null ? "text-faint" : buySlippagePct > 0 ? "text-red-300" : "text-emerald-300")}>
                                     {buySlippagePct === null ? "—" : `${buySlippagePct >= 0 ? "+" : ""}${buySlippagePct.toFixed(2)}%`}
                                 </td>
                                 <td className="py-2 pr-4 text-faint">{formatUsdFee(Number(lot.buyFeeUsd))}</td>
-                                <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatUsd(Number(lot.targetPriceUsd)) : "—"}</td>
-                                <td className="py-2 pr-4 text-foreground">{isOpen && currentPriceUsd ? formatUsd(currentPriceUsd) : "—"}</td>
+                                <td className="py-2 pr-4 text-foreground">{lot.targetPriceUsd ? formatPrice(Number(lot.targetPriceUsd)) : "—"}</td>
+                                <td className="py-2 pr-4 text-foreground">{isOpen && currentPriceUsd ? formatPrice(currentPriceUsd) : "—"}</td>
                                 <td className={cn("py-2 pr-4 font-medium", pctChange === null ? "text-faint" : pctChange >= 0 ? "text-emerald-300" : "text-red-300")}>
                                     {pctChange === null ? "—" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`}
                                 </td>
