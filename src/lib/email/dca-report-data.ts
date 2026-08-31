@@ -1,11 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { getSolPriceUsd } from "@/lib/solana/jupiter";
+import { getSolPriceUsd, getTokenPriceUsd } from "@/lib/solana/jupiter";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
 import { loadBotKeypair, getUsdcBalance as getSolanaUsdcBalance } from "@/lib/solana/wallet";
 import { loadBotWallet, getUsdcBalance as getEvmUsdcBalance } from "@/lib/evm/wallet";
 import { getBnbPriceUsd } from "@/lib/bnb/oneinch";
 import { loadBotWallet as loadBnbBotWallet, getUsdtBalance as getBnbUsdtBalance } from "@/lib/bnb/wallet";
+import { EVA_MINT } from "@/lib/solana/constants";
 
 export interface DcaReportAsset {
     label: string;
@@ -149,5 +150,107 @@ export async function getBnbDcaReportData(): Promise<DcaReportAsset | null> {
         totalInvestedUsd,
         totalRealizedPnlUsd,
         daysOfFuel,
+    };
+}
+
+
+/**
+ * EVA -- same buy-DCA + take-profit-sell shape as Solana/Base/BNB above
+ * (EvaLot mirrors SolanaLot/EvmLot/BnbLot field-for-field), just a
+ * different SPL token traded from the SAME wallet as the Solana bot (see
+ * the walletAddress comment on EvaSettings) -- so "days of fuel" reads the
+ * same shared USDC balance the Solana card also reads, just divided by
+ * EVA's own buyAmountUsd/intervalHours rather than Solana's.
+ */
+export async function getEvaDcaReportData(): Promise<DcaReportAsset | null> {
+    const settings = await db.evaSettings.findFirst();
+    if (!settings) return null;
+
+    const lots = await db.evaLot.findMany();
+    let totalInvestedUsd = 0;
+    let totalRealizedPnlUsd = 0;
+    let evaHeld = 0;
+    for (const lot of lots) {
+        if (lot.status === "FAILED") continue;
+        totalInvestedUsd += Number(lot.buyAmountUsd);
+        evaHeld += Number(lot.evaRemaining);
+        if (lot.status === "FILLED") totalRealizedPnlUsd += Number(lot.realizedPnlUsd ?? 0);
+    }
+
+    const evaPriceUsd = await getTokenPriceUsd(EVA_MINT).catch(() => null);
+
+    let daysOfFuel: number | null = null;
+    try {
+        const keypair = loadBotKeypair();
+        const usdcBalance = await getSolanaUsdcBalance(keypair.publicKey.toBase58());
+        const buyAmountUsd = Number(settings.buyAmountUsd);
+        if (buyAmountUsd > 0) {
+            daysOfFuel = Math.floor(usdcBalance / buyAmountUsd) * (settings.intervalHours / 24);
+        }
+    } catch {
+        // SOLANA_PRIVATE_KEY not set, or RPC unreachable -- omit the fuel line rather than fail the whole report.
+    }
+
+    return {
+        label: "EVA DCA",
+        heldAmount: evaHeld,
+        heldUnit: "EVA",
+        heldValueUsd: evaPriceUsd !== null ? evaHeld * evaPriceUsd : null,
+        totalInvestedUsd,
+        totalRealizedPnlUsd,
+        daysOfFuel,
+    };
+}
+
+/**
+ * Polygon reverse-DCA summary for the report emails. Doesn't fit the
+ * DcaReportAsset shape used by Solana/Base/BNB/EVA above: those are all
+ * "buy one token steadily with capital" bots with a single held asset,
+ * while Polygon SELLS externally-received tokens (GEOD, MYST, ... -- one
+ * PolygonTokenSettings row per token, see the schema comment) for USDC and
+ * buys back at a dip, so there's no single "amount held" or "days of
+ * fuel" figure -- see getPolygonStats() in src/app/actions/polygon.ts for
+ * the same aggregation, session-scoped; this mirrors it without the
+ * session (cron-triggered reports have none, same reasoning as the other
+ * DCA report functions above).
+ */
+export interface PolygonDcaReportSummary {
+    label: string;
+    tokenCount: number;
+    totalSoldUsd: number;
+    totalReinvestedUsd: number;
+    totalRealizedProfitUsd: number;
+    openBuybackOrders: number;
+    totalReacquiredCount: number;
+}
+
+export async function getPolygonDcaReportData(): Promise<PolygonDcaReportSummary | null> {
+    const settingsRows = await db.polygonTokenSettings.findMany();
+    if (settingsRows.length === 0) return null;
+
+    const lots = await db.polygonTokenLot.findMany({ where: { status: { not: "FAILED" } } });
+
+    let totalSoldUsd = 0;
+    let totalReinvestedUsd = 0;
+    let totalRealizedProfitUsd = 0;
+    let openBuybackOrders = 0;
+    let totalReacquiredCount = 0;
+
+    for (const lot of lots) {
+        totalSoldUsd += Number(lot.usdcReceived);
+        totalReinvestedUsd += Number(lot.usdcToBuyback);
+        totalRealizedProfitUsd += Number(lot.usdcProfit);
+        if (lot.status === "OPEN") openBuybackOrders++;
+        if (lot.status === "FILLED") totalReacquiredCount++;
+    }
+
+    return {
+        label: "Polygon Reverse-DCA",
+        tokenCount: settingsRows.length,
+        totalSoldUsd,
+        totalReinvestedUsd,
+        totalRealizedProfitUsd,
+        openBuybackOrders,
+        totalReacquiredCount,
     };
 }

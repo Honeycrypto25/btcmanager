@@ -1,6 +1,6 @@
 import type { OverviewData, PeriodRow } from "@/components/overview/OverviewClient";
 import type { AssetEvolution } from "@/lib/overview-evolution";
-import type { DcaReportAsset } from "@/lib/email/dca-report-data";
+import type { DcaReportAsset, PolygonDcaReportSummary } from "@/lib/email/dca-report-data";
 
 interface WindowStats {
     btcInvested: number;
@@ -29,6 +29,8 @@ const COLORS = {
     solana: '#9945FF',
     base: '#0052FF',
     bnb: '#F0B90B',
+    polygon: '#8247E5',
+    eva: '#FF6B9D',
 };
 
 const FONT_DISPLAY = "'Space Grotesk', Helvetica, Arial, sans-serif";
@@ -143,6 +145,33 @@ function dcaAssetCard(asset: DcaReportAsset, accentColor: string): string {
     });
 }
 
+/**
+ * Polygon's reverse-DCA card -- reuses the same assetCard() shell as
+ * dcaAssetCard() above, with labels swapped for the sell-then-buy-back
+ * flow (see the PolygonDcaReportSummary comment in dca-report-data.ts for
+ * why this can't just be another DcaReportAsset: no single held token).
+ */
+function polygonReportCard(summary: PolygonDcaReportSummary, accentColor: string): string {
+    const realizedPercent = summary.totalSoldUsd > 0 ? (summary.totalRealizedProfitUsd / summary.totalSoldUsd) * 100 : 0;
+    const extraParts = [
+        `${summary.tokenCount} token${summary.tokenCount === 1 ? '' : 's'} tracked`,
+        `${summary.openBuybackOrders} open buy-back order${summary.openBuybackOrders === 1 ? '' : 's'}`,
+        `${summary.totalReacquiredCount} reacquired`,
+    ];
+    return assetCard({
+        name: summary.label,
+        accentColor,
+        investedLabel: 'Total sold',
+        investedValue: fmt(summary.totalSoldUsd),
+        valueLabel: 'Reinvested',
+        currentValue: fmt(summary.totalReinvestedUsd),
+        pnlText: `${summary.totalRealizedProfitUsd >= 0 ? '+' : ''}${fmt(summary.totalRealizedProfitUsd)} realized profit`,
+        pnlPercentText: pct(realizedPercent),
+        pnlHex: pnlColor(summary.totalRealizedProfitUsd),
+        extraLine: extraParts.join('<br/>'),
+    });
+}
+
 function monthsTable(rows: PeriodRow[]): string {
     const recent = rows.slice(0, 6);
     if (recent.length === 0) return '';
@@ -196,8 +225,10 @@ export function buildReportHtml(opts: {
     solanaDca?: DcaReportAsset | null;
     evmDca?: DcaReportAsset | null;
     bnbDca?: DcaReportAsset | null;
+    evaDca?: DcaReportAsset | null;
+    polygonDca?: PolygonDcaReportSummary | null;
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
 
@@ -341,6 +372,8 @@ export function buildReportHtml(opts: {
             ${solanaDca ? dcaAssetCard(solanaDca, COLORS.solana) : ''}
             ${evmDca ? dcaAssetCard(evmDca, COLORS.base) : ''}
             ${bnbDca ? dcaAssetCard(bnbDca, COLORS.bnb) : ''}
+            ${evaDca ? dcaAssetCard(evaDca, COLORS.eva) : ''}
+            ${polygonDca ? polygonReportCard(polygonDca, COLORS.polygon) : ''}
           </td>
         </tr>
 
