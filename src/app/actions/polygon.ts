@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import { runPolygonReverseDcaForSettings, reconcilePolygonOrdersForSettings } from "@/lib/polygon/reverse-dca";
 import { runPolygonSweepForUser } from "@/lib/polygon/sweep";
 import { loadBotWallet, getUsdcBalance, getNativeBalance, getTokenMeta } from "@/lib/polygon/wallet";
-import { ALLOWED_TOKENS, MIN_LIMIT_ORDER_USD } from "@/lib/polygon/constants";
+import { getTokenPriceUsd } from "@/lib/polygon/oneinch";
+import { ALLOWED_TOKENS, MIN_LIMIT_ORDER_USD, USDC_ADDRESS } from "@/lib/polygon/constants";
+import type { PolygonTokenSettings } from "@prisma/client";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -30,6 +32,33 @@ export async function getPolygonBotWalletAddress(): Promise<{ address: string } 
 export async function listPolygonTokenSettings() {
     const userId = await requireUserId();
     return db.polygonTokenSettings.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
+}
+
+export interface PolygonCurrentPrice {
+    settingsId: string;
+    tokenSymbol: string;
+    priceUsd: number | null;
+}
+
+/**
+ * Current live price per token bot, quoted via 1inch (getTokenPriceUsd) --
+ * the "Preț curent" reference line shown on /polygon/stats' per-lot chart,
+ * same as the Solana/Base/BNB/EVA stats pages already show for their own
+ * single traded token. One price PER TOKEN here (not a single value) since
+ * Polygon can run several token bots (GEOD, MYST, ...) at once, each at a
+ * completely different price -- see PolygonDcaReportSummary in
+ * dca-report-data.ts for the same reasoning applied to the email report.
+ */
+export async function getPolygonCurrentPrices(): Promise<PolygonCurrentPrice[]> {
+    const userId = await requireUserId();
+    const settingsRows = await db.polygonTokenSettings.findMany({ where: { userId } });
+    return Promise.all(
+        settingsRows.map(async (s: PolygonTokenSettings) => ({
+            settingsId: s.id,
+            tokenSymbol: s.tokenSymbol,
+            priceUsd: await getTokenPriceUsd(s.tokenAddress, s.tokenDecimals, USDC_ADDRESS).catch(() => null),
+        }))
+    );
 }
 
 /**

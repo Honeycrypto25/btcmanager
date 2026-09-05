@@ -120,7 +120,13 @@ async function retryPendingBuybackOrders(settings: PolygonTokenSettings, wallet:
         try {
             const targetPriceUsd = Number(lot.sellPriceUsd) * (1 - Number(settings.buybackDipPercent) / 100);
             const usdcToBuyback = Number(lot.usdcToBuyback);
-            const tokenBuybackPlanned = usdcToBuyback / targetPriceUsd;
+            // The exact quantity already sold (lot.tokenSold), not re-derived
+            // via usdcToBuyback / targetPriceUsd -- that division reintroduces
+            // float noise (e.g. 97.99999999999999 instead of a clean 98) even
+            // though the buy-back is always supposed to target the EXACT
+            // quantity sold (see the comment on usdcToBuyback in
+            // runPolygonReverseDcaForSettings below).
+            const tokenBuybackPlanned = Number(lot.tokenSold);
 
             const { orderHash } = await createLimitOrder(wallet, {
                 makerAsset: USDC_ADDRESS,
@@ -281,7 +287,12 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
         // 2) Place the buy-back order for the reinvested share, at -buybackDipPercent%.
         try {
             const targetPriceUsd = sellPriceUsd * (1 - Number(settings.buybackDipPercent) / 100);
-            const tokenBuybackPlanned = usdcToBuyback / targetPriceUsd;
+            // The exact quantity just sold, not re-derived via
+            // usdcToBuyback / targetPriceUsd -- that division reintroduces
+            // float noise (e.g. 97.99999999999999 instead of a clean 98) even
+            // though the buy-back is always supposed to target the EXACT
+            // quantity sold (see the comment on usdcToBuyback just above).
+            const tokenBuybackPlanned = tokenAmountToSell;
 
             const { orderHash } = await createLimitOrder(wallet, {
                 makerAsset: USDC_ADDRESS,

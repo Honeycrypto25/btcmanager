@@ -6,6 +6,8 @@ import {
     ComposedChart,
     Bar,
     BarChart,
+    Line,
+    ReferenceLine,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -18,6 +20,9 @@ import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filt
 import { Card, Button, cn } from "@/components/ui/core";
 
 const PAGE_SIZE = 10;
+
+// One color per token's "Preț curent" reference line on the active-lots chart -- cycles if more than 3 tokens are ever added to ALLOWED_TOKENS.
+const REF_LINE_COLORS = ["#e5e7eb", "#60a5fa", "#f472b6"];
 
 interface TokenSettingsDTO {
     id: string;
@@ -65,6 +70,12 @@ interface StatsDTO {
     totalLots: number;
 }
 
+interface CurrentPriceDTO {
+    settingsId: string;
+    tokenSymbol: string;
+    priceUsd: number | null;
+}
+
 interface Props {
     tokenSettings: TokenSettingsDTO[];
     lots: LotDTO[];
@@ -73,6 +84,13 @@ interface Props {
     // (filterable) lot list instead, so the numbers always match what's
     // currently filtered in (mirrors EvmStatsClient/BnbStatsClient).
     stats: StatsDTO;
+    // One live price PER TOKEN (not a single value, unlike solPriceUsd on the
+    // Solana/Base/BNB/EVA stats pages) -- Polygon can run several token bots
+    // at once, each at a different price. Empty array (rather than throwing)
+    // when the live 1inch lookup fails -- the chart below just omits the
+    // "Preț curent" reference line for that token, same "degrade, don't fail
+    // the page" pattern as solPriceUsd being null there.
+    currentPrices: CurrentPriceDTO[];
 }
 
 function fmtUsd(n: number): string {
@@ -168,7 +186,7 @@ function Pager({
     );
 }
 
-export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps }: Props) {
+export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, currentPrices }: Props) {
     const [tokenFilter, setTokenFilter] = useState<string | "all">("all");
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
@@ -179,6 +197,12 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps }: Pro
         for (const s of tokenSettings) map.set(s.id, s.tokenSymbol);
         return map;
     }, [tokenSettings]);
+
+    const priceBySettingsId = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const p of currentPrices) if (p.priceUsd !== null) map.set(p.settingsId, p.priceUsd);
+        return map;
+    }, [currentPrices]);
 
     const lots = useMemo(() => {
         return allLots.filter((lot) => {
@@ -220,10 +244,22 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps }: Pro
             .sort((a, b) => new Date(a.soldAt).getTime() - new Date(b.soldAt).getTime())
             .map((lot) => ({
                 date: `${format(new Date(lot.soldAt), "d MMM")}${tokenFilter === "all" ? ` · ${symbolBySettingsId.get(lot.settingsId) ?? "?"}` : ""}`,
+                settingsId: lot.settingsId,
                 sellPrice: Number(lot.sellPriceUsd),
                 targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
             }));
     }, [allLots, tokenFilter, symbolBySettingsId]);
+
+    // Which tokens actually have an open lot in the chart above, each paired
+    // with its live price (when known) -- one "Preț curent" reference line
+    // per token, since (unlike Solana/Base/BNB/EVA, one token each) Polygon
+    // can have several open at once, at very different prices.
+    const openLotsTokenPrices = useMemo(() => {
+        const ids = new Set(openLotsChartData.map((r) => r.settingsId));
+        return [...ids]
+            .map((id) => ({ settingsId: id, symbol: symbolBySettingsId.get(id) ?? "?", priceUsd: priceBySettingsId.get(id) ?? null }))
+            .filter((t) => t.priceUsd !== null) as { settingsId: string; symbol: string; priceUsd: number }[];
+    }, [openLotsChartData, symbolBySettingsId, priceBySettingsId]);
 
     const chartData = useMemo(() => {
         const sorted = [...lots].sort((a, b) => new Date(a.soldAt).getTime() - new Date(b.soldAt).getTime());
@@ -453,10 +489,22 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps }: Pro
                                 formatter={(v) => fmtUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="sellPrice" name="Preț vânzare" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="targetPrice" name="Preț țintă răscump." fill="#22c55e" radius={[4, 4, 0, 0]} />
+                            {openLotsTokenPrices.map((t, i) => (
+                                <ReferenceLine
+                                    key={t.settingsId}
+                                    y={t.priceUsd}
+                                    stroke={REF_LINE_COLORS[i % REF_LINE_COLORS.length]}
+                                    strokeDasharray="2 3"
+                                    label={{ value: `${t.symbol} preț curent: ${fmtUsd(t.priceUsd)}`, position: "insideTopRight", fill: REF_LINE_COLORS[i % REF_LINE_COLORS.length], fontSize: 11 }}
+                                />
+                            ))}
+                            <Line type="monotone" dataKey="sellPrice" name="Preț vânzare" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă răscump." stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                         </ComposedChart>
                     </ResponsiveContainer>
+                    {openLotsTokenPrices.length === 0 && (
+                        <p className="mt-2 text-[11px] text-faint">Prețul curent live e indisponibil momentan (1inch) — se afișează doar prețul de vânzare și cel țintă.</p>
+                    )}
                 </Card>
             )}
 
