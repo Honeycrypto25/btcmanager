@@ -600,7 +600,7 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
 
             <Card className="p-6 space-y-4">
                 <h3 className="text-sm font-medium text-foreground">Loturi (vânzare → răscumpărare) ({lots.length})</h3>
-                <LotsTable lots={lots} symbolBySettingsId={symbolBySettingsId} />
+                <LotsTable lots={lots} symbolBySettingsId={symbolBySettingsId} priceBySettingsId={priceBySettingsId} />
             </Card>
 
             <Card className="p-6 space-y-4">
@@ -611,7 +611,7 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
     );
 }
 
-function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string> }) {
+function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number> }) {
     const [page, setPage] = useState(1);
     if (lots.length === 0) return <p className="text-sm text-muted">Niciun lot încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
@@ -621,7 +621,7 @@ function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySetti
     return (
         <>
             <div className="overflow-x-auto -mx-6">
-                <table className="w-full text-sm min-w-[1180px]">
+                <table className="w-full text-sm min-w-[1380px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
                             <th className="px-6 py-2 font-medium">Token</th>
@@ -631,6 +631,8 @@ function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySetti
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Încasat</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Profit realizat</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Preț țintă răscump.</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Preț curent</th>
+                            <th className="px-3 py-2 font-medium">%</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Răscumpărat</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Data</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Vânzare</th>
@@ -638,7 +640,14 @@ function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySetti
                         </tr>
                     </thead>
                     <tbody>
-                        {pageItems.map((lot) => (
+                        {pageItems.map((lot) => {
+                            const isOpen = lot.status === "OPEN";
+                            const currentPriceUsd = isOpen ? priceBySettingsId.get(lot.settingsId) ?? null : null;
+                            // Vs. the lot's own execution price (sellPriceUsd) -- same "%" the
+                            // Solana/Base/BNB/EVA stats tables show vs. their buyPriceUsd, just
+                            // sell-side here since Polygon's cycle starts with a sell, not a buy.
+                            const pctChange = currentPriceUsd !== null ? ((currentPriceUsd - Number(lot.sellPriceUsd)) / Number(lot.sellPriceUsd)) * 100 : null;
+                            return (
                             <tr key={lot.id} className="border-b border-border/50 last:border-0 align-top">
                                 <td className="px-6 py-2.5 whitespace-nowrap text-foreground font-medium">
                                     {symbolBySettingsId.get(lot.settingsId) ?? "?"}
@@ -656,6 +665,12 @@ function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySetti
                                     {lot.targetPriceUsd ? fmtUsd(Number(lot.targetPriceUsd)) : "—"}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap font-num text-muted">
+                                    {currentPriceUsd !== null ? fmtUsd(currentPriceUsd) : "—"}
+                                </td>
+                                <td className={cn("px-3 py-2.5 whitespace-nowrap font-num font-medium", pctChange === null ? "text-faint" : pctChange >= 0 ? "text-emerald-300" : "text-red-300")}>
+                                    {pctChange === null ? "—" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap font-num text-muted">
                                     {lot.tokenReacquired ? fmtToken(Number(lot.tokenReacquired)) : "—"}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">
@@ -671,7 +686,8 @@ function LotsTable({ lots, symbolBySettingsId }: { lots: LotDTO[]; symbolBySetti
                                     {lot.oneInchOrderHash ? <code className="text-xs">{lot.oneInchOrderHash.slice(0, 10)}…</code> : "—"}
                                 </td>
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
