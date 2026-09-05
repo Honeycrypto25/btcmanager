@@ -647,6 +647,13 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
                             // Solana/Base/BNB/EVA stats tables show vs. their buyPriceUsd, just
                             // sell-side here since Polygon's cycle starts with a sell, not a buy.
                             const pctChange = currentPriceUsd !== null ? ((currentPriceUsd - Number(lot.sellPriceUsd)) / Number(lot.sellPriceUsd)) * 100 : null;
+                            // Colored the OPPOSITE way from Solana's equivalent "%" column on
+                            // purpose: while a lot is OPEN here, the wallet holds USDC, not the
+                            // token, so a rising price (positive %) doesn't mean a gain -- it
+                            // means the token is moving AWAY from the buy-back target, delaying
+                            // reacquisition. A falling price (negative %) is the good outcome:
+                            // progress toward buying the token back cheaper.
+                            const pctIsGood = pctChange !== null && pctChange <= 0;
                             return (
                             <tr key={lot.id} className="border-b border-border/50 last:border-0 align-top">
                                 <td className="px-6 py-2.5 whitespace-nowrap text-foreground font-medium">
@@ -667,7 +674,7 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
                                 <td className="px-3 py-2.5 whitespace-nowrap font-num text-muted">
                                     {currentPriceUsd !== null ? fmtUsd(currentPriceUsd) : "—"}
                                 </td>
-                                <td className={cn("px-3 py-2.5 whitespace-nowrap font-num font-medium", pctChange === null ? "text-faint" : pctChange >= 0 ? "text-emerald-300" : "text-red-300")}>
+                                <td className={cn("px-3 py-2.5 whitespace-nowrap font-num font-medium", pctChange === null ? "text-faint" : pctIsGood ? "text-emerald-300" : "text-red-300")}>
                                     {pctChange === null ? "—" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap font-num text-muted">
