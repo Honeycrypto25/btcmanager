@@ -16,7 +16,7 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { format, formatDistanceToNow } from "date-fns";
-import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
+import { ArrowLeft, Coins, Filter, RefreshCw, Copy, Check } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileBnbOrdersNow } from "@/app/actions/bnb";
@@ -573,6 +573,27 @@ function BscscanLink({ hash, label }: { hash: string; label: string }) {
 
 function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
     const [page, setPage] = useState(1);
+    const [copiedHash, setCopiedHash] = useState<string | null>(null);
+    // 1inch is a gasless off-chain orderbook -- there's no public page to view
+    // a single order by hash (unlike Jupiter's on-chain trigger orders, or a
+    // block explorer tx), so the best we can offer is the hash itself, made
+    // copyable, for cross-referencing (support ticket, 1inch API, etc.).
+    const handleCopyHash = async (hash: string) => {
+        try {
+            await navigator.clipboard.writeText(hash);
+        } catch {
+            const el = document.createElement('textarea');
+            el.value = hash;
+            el.style.position = 'fixed';
+            el.style.opacity = '0';
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        }
+        setCopiedHash(hash);
+        setTimeout(() => setCopiedHash(null), 2000);
+    };
     if (lots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
@@ -638,11 +659,20 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                     {lot.buyTxHash ? <BscscanLink hash={lot.buyTxHash} label="Vezi ↗" /> : "—"}
                                 </td>
                                 <td className="py-2 text-faint">
-                                    {/* 1inch is a gasless off-chain orderbook — there's no creation/fill
-                                        transaction to link to, unlike Jupiter's on-chain trigger orders.
-                                        The order hash is shown instead, for cross-referencing. */}
                                     {lot.oneInchOrderHash ? (
-                                        <code className="text-xs">{lot.oneInchOrderHash.slice(0, 10)}…</code>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCopyHash(lot.oneInchOrderHash!)}
+                                            className="inline-flex items-center gap-1 hover:text-foreground"
+                                            title="Copiază hash-ul complet al ordinului"
+                                        >
+                                            <code className="text-xs">{lot.oneInchOrderHash.slice(0, 10)}…</code>
+                                            {copiedHash === lot.oneInchOrderHash ? (
+                                                <Check className="w-3 h-3 text-accent" />
+                                            ) : (
+                                                <Copy className="w-3 h-3 opacity-60" />
+                                            )}
+                                        </button>
                                     ) : (
                                         "—"
                                     )}

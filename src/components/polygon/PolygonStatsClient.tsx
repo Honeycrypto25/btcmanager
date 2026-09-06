@@ -16,7 +16,7 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { format } from "date-fns";
-import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter } from "lucide-react";
+import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter, Copy, Check } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 
 const PAGE_SIZE = 10;
@@ -613,6 +613,26 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
 
 function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number> }) {
     const [page, setPage] = useState(1);
+    const [copiedHash, setCopiedHash] = useState<string | null>(null);
+    // 1inch is a gasless off-chain orderbook -- there's no public page to view
+    // a single order by hash (unlike a block explorer tx), so the best we can
+    // offer is the hash itself, made copyable, for cross-referencing.
+    const handleCopyHash = async (hash: string) => {
+        try {
+            await navigator.clipboard.writeText(hash);
+        } catch {
+            const el = document.createElement('textarea');
+            el.value = hash;
+            el.style.position = 'fixed';
+            el.style.opacity = '0';
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        }
+        setCopiedHash(hash);
+        setTimeout(() => setCopiedHash(null), 2000);
+    };
     if (lots.length === 0) return <p className="text-sm text-muted">Niciun lot încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
@@ -687,10 +707,23 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
                                     {lot.sellTxHash ? <PolygonscanLink hash={lot.sellTxHash} /> : "—"}
                                 </td>
                                 <td className="px-3 py-2.5 text-xs text-faint">
-                                    {/* 1inch is a gasless off-chain orderbook — there's no fill
-                                        transaction to link to. The order hash is shown instead,
-                                        for cross-referencing. */}
-                                    {lot.oneInchOrderHash ? <code className="text-xs">{lot.oneInchOrderHash.slice(0, 10)}…</code> : "—"}
+                                    {lot.oneInchOrderHash ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCopyHash(lot.oneInchOrderHash!)}
+                                            className="inline-flex items-center gap-1 hover:text-foreground"
+                                            title="Copiază hash-ul complet al ordinului"
+                                        >
+                                            <code className="text-xs">{lot.oneInchOrderHash.slice(0, 10)}…</code>
+                                            {copiedHash === lot.oneInchOrderHash ? (
+                                                <Check className="w-3 h-3 text-accent" />
+                                            ) : (
+                                                <Copy className="w-3 h-3 opacity-60" />
+                                            )}
+                                        </button>
+                                    ) : (
+                                        "—"
+                                    )}
                                 </td>
                             </tr>
                             );
