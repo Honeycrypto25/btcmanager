@@ -26,10 +26,12 @@ import {
     Package,
     Copy,
     Check,
-    MonitorSmartphone
+    MonitorSmartphone,
+    KeyRound
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
+import { getEnvVarStatus, type EnvVarGroup } from "@/app/actions/env-status";
 
 interface DependencyRow {
     name: string;
@@ -115,7 +117,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminPageClient() {
-    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'devices' | 'features'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'devices' | 'features' | 'env'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -143,6 +145,12 @@ export default function AdminPageClient() {
     // Email History State
     const [emailLogs, setEmailLogs] = useState<EmailLogRow[]>([]);
     const [emailLogsLoading, setEmailLogsLoading] = useState(true);
+
+    // Env Var Status State
+    const [envGroups, setEnvGroups] = useState<EnvVarGroup[]>([]);
+    const [envLoading, setEnvLoading] = useState(false);
+    const [envLoaded, setEnvLoaded] = useState(false);
+    const [envError, setEnvError] = useState<string | null>(null);
     const [emailLogsError, setEmailLogsError] = useState<string | null>(null);
 
     // Viewer Access State
@@ -275,6 +283,28 @@ export default function AdminPageClient() {
     useEffect(() => {
         if (activeTab === 'devices' && !devicesLoaded && !devicesLoading) {
             fetchDevices();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
+
+    const fetchEnvStatus = async () => {
+        setEnvLoading(true);
+        setEnvError(null);
+        try {
+            const groups = await getEnvVarStatus();
+            setEnvGroups(groups);
+            setEnvLoaded(true);
+        } catch (err) {
+            console.error('Failed to fetch env var status', err);
+            setEnvError('Nu am putut verifica variabilele de mediu.');
+        } finally {
+            setEnvLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'env' && !envLoaded && !envLoading) {
+            fetchEnvStatus();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
@@ -456,6 +486,7 @@ export default function AdminPageClient() {
                     { id: 'reports', name: 'Reports', icon: Mail },
                     { id: 'dependencies', name: 'Dependențe', icon: Package },
                     { id: 'devices', name: 'Dispozitive de încredere', icon: MonitorSmartphone },
+                    { id: 'env', name: 'Variabile de mediu', icon: KeyRound },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -1074,6 +1105,87 @@ export default function AdminPageClient() {
                             </div>
                         )}
                     </Card>
+                </div>
+            )}
+
+            {activeTab === 'env' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <Card className="p-6 md:p-8 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
+                                <KeyRound className="w-6 h-6" />
+                            </div>
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-medium text-foreground">Variabile de mediu (Vercel)</h3>
+                                <p className="text-muted text-sm">
+                                    Toate cheile pe care le citește deployment-ul curent, grupate pe zonă — doar numele și dacă
+                                    sunt setate, niciodată valoarea. Util ca listă de verificare când pornești un deployment
+                                    similar în altă parte (altă bază de date, alte portofele bot etc.).
+                                </p>
+                            </div>
+                            <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={fetchEnvStatus} disabled={envLoading}>
+                                <RefreshCw className={cn("w-4 h-4", envLoading && "animate-spin")} />
+                            </Button>
+                        </div>
+
+                        {envLoading && envGroups.length === 0 ? (
+                            <div className="flex items-center gap-2 text-sm text-muted py-6 justify-center">
+                                <Loader2 className="w-5 h-5 animate-spin" /> Se încarcă...
+                            </div>
+                        ) : envError ? (
+                            <div className="bg-red-500/10 border border-red-400/20 text-red-300 text-sm p-3 rounded-lg">
+                                {envError}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-muted">
+                                {envGroups.reduce((n, g) => n + g.vars.filter((v) => v.set).length, 0)} din{' '}
+                                {envGroups.reduce((n, g) => n + g.vars.length, 0)} variabile setate.
+                            </div>
+                        )}
+                    </Card>
+
+                    {envGroups.map((group) => (
+                        <Card key={group.label} className="p-6 md:p-8 space-y-4">
+                            <h3 className="text-sm font-medium text-foreground">{group.label}</h3>
+                            <div className="overflow-x-auto -mx-6 md:-mx-8">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-xs text-faint uppercase border-b border-border">
+                                            <th className="px-6 md:px-8 py-2 font-medium whitespace-nowrap">Cheie</th>
+                                            <th className="px-3 py-2 font-medium">Descriere</th>
+                                            <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {group.vars.map((v) => (
+                                            <tr key={v.key} className="border-b border-border/50 last:border-0 align-top">
+                                                <td className="px-6 md:px-8 py-2.5 whitespace-nowrap">
+                                                    <code className="text-xs text-primary">{v.key}</code>
+                                                </td>
+                                                <td className="px-3 py-2.5 text-muted text-xs max-w-md">{v.description}</td>
+                                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                                    {v.set ? (
+                                                        <span className="inline-flex items-center gap-1.5 text-accent bg-accent/5 px-2.5 py-1 rounded-full border border-accent/10 text-xs font-medium">
+                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Setat
+                                                        </span>
+                                                    ) : (
+                                                        <span className={cn(
+                                                            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium",
+                                                            v.required
+                                                                ? "text-red-300 bg-red-500/5 border-red-400/10"
+                                                                : "text-muted bg-white/[0.03] border-border"
+                                                        )}>
+                                                            <XCircle className="w-3.5 h-3.5" /> Lipsește
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    ))}
                 </div>
             )}
 
