@@ -1208,6 +1208,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                                     <th className="py-1.5 pr-4 font-medium">Dată</th>
                                                                     <th className="py-1.5 pr-4 font-medium">Unități</th>
                                                                     <th className="py-1.5 pr-4 font-medium">Sumă</th>
+                                                                    <th className="py-1.5 pr-4 font-medium">Preț</th>
                                                                     {isAdmin && <th className="py-1.5 pr-4 font-medium text-right">Acțiuni</th>}
                                                                 </tr>
                                                             </thead>
@@ -1217,6 +1218,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                                         <td className="py-2 pr-4 text-xs text-muted">{format(new Date(c.date), "dd MMM yyyy")}</td>
                                                                         <td className="py-2 pr-4 text-xs text-foreground font-num">{c.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 })}</td>
                                                                         <td className="py-2 pr-4 text-xs text-foreground">{formatMoney(c.amount, account.currency)}</td>
+                                                                        <td className="py-2 pr-4 text-xs text-muted font-num">{c.units > 0 ? formatMoney(c.amount / c.units, account.currency) : "—"}</td>
                                                                         {isAdmin && (
                                                                             <td className="py-2 pr-4 text-right">
                                                                                 <button onClick={() => removeContribution(h.id, c.id)} className="p-1 rounded text-muted hover:text-red-400 hover:bg-red-500/10">
