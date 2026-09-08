@@ -584,7 +584,7 @@ function StatsTab({ accounts, provider }: { accounts: AccountRow[]; provider: "v
                                             {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
                                         </td>
                                         <td className="py-2.5 pr-4 text-xs text-muted">{h.accountName}</td>
-                                        <td className="py-2.5 pr-4 text-xs text-muted font-num">{h.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 })}</td>
+                                        <td className="py-2.5 pr-4 text-xs text-muted font-num">{h.units.toLocaleString("ro-RO", { maximumFractionDigits: 6 })}</td>
                                         <td className="py-2.5 pr-4 text-sm text-foreground font-num">{formatMoney(h.avgPrice, h.currency)}</td>
                                         <td className="py-2.5 pr-4 text-sm text-foreground font-num">{formatMoney(h.currentPrice, h.currency)}</td>
                                         <td className={cn("py-2.5 pr-4 text-sm font-medium", h.diffPercent >= 0 ? "text-green-400" : "text-red-400")}>
@@ -1077,7 +1077,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-muted">Unități (opțional)</label>
-                            <input type="number" step="0.0001" value={form.units || ""} onChange={(e) => setForm({ ...form, units: parseFloat(e.target.value) || undefined })} className={inputClass} />
+                            <input type="number" step="0.000001" value={form.units || ""} onChange={(e) => setForm({ ...form, units: parseFloat(e.target.value) || undefined })} className={inputClass} />
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-muted">Investit (cost total)</label>
@@ -1130,7 +1130,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                             <td className="px-6 py-4 text-sm text-foreground">
                                                 {h.fundName} {h.ticker && <span className="text-faint">({h.ticker})</span>}
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-muted font-num">{h.units !== null ? h.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 }) : "—"}</td>
+                                            <td className="px-6 py-4 text-sm text-muted font-num">{h.units !== null ? h.units.toLocaleString("ro-RO", { maximumFractionDigits: 6 }) : "—"}</td>
                                             <td className="px-6 py-4 text-sm text-muted">{formatMoney(h.costBasis, account.currency)}</td>
                                             <td className="px-6 py-4 text-sm">
                                                 {editingValueId === h.id ? (
@@ -1182,7 +1182,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                         </div>
                                                         <div className="space-y-1">
                                                             <label className="text-xs text-muted">Unități</label>
-                                                            <input type="number" step="0.0001" value={contribForm.units} onChange={(e) => setContribForm({ ...contribForm, units: e.target.value })} className="w-28 bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                                                            <input type="number" step="0.000001" value={contribForm.units} onChange={(e) => setContribForm({ ...contribForm, units: e.target.value })} className="w-28 bg-white/[0.04] border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                                                         </div>
                                                         <div className="space-y-1">
                                                             <label className="text-xs text-muted">Sumă investită</label>
@@ -1216,7 +1216,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                                 {contributions[h.id]!.map((c) => (
                                                                     <tr key={c.id}>
                                                                         <td className="py-2 pr-4 text-xs text-muted">{format(new Date(c.date), "dd MMM yyyy")}</td>
-                                                                        <td className="py-2 pr-4 text-xs text-foreground font-num">{c.units.toLocaleString("ro-RO", { maximumFractionDigits: 4 })}</td>
+                                                                        <td className="py-2 pr-4 text-xs text-foreground font-num">{c.units.toLocaleString("ro-RO", { maximumFractionDigits: 6 })}</td>
                                                                         <td className="py-2 pr-4 text-xs text-foreground">{formatMoney(c.amount, account.currency)}</td>
                                                                         <td className="py-2 pr-4 text-xs text-muted font-num">{c.units > 0 ? formatMoney(c.amount / c.units, account.currency) : "—"}</td>
                                                                         {isAdmin && (
