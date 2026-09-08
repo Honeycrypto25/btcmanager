@@ -795,6 +795,7 @@ function RoiByPeriodTable({ provider }: { provider: "vanguard" | "fidelity" }) {
                                 <tr className="border-b border-border bg-white/[0.01]">
                                     <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Perioadă</th>
                                     <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Investit</th>
+                                    <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Preț mediu cumpărare</th>
                                     <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Valoare acum</th>
                                     <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Profit</th>
                                     <th className="px-5 sm:px-6 py-3 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">ROI</th>
@@ -805,6 +806,9 @@ function RoiByPeriodTable({ provider }: { provider: "vanguard" | "fidelity" }) {
                                     <tr key={row.period} className="hover:bg-white/[0.01] transition-colors">
                                         <td className="px-5 sm:px-6 py-4 font-medium text-foreground">{labelFor(row.period)}</td>
                                         <td className="px-5 sm:px-6 py-4 text-right font-num text-muted">{formatMoney(row.invested, "GBP")}</td>
+                                        <td className="px-5 sm:px-6 py-4 text-right font-num text-muted">
+                                            {row.units > 0 ? formatMoney(row.invested / row.units, "GBP") : "—"}
+                                        </td>
                                         <td className="px-5 sm:px-6 py-4 text-right font-num text-foreground">{formatMoney(row.currentValue, "GBP")}</td>
                                         <td className={cn("px-5 sm:px-6 py-4 text-right font-num font-medium", row.roiAmount >= 0 ? "text-green-400" : "text-red-400")}>
                                             {row.roiAmount >= 0 ? "+" : ""}{formatMoney(row.roiAmount, "GBP")}
