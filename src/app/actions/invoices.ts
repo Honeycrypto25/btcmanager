@@ -9,6 +9,7 @@ import { formatClientAddress } from "@/lib/invoices/address";
 import { buildInvoiceSeries, formatInvoiceNumber } from "@/lib/invoices/series";
 import { generateInvoicePdf, type InvoicePdfItem, type InvoicePdfVatTreatment } from "@/lib/invoices/pdf";
 import { buildInvoicePdfKey, uploadInvoicePdfObject, getSignedInvoicePdfUrl, deleteInvoicePdfObject } from "@/lib/r2/invoices";
+import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -400,4 +401,55 @@ export async function getInvoicePdfUrl(id: string): Promise<string | null> {
     const invoice = await db.invoice.findUnique({ where: { id } });
     if (!invoice || invoice.userId !== userId || !invoice.pdfKey) return null;
     return getSignedInvoicePdfUrl(invoice.pdfKey);
+}
+
+export interface IncomeByTaxYearRow {
+    taxYear: string;
+    companyId: string;
+    companyName: string;
+    currency: string;
+    netIncome: number; // subtotal (ex-VAT) -- VAT collected isn't income, it's owed to HMRC
+    grossTotal: number; // subtotal + VAT, for reference
+    invoiceCount: number;
+}
+
+/**
+ * UK-tax-year income breakdown per issuing company, for the Rapoarte tab.
+ * Uses issueDate (not dueDate/paid date) to bucket, and excludes drafts --
+ * a draft isn't income yet, only an issued/paid invoice is. Grouped by
+ * net (subtotal, VAT excluded) since VAT charged on standard_uk invoices
+ * is collected on HMRC's behalf, not the business's own income.
+ */
+export async function getInvoiceIncomeByTaxYear(): Promise<IncomeByTaxYearRow[]> {
+    const userId = await requireUserId();
+    const invoices = await db.invoice.findMany({
+        where: { userId, status: { not: "draft" } },
+        include: { company: true },
+    });
+
+    const map = new Map<string, IncomeByTaxYearRow>();
+    for (const inv of invoices) {
+        const taxYear = getUkTaxYear(inv.issueDate);
+        const key = `${taxYear}::${inv.companyId}`;
+        const existing = map.get(key);
+        const netIncome = toPlainNumber(inv.subtotal);
+        const grossTotal = toPlainNumber(inv.total);
+        if (existing) {
+            existing.netIncome += netIncome;
+            existing.grossTotal += grossTotal;
+            existing.invoiceCount += 1;
+        } else {
+            map.set(key, {
+                taxYear,
+                companyId: inv.companyId,
+                companyName: inv.company.name,
+                currency: inv.currency,
+                netIncome,
+                grossTotal,
+                invoiceCount: 1,
+            });
+        }
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.taxYear.localeCompare(a.taxYear) || a.companyName.localeCompare(b.companyName));
 }
