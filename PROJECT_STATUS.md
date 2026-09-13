@@ -59,6 +59,31 @@ and a document vault with expiry reminders.
 - **Tasks** (`/tasks`) — internal dev roadmap tracker (`DevTask` model),
   auto-seeds/advances status on page load; treat as the source of truth
   for "what phase are we in."
+- **Facturare** (`/invoicing`) — invoicing module, migrated from the
+  standalone "incoice" / "Ledger Loom" app (its own Next.js app + own Neon
+  DB + its own single-account JWT login). Now a per-user section like
+  every other module: `InvoiceCompany` / `InvoiceClient` / `Invoice`
+  Prisma models, gated by NextAuth + `requireSectionAccess("invoicing")`,
+  server actions in `src/app/actions/invoices.ts`. Invoice numbering
+  (`src/lib/invoices/series.ts`), address formatting
+  (`src/lib/invoices/address.ts`) and PDF generation
+  (`src/lib/invoices/pdf.ts`, via `pdf-lib`) are ports of incoice's own
+  `lib/*` files, kept on plain types so they stay easy to unit-test.
+  Generated PDFs are stored as **private** R2 objects
+  (`src/lib/r2/invoices.ts`, `users/{userId}/invoices/{invoiceId}.pdf`)
+  served through a short-lived signed URL — unlike incoice's original
+  Vercel Blob storage, which made every invoice PDF a public, guessable
+  URL (invoices carry bank account details). One-off data migration from
+  incoice's Neon DB: `scripts/migrate-invoices.ts` (see its header comment
+  for how to run it) — regenerates every PDF fresh rather than copying the
+  old public blob file. incoice's `billing_period` / saved
+  `service_descriptions` feature was NOT ported (the uploaded incoice
+  snapshot's `lib/storage.ts` predated that feature — `app/actions.ts`
+  referenced it but the table/column didn't exist in the same zip), so
+  that's a gap versus incoice's latest state if it was ever finished
+  there. Once this module is live and the migration has run, the standalone
+  incoice Vercel deployment + its Neon database can be decommissioned.
+
 - **Solana** (`/solana`) — self-custody automated DCA bot. Buys a
   configured USD amount of SOL every `intervalHours` (via Jupiter Swap
   API) from a dedicated wallet, then immediately places a Jupiter Trigger

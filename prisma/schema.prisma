@@ -69,6 +69,11 @@ model User {
   polygonTokenSweeps   PolygonTokenSweep[]
   polygonSweepSettings PolygonSweepSettings?
 
+  // --- Invoicing (migrated from the standalone incoice / Ledger Loom app) ---
+  invoiceCompanies InvoiceCompany[]
+  invoiceClients   InvoiceClient[]
+  invoices         Invoice[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -1606,4 +1611,118 @@ model PolygonTokenSweep {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// --- Invoicing (migrated from the standalone incoice / "Ledger Loom" app) ---
+// Original app: Next.js + raw `postgres` client against its own Neon DB,
+// single hardcoded login. Ported here as a per-user module (scoped by
+// userId like every other section) so it shares NextAuth login, the same
+// Neon database, and the Admin/ViewerAccess model instead of living as a
+// separate deployment. PDFs move from a public Vercel Blob URL to a
+// private R2 object + short-lived signed URL (see src/lib/r2/invoices.ts).
+
+enum InvoiceCustomerRegion {
+  uk
+  international
+}
+
+enum InvoiceVatTreatment {
+  standard_uk
+  not_vat_registered
+  zero_export
+  outside_scope
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  paid
+}
+
+model InvoiceCompany {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name               String
+  representativeName String  @default("")
+  registrationNumber String?
+  vatNumber          String  @default("")
+  address            String
+  bankName           String  @default("")
+  sortCode           String  @default("")
+  accountNumber      String  @default("")
+  iban               String  @default("")
+  currency           String
+  defaultVatRate     Decimal @db.Decimal(8, 2)
+
+  invoices Invoice[]
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model InvoiceClient {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name               String
+  representativeName String @default("")
+  email              String
+  country            String
+  address            String
+  addressLine1       String @default("")
+  addressLine2       String @default("")
+  city               String @default("")
+  region             String @default("")
+  postalCode         String @default("")
+  vatNumber          String @default("")
+
+  invoices Invoice[]
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Invoice {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  invoiceNumber String
+
+  companyId String
+  company   InvoiceCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  clientId  String
+  client    InvoiceClient  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  issueDate DateTime @db.Date
+  dueDate   DateTime @db.Date
+
+  currency       String
+  customerRegion InvoiceCustomerRegion
+  vatTreatment   InvoiceVatTreatment
+  status         InvoiceStatus
+  notes          String                @default("")
+
+  items     Json // InvoiceItem[] — { description, quantity, unitPrice }[]
+  subtotal  Decimal @db.Decimal(12, 2)
+  vatRate   Decimal @db.Decimal(8, 2)
+  vatAmount Decimal @db.Decimal(12, 2)
+  total     Decimal @db.Decimal(12, 2)
+
+  // R2 object key for the generated PDF ("" until first generation
+  // succeeds). Never a public URL — served via a short-lived signed URL,
+  // see src/lib/r2/invoices.ts and /invoicing/[id]/pdf.
+  pdfKey String @default("")
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, invoiceNumber])
+  @@index([userId])
+  @@index([companyId])
+  @@index([clientId])
 }

@@ -34,7 +34,8 @@ import {
     Hexagon,
     Diamond,
     Repeat,
-    Sparkles
+    Sparkles,
+    FileSignature
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -123,6 +124,15 @@ const navEntries: NavEntry[] = [
             { name: 'Bank', href: '/self-employed/bank', icon: Landmark },
             { name: 'Tax', href: '/self-employed/tax', icon: Calculator },
             { name: 'Reports', href: '/self-employed/reports', icon: FileText },
+        ],
+    },
+    {
+        section: 'Facturare',
+        sectionKey: 'invoicing',
+        items: [
+            { name: 'Facturi', href: '/invoicing', icon: FileSignature },
+            { name: 'Clienți', href: '/invoicing/clients', icon: Briefcase },
+            { name: 'Companii', href: '/invoicing/companies', icon: Building2 },
         ],
     },
     {
