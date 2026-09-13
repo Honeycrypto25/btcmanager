@@ -2,8 +2,9 @@
 
 import React, { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, Trash2, X, FileSignature, Download, Pencil, Eye, Search } from "lucide-react";
+import { Plus, Trash2, X, FileSignature, Download, Pencil, Eye, Search, ListChecks, BarChart3 } from "lucide-react";
 import {
     createInvoiceRecord,
     updateInvoiceRecord,
@@ -13,6 +14,7 @@ import {
     type InvoiceItemInput,
 } from "@/app/actions/invoices";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { getUkTaxYear } from "@/lib/tax/uk-tax-year";
 
 type CustomerRegion = "uk" | "international";
 type VatTreatment = "standard_uk" | "not_vat_registered" | "zero_export" | "outside_scope";
@@ -98,6 +100,7 @@ export function InvoicingClient({
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const [viewingId, setViewingId] = useState<string | null>(null);
 
+    const [tab, setTab] = useState<"list" | "reports">("list");
     const [statusFilter, setStatusFilter] = useState<Status | "">("");
     const [search, setSearch] = useState("");
     const [dateFrom, setDateFrom] = useState("");
@@ -287,16 +290,40 @@ export function InvoicingClient({
                         {filtered.length} din {invoices.length} facturi · Neîncasat {money(totalOutstanding, invoices[0]?.currency ?? "GBP")}
                     </p>
                 </div>
-                {isAdmin && (
-                    <Button variant="primary" onClick={openNew}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Factură nouă
-                    </Button>
-                )}
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 rounded-xl border border-border bg-glass p-1">
+                        {([
+                            ["list", "Listă", ListChecks],
+                            ["reports", "Rapoarte", BarChart3],
+                        ] as const).map(([key, label, Icon]) => (
+                            <button
+                                key={key}
+                                onClick={() => setTab(key)}
+                                className={cn(
+                                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5",
+                                    tab === key ? "bg-primary text-black" : "text-muted hover:text-foreground",
+                                )}
+                            >
+                                <Icon className="w-3.5 h-3.5" />
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {tab === "list" && isAdmin && (
+                        <Button variant="primary" onClick={openNew}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Factură nouă
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {error && !showForm && <p className="text-sm text-red-400">{error}</p>}
 
+            {tab === "reports" ? (
+                <IncomeByTaxYearTab invoices={invoices} />
+            ) : (
+            <>
             {showForm && (
                 <Card className="p-5 sm:p-6 border-primary/30">
                     <div className="flex items-center justify-between mb-4">
@@ -623,6 +650,106 @@ export function InvoicingClient({
                                     </tr>
                                 ))
                             )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+            </>
+            )}
+        </div>
+    );
+}
+
+// --- Income by UK tax year, per issuing company ---
+
+const tooltipStyle = { background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 };
+const chartAxisProps = { stroke: "#8c8a80", fontSize: 12 };
+const seriesColors = ["#e8b04b", "#52c98a", "#5b9bd5", "#c9628a", "#8a7ff0", "#f08a52"];
+
+function IncomeByTaxYearTab({ invoices }: { invoices: InvoiceRow[] }) {
+    // Drafts aren't income yet -- only issued/paid invoices count, bucketed
+    // by issueDate into a UK tax year (6 Apr - 5 Apr). Net = subtotal
+    // (ex-VAT): VAT charged on standard_uk invoices is collected on HMRC's
+    // behalf, not the business's own income.
+    const counted = useMemo(() => invoices.filter((i) => i.status !== "draft"), [invoices]);
+
+    const companyNames = useMemo(() => {
+        const names = new Set<string>();
+        for (const inv of counted) names.add(inv.companyName);
+        return Array.from(names).sort();
+    }, [counted]);
+
+    const byTaxYear = useMemo(() => {
+        const map = new Map<string, { taxYear: string; total: number } & Record<string, number>>();
+        for (const inv of counted) {
+            const taxYear = getUkTaxYear(new Date(inv.issueDate));
+            const row = map.get(taxYear) ?? ({ taxYear, total: 0 } as { taxYear: string; total: number } & Record<string, number>);
+            row[inv.companyName] = (row[inv.companyName] ?? 0) + inv.subtotal;
+            row.total += inv.subtotal;
+            map.set(taxYear, row);
+        }
+        return Array.from(map.values()).sort((a, b) => b.taxYear.localeCompare(a.taxYear));
+    }, [counted]);
+
+    const currency = counted[0]?.currency ?? "GBP";
+
+    if (counted.length === 0) {
+        return (
+            <Card className="p-5 sm:p-6">
+                <p className="text-sm text-faint italic py-16 text-center">
+                    Nicio factură emisă sau plătită încă — rapoartele apar după prima factură care nu e ciornă.
+                </p>
+            </Card>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <Card className="p-5 sm:p-6">
+                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-1">Venit net pe an fiscal UK, pe companie</h3>
+                <p className="text-xs text-faint mb-4">
+                    An fiscal 6 aprilie – 5 aprilie · exclude TVA-ul colectat · exclude facturile ciornă
+                </p>
+                <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[...byTaxYear].reverse()}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                            <XAxis dataKey="taxYear" {...chartAxisProps} />
+                            <YAxis {...chartAxisProps} tickFormatter={(v) => `£${v}`} />
+                            <Tooltip contentStyle={tooltipStyle} formatter={(v) => money(Number(v), currency)} />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            {companyNames.map((name, i) => (
+                                <Bar key={name} dataKey={name} name={name} stackId="a" fill={seriesColors[i % seriesColors.length]} radius={i === companyNames.length - 1 ? [4, 4, 0, 0] : undefined} />
+                            ))}
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </Card>
+
+            <Card className="overflow-hidden p-0 border-border">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="border-b border-border bg-white/[0.02]">
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">An fiscal</th>
+                                {companyNames.map((name) => (
+                                    <th key={name} className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">{name}</th>
+                                ))}
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {byTaxYear.map((row) => (
+                                <tr key={row.taxYear} className="hover:bg-white/[0.01] transition-colors">
+                                    <td className="px-6 py-4 text-sm text-foreground font-medium whitespace-nowrap">{row.taxYear}</td>
+                                    {companyNames.map((name) => (
+                                        <td key={name} className="px-6 py-4 text-sm text-muted text-right whitespace-nowrap">
+                                            {row[name] ? money(row[name], currency) : "—"}
+                                        </td>
+                                    ))}
+                                    <td className="px-6 py-4 text-sm font-medium text-green-400 text-right whitespace-nowrap">{money(row.total, currency)}</td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
