@@ -101,19 +101,35 @@ export function InvoicingClient({
     const [viewingId, setViewingId] = useState<string | null>(null);
 
     const [tab, setTab] = useState<"list" | "reports">("list");
+    const currentTaxYear = useMemo(() => getUkTaxYear(new Date()), []);
     const [statusFilter, setStatusFilter] = useState<Status | "">("");
+    const [companyFilter, setCompanyFilter] = useState<string>("");
+    const [taxYearFilter, setTaxYearFilter] = useState<string>(currentTaxYear);
     const [search, setSearch] = useState("");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
+    const [page, setPage] = useState(1);
+    const pageSize = 15;
 
     const totalOutstanding = useMemo(
         () => invoices.filter((i) => i.status !== "paid").reduce((sum, i) => sum + i.total, 0),
         [invoices],
     );
 
+    const availableTaxYears = useMemo(() => {
+        const years = new Set<string>();
+        for (const i of invoices) years.add(getUkTaxYear(new Date(i.issueDate)));
+        years.add(currentTaxYear);
+        return Array.from(years).sort().reverse();
+    }, [invoices, currentTaxYear]);
+
+    const sorted = useMemo(() => [...invoices].sort((a, b) => (a.issueDate < b.issueDate ? 1 : a.issueDate > b.issueDate ? -1 : 0)), [invoices]);
+
     const filtered = useMemo(() => {
-        let list = invoices;
+        let list = sorted;
         if (statusFilter) list = list.filter((i) => i.status === statusFilter);
+        if (companyFilter) list = list.filter((i) => i.companyId === companyFilter);
+        if (taxYearFilter) list = list.filter((i) => getUkTaxYear(new Date(i.issueDate)) === taxYearFilter);
         if (dateFrom) list = list.filter((i) => i.issueDate >= dateFrom);
         if (dateTo) list = list.filter((i) => i.issueDate <= dateTo);
         if (search.trim()) {
@@ -123,14 +139,28 @@ export function InvoicingClient({
             );
         }
         return list;
-    }, [invoices, statusFilter, search, dateFrom, dateTo]);
+    }, [sorted, statusFilter, companyFilter, taxYearFilter, search, dateFrom, dateTo]);
 
-    const hasActiveFilters = !!(statusFilter || search.trim() || dateFrom || dateTo);
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const currentPage = Math.min(page, pageCount);
+    const paginated = useMemo(() => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize), [filtered, currentPage]);
+
+    function updateFilter<T>(setter: (v: T) => void) {
+        return (v: T) => {
+            setter(v);
+            setPage(1);
+        };
+    }
+
+    const hasActiveFilters = !!(statusFilter || companyFilter || taxYearFilter !== currentTaxYear || search.trim() || dateFrom || dateTo);
     function clearFilters() {
         setStatusFilter("");
+        setCompanyFilter("");
+        setTaxYearFilter(currentTaxYear);
         setSearch("");
         setDateFrom("");
         setDateTo("");
+        setPage(1);
     }
 
     const viewingInvoice = viewingId ? invoices.find((i) => i.id === viewingId) ?? null : null;
@@ -523,10 +553,36 @@ export function InvoicingClient({
             <Card className="p-3 sm:p-4">
                 <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Companie</label>
+                        <select
+                            value={companyFilter}
+                            onChange={(e) => updateFilter(setCompanyFilter)(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        >
+                            <option value="" className="bg-surface">Toate</option>
+                            {companies.map((c) => (
+                                <option key={c.id} value={c.id} className="bg-surface">{c.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">An fiscal</label>
+                        <select
+                            value={taxYearFilter}
+                            onChange={(e) => updateFilter(setTaxYearFilter)(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        >
+                            <option value="" className="bg-surface">Toate</option>
+                            {availableTaxYears.map((year) => (
+                                <option key={year} value={year} className="bg-surface">{year}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-1">
                         <label className="text-[11px] text-muted uppercase tracking-wider">Status</label>
                         <select
                             value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value as Status | "")}
+                            onChange={(e) => updateFilter(setStatusFilter)(e.target.value as Status | "")}
                             className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                         >
                             <option value="" className="bg-surface">Toate</option>
@@ -540,7 +596,7 @@ export function InvoicingClient({
                         <input
                             type="date"
                             value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
+                            onChange={(e) => updateFilter(setDateFrom)(e.target.value)}
                             className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                         />
                     </div>
@@ -549,7 +605,7 @@ export function InvoicingClient({
                         <input
                             type="date"
                             value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
+                            onChange={(e) => updateFilter(setDateTo)(e.target.value)}
                             className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                         />
                     </div>
@@ -560,7 +616,7 @@ export function InvoicingClient({
                             <input
                                 type="text"
                                 value={search}
-                                onChange={(e) => setSearch(e.target.value)}
+                                onChange={(e) => updateFilter(setSearch)(e.target.value)}
                                 placeholder="ex. TAC-0001, Ciocan..."
                                 className="w-full bg-white/[0.04] border border-border rounded-lg pl-8 pr-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
                             />
@@ -580,6 +636,7 @@ export function InvoicingClient({
                         <thead>
                             <tr className="border-b border-border bg-white/[0.02]">
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Nr.</th>
+                                <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Companie</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Client</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Emisă</th>
                                 <th className="px-6 py-4 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Scadentă</th>
@@ -589,21 +646,22 @@ export function InvoicingClient({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {filtered.length === 0 ? (
+                            {paginated.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-16 text-center text-faint italic">
+                                    <td colSpan={8} className="px-6 py-16 text-center text-faint italic">
                                         <FileSignature className="w-6 h-6 mx-auto mb-2 opacity-40" />
                                         {invoices.length === 0 ? "Nicio factură încă." : "Nicio factură nu corespunde filtrelor."}
                                     </td>
                                 </tr>
                             ) : (
-                                filtered.map((row) => (
+                                paginated.map((row) => (
                                     <tr key={row.id} className="hover:bg-white/[0.01] transition-colors group">
                                         <td className="px-6 py-4 text-sm text-foreground font-medium whitespace-nowrap">
                                             <button onClick={() => setViewingId(row.id)} className="hover:text-primary hover:underline text-left">
                                                 {row.invoiceNumber}
                                             </button>
                                         </td>
+                                        <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{row.companyName}</td>
                                         <td className="px-6 py-4 text-sm text-muted">{row.clientName}</td>
                                         <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{format(new Date(row.issueDate), "dd MMM yyyy")}</td>
                                         <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{format(new Date(row.dueDate), "dd MMM yyyy")}</td>
@@ -653,6 +711,27 @@ export function InvoicingClient({
                         </tbody>
                     </table>
                 </div>
+                {pageCount > 1 && (
+                    <div className="flex items-center justify-between px-6 py-3 border-t border-border">
+                        <p className="text-xs text-faint">Pagina {currentPage} din {pageCount}</p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage <= 1}
+                                className="px-3 py-1.5 rounded-lg text-xs text-muted border border-border hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                Înapoi
+                            </button>
+                            <button
+                                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                                disabled={currentPage >= pageCount}
+                                className="px-3 py-1.5 rounded-lg text-xs text-muted border border-border hover:text-foreground hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                Înainte
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Card>
             </>
             )}
