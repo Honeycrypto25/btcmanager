@@ -1,4 +1,3 @@
-import "server-only";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { clientAddressLines, splitAddressLines } from "@/lib/invoices/address";
 

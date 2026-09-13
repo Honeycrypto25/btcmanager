@@ -27,9 +27,34 @@
  */
 
 import { Client as PgClient } from "pg";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { db } from "../src/lib/db";
 import { generateInvoicePdf } from "../src/lib/invoices/pdf";
-import { buildInvoicePdfKey, uploadInvoicePdfObject } from "../src/lib/r2/invoices";
+
+// Inline, standalone R2 upload (rather than importing src/lib/r2/invoices.ts,
+// which pulls in src/lib/r2/client.ts's "server-only" import -- that guard
+// throws when run outside Next.js's own bundler, e.g. via plain `tsx`).
+function buildInvoicePdfKey(params: { userId: string; invoiceId: string }): string {
+    return `users/${params.userId}/invoices/${params.invoiceId}.pdf`;
+}
+
+async function uploadInvoicePdfObject(key: string, body: Uint8Array): Promise<void> {
+    const accountId = process.env.R2_ACCOUNT_ID;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const bucket = process.env.R2_BUCKET_NAME;
+    if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+        throw new Error("R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME must be set.");
+    }
+    const client = new S3Client({
+        region: "auto",
+        endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId, secretAccessKey },
+    });
+    await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: Buffer.from(body), ContentType: "application/pdf" })
+    );
+}
 
 type OldCompanyRow = {
     id: string;
