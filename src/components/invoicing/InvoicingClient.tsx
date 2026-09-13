@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { Card, Button, cn } from "@/components/ui/core";
-import { Plus, Trash2, X, FileSignature, Download, Pencil } from "lucide-react";
+import { Plus, Trash2, X, FileSignature, Download, Pencil, Eye, Search } from "lucide-react";
 import {
     createInvoiceRecord,
     updateInvoiceRecord,
@@ -96,11 +96,41 @@ export function InvoicingClient({
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
+    const [viewingId, setViewingId] = useState<string | null>(null);
+
+    const [statusFilter, setStatusFilter] = useState<Status | "">("");
+    const [search, setSearch] = useState("");
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
 
     const totalOutstanding = useMemo(
         () => invoices.filter((i) => i.status !== "paid").reduce((sum, i) => sum + i.total, 0),
         [invoices],
     );
+
+    const filtered = useMemo(() => {
+        let list = invoices;
+        if (statusFilter) list = list.filter((i) => i.status === statusFilter);
+        if (dateFrom) list = list.filter((i) => i.issueDate >= dateFrom);
+        if (dateTo) list = list.filter((i) => i.issueDate <= dateTo);
+        if (search.trim()) {
+            const q = search.trim().toLowerCase();
+            list = list.filter(
+                (i) => i.invoiceNumber.toLowerCase().includes(q) || i.clientName.toLowerCase().includes(q) || i.companyName.toLowerCase().includes(q),
+            );
+        }
+        return list;
+    }, [invoices, statusFilter, search, dateFrom, dateTo]);
+
+    const hasActiveFilters = !!(statusFilter || search.trim() || dateFrom || dateTo);
+    function clearFilters() {
+        setStatusFilter("");
+        setSearch("");
+        setDateFrom("");
+        setDateTo("");
+    }
+
+    const viewingInvoice = viewingId ? invoices.find((i) => i.id === viewingId) ?? null : null;
 
     function openNew() {
         if (!companies.length || !clients.length) {
@@ -254,7 +284,7 @@ export function InvoicingClient({
                         <span className="gradient-text">Facturare</span>
                     </h1>
                     <p className="text-muted text-sm">
-                        {invoices.length} facturi · Neîncasat {money(totalOutstanding, invoices[0]?.currency ?? "GBP")}
+                        {filtered.length} din {invoices.length} facturi · Neîncasat {money(totalOutstanding, invoices[0]?.currency ?? "GBP")}
                     </p>
                 </div>
                 {isAdmin && (
@@ -396,6 +426,127 @@ export function InvoicingClient({
                 </Card>
             )}
 
+            {viewingInvoice && (
+                <Card className="p-5 sm:p-6 border-primary/30">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-bold text-muted uppercase tracking-wider">Factura {viewingInvoice.invoiceNumber}</h3>
+                        <button onClick={() => setViewingId(null)} className="text-faint hover:text-foreground">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm mb-4">
+                        <p className="text-muted">Emitent: <span className="text-foreground">{viewingInvoice.companyName}</span></p>
+                        <p className="text-muted">Client: <span className="text-foreground">{viewingInvoice.clientName}</span></p>
+                        <p className="text-muted">Emisă: <span className="text-foreground">{format(new Date(viewingInvoice.issueDate), "dd MMM yyyy")}</span></p>
+                        <p className="text-muted">Scadentă: <span className="text-foreground">{format(new Date(viewingInvoice.dueDate), "dd MMM yyyy")}</span></p>
+                        <p className="text-muted">Regim TVA: <span className="text-foreground">{vatLabels[viewingInvoice.vatTreatment]}</span></p>
+                        <p className="text-muted">Status: <span className="text-foreground">{statusLabels[viewingInvoice.status]}</span></p>
+                    </div>
+
+                    <table className="w-full text-left border-collapse mb-4">
+                        <thead>
+                            <tr className="border-b border-border">
+                                <th className="py-2 text-[10px] text-muted uppercase text-xs font-medium tracking-wider">Descriere</th>
+                                <th className="py-2 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Cant.</th>
+                                <th className="py-2 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Preț unitar</th>
+                                <th className="py-2 text-[10px] text-muted uppercase text-xs font-medium tracking-wider text-right">Sumă</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {viewingInvoice.items.map((item, i) => (
+                                <tr key={i}>
+                                    <td className="py-2 text-sm text-foreground">{item.description}</td>
+                                    <td className="py-2 text-sm text-muted text-right">{item.quantity}</td>
+                                    <td className="py-2 text-sm text-muted text-right whitespace-nowrap">{money(item.unitPrice, viewingInvoice.currency)}</td>
+                                    <td className="py-2 text-sm text-foreground text-right whitespace-nowrap">{money(item.quantity * item.unitPrice, viewingInvoice.currency)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    <div className="text-sm text-muted space-y-1 mb-4 text-right">
+                        <p>Subtotal: <span className="text-foreground">{money(viewingInvoice.subtotal, viewingInvoice.currency)}</span></p>
+                        <p>TVA ({viewingInvoice.vatRate}%): <span className="text-foreground">{money(viewingInvoice.vatAmount, viewingInvoice.currency)}</span></p>
+                        <p className="font-medium text-base">Total: <span className="text-foreground">{money(viewingInvoice.total, viewingInvoice.currency)}</span></p>
+                    </div>
+
+                    {viewingInvoice.notes.trim() && (
+                        <p className="text-sm text-muted mb-4"><span className="text-faint">Notițe: </span>{viewingInvoice.notes}</p>
+                    )}
+
+                    <div className="flex gap-2">
+                        {viewingInvoice.hasPdf ? (
+                            <Button variant="secondary" onClick={() => download(viewingInvoice.id)} disabled={downloadingId === viewingInvoice.id}>
+                                <Download className="w-4 h-4 mr-2" />
+                                {downloadingId === viewingInvoice.id ? "Se deschide..." : "Deschide PDF"}
+                            </Button>
+                        ) : (
+                            <p className="text-xs text-faint italic self-center">PDF-ul nu a fost încă generat pentru această factură — editeaz-o și salveaz-o o dată ca să se genereze.</p>
+                        )}
+                        {isAdmin && (
+                            <Button variant="ghost" onClick={() => { setViewingId(null); openEdit(viewingInvoice); }}>
+                                <Pencil className="w-4 h-4 mr-2" />
+                                Editează
+                            </Button>
+                        )}
+                    </div>
+                </Card>
+            )}
+
+            <Card className="p-3 sm:p-4">
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Status</label>
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value as Status | "")}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        >
+                            <option value="" className="bg-surface">Toate</option>
+                            {Object.entries(statusLabels).map(([value, label]) => (
+                                <option key={value} value={value} className="bg-surface">{label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">De la</label>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Până la</label>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            className="bg-white/[0.04] border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                    </div>
+                    <div className="flex-1 min-w-[180px] space-y-1">
+                        <label className="text-[11px] text-muted uppercase tracking-wider">Caută (nr., client, companie)</label>
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="ex. TAC-0001, Ciocan..."
+                                className="w-full bg-white/[0.04] border border-border rounded-lg pl-8 pr-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                            />
+                        </div>
+                    </div>
+                    {hasActiveFilters && (
+                        <button onClick={clearFilters} className="text-xs text-muted hover:text-red-400 pb-1.5 flex items-center gap-1">
+                            <X className="w-3.5 h-3.5" /> Șterge filtrele
+                        </button>
+                    )}
+                </div>
+            </Card>
+
             <Card className="overflow-hidden p-0 border-border">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -411,17 +562,21 @@ export function InvoicingClient({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {invoices.length === 0 ? (
+                            {filtered.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-16 text-center text-faint italic">
                                         <FileSignature className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                                        Nicio factură încă.
+                                        {invoices.length === 0 ? "Nicio factură încă." : "Nicio factură nu corespunde filtrelor."}
                                     </td>
                                 </tr>
                             ) : (
-                                invoices.map((row) => (
+                                filtered.map((row) => (
                                     <tr key={row.id} className="hover:bg-white/[0.01] transition-colors group">
-                                        <td className="px-6 py-4 text-sm text-foreground font-medium whitespace-nowrap">{row.invoiceNumber}</td>
+                                        <td className="px-6 py-4 text-sm text-foreground font-medium whitespace-nowrap">
+                                            <button onClick={() => setViewingId(row.id)} className="hover:text-primary hover:underline text-left">
+                                                {row.invoiceNumber}
+                                            </button>
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-muted">{row.clientName}</td>
                                         <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{format(new Date(row.issueDate), "dd MMM yyyy")}</td>
                                         <td className="px-6 py-4 text-sm text-muted whitespace-nowrap">{format(new Date(row.dueDate), "dd MMM yyyy")}</td>
@@ -439,7 +594,10 @@ export function InvoicingClient({
                                         </td>
                                         <td className="px-6 py-4 text-sm font-medium text-foreground whitespace-nowrap">{money(row.total, row.currency)}</td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex justify-end gap-1.5">
+                                                <button onClick={() => setViewingId(row.id)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5" title="Vizualizează">
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                </button>
                                                 {row.hasPdf && (
                                                     <button
                                                         onClick={() => download(row.id)}
@@ -452,10 +610,10 @@ export function InvoicingClient({
                                                 )}
                                                 {isAdmin && (
                                                     <>
-                                                        <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5">
+                                                        <button onClick={() => openEdit(row)} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/5" title="Editează">
                                                             <Pencil className="w-3.5 h-3.5" />
                                                         </button>
-                                                        <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10">
+                                                        <button onClick={() => remove(row.id)} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10" title="Șterge">
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
                                                     </>
