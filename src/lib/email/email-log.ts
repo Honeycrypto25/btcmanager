@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 
-export type EmailType = "ORDER_PLACED" | "ORDER_FILLED" | "SWEEP" | "WEEKLY_REPORT" | "MONTHLY_REPORT";
+export type EmailType = "ORDER_PLACED" | "ORDER_FILLED" | "SWEEP" | "WEEKLY_REPORT" | "MONTHLY_REPORT" | "DOCUMENT_REMINDER" | "DOCUMENT_SHARE";
 
 /**
  * Records one attempted email send (success or failure) for the Admin >

@@ -48,6 +48,7 @@ model User {
   maintenanceRecords   MaintenanceRecord[]
   documents            Document[]
   reminders            Reminder[]
+  personalDocuments    PersonalDocument[]
   vanguardAccounts     VanguardAccount[]
   vanguardHoldings     VanguardHolding[]
   financialGoals       FinancialGoal[]
@@ -698,6 +699,68 @@ model Reminder {
   @@index([userId, dueDate])
   @@index([userId, isDismissed])
   @@index([vehicleId])
+}
+
+// --- Personal Documents (family document vault) ---
+// Separate from the generic vehicle-linked Document model above: this is
+// for personal/family documents (ID, passport, driving/taxi licences,
+// certificates, ...) that belong to a PERSON rather than a vehicle, renew
+// on their own schedule, and need proactive email reminders.
+//
+// One PersonalDocument per document "series" — e.g. "Licență Taxi" for
+// Sergiu — grouping every renewal as a PersonalDocumentVersion (one file
+// per year/issue). The list only ever shows the ACTIVE version per
+// document: whichever version has the latest expiryDate (falling back to
+// the most recently uploaded version if none has one) — see
+// pickActiveVersion() in src/lib/documents/personal-lifecycle.ts. Older
+// versions stay attached to the same PersonalDocument and are visible in
+// its own detail view, never deleted automatically.
+model PersonalDocument {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  person   String // free text — "Sergiu", "Eva", etc. (autocompleted in the UI from previously used names, not a fixed list)
+  title    String // e.g. "Licență Taxi", "Pașaport"
+  category String // e.g. "Identitate", "Pașaport", "Licență", "Asigurare", "Certificat", "Altele"
+  notes    String? @db.Text
+
+  // Date-only granularity in practice (the reminder cron runs once/day).
+  // Recomputed fresh every cron run from the active version's expiryDate —
+  // this field only prevents a double-send if the cron is re-triggered the
+  // same day, it is never itself the source of truth for which stage
+  // (monthly/weekly/daily) is due next.
+  lastReminderSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions PersonalDocumentVersion[]
+
+  @@index([userId, person])
+  @@index([userId])
+}
+
+model PersonalDocumentVersion {
+  id                 String           @id @default(cuid())
+  personalDocumentId String
+  personalDocument   PersonalDocument @relation(fields: [personalDocumentId], references: [id], onDelete: Cascade)
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  // --- Cloudflare R2 storage (private object, accessed via signed URL) ---
+  // Deliberately its own key prefix (users/{userId}/personal-documents/...),
+  // separate from both Receipts (users/{userId}/receipts/...) and the
+  // vehicle Document vault (users/{userId}/documents/...) — per explicit
+  // request to keep this in its own folder.
+  objectKey        String
+  originalMimeType String
+  fileSize         Int
+
+  createdAt DateTime @default(now())
+
+  @@index([personalDocumentId, expiryDate])
 }
 
 // --- Vanguard / Goals (Phase 6) ---

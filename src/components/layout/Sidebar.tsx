@@ -35,7 +35,8 @@ import {
     Diamond,
     Repeat,
     Sparkles,
-    FileSignature
+    FileSignature,
+    FolderOpen
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -142,6 +143,13 @@ const navEntries: NavEntry[] = [
             { name: 'Vehicule', href: '/vehicles', icon: Car },
             { name: 'Documente', href: '/documents', icon: Folder },
             { name: 'Reminders', href: '/reminders', icon: BellRing },
+        ],
+    },
+    {
+        section: 'Documente',
+        sectionKey: 'documents',
+        items: [
+            { name: 'Documente personale', href: '/personal-documents', icon: FolderOpen },
         ],
     },
     { name: 'Tasks', href: '/tasks', icon: ListChecks },

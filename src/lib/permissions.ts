@@ -18,6 +18,7 @@ export const SECTION_KEYS = [
     "selfEmployed",
     "vehicles",
     "invoicing",
+    "documents",
 ] as const;
 
 export type SectionKey = (typeof SECTION_KEYS)[number];
@@ -33,6 +34,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
     selfEmployed: "Self Employed / Taxe",
     vehicles: "Vehicule & Documente",
     invoicing: "Facturare",
+    documents: "Documente",
 };
 
 export function isSectionKey(value: string): value is SectionKey {
@@ -91,6 +93,7 @@ export function sectionHomeHref(section: SectionKey): string {
         case "selfEmployed": return "/self-employed";
         case "vehicles": return "/vehicles";
         case "invoicing": return "/invoicing";
+        case "documents": return "/personal-documents";
     }
 }
 

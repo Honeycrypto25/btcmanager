@@ -84,6 +84,38 @@ and a document vault with expiry reminders.
   there. Once this module is live and the migration has run, the standalone
   incoice Vercel deployment + its Neon database can be decommissioned.
 
+- **Documente** (`/personal-documents`) — personal/family document vault,
+  separate from the vehicle-linked `/documents` module above. Each document
+  belongs to a `person` (free text, autocompleted from names used before —
+  no fixed family-member list) and is a "series" (`PersonalDocument`) that
+  can hold several yearly renewals (`PersonalDocumentVersion`, one file +
+  issue/expiry date each) — e.g. "Licență Taxi — Sergiu" keeps every year's
+  file, but the list only ever shows the ACTIVE one (whichever version has
+  the latest `expiryDate`; see `pickActiveVersion` in
+  `src/lib/documents/personal-lifecycle.ts`). The list sorts by that active
+  expiry ascending (soonest first) and can be filtered by person, category,
+  status and free text. Files live in R2 under their own prefix
+  (`src/lib/r2/personal-documents.ts`,
+  `users/{userId}/personal-documents/{documentId}/{versionId}.<ext>`),
+  deliberately separate from both Receipts and the vehicle Document vault.
+  Uploading a new version resets the reminder clock (clears
+  `lastReminderSentAt`), so renewing a document is what silences its
+  reminders — nothing else does.
+  - **Reminders**: `/api/cron/personal-document-reminders` runs once/day
+    (`src/lib/email/personal-document-reminders.ts`, via Resend, same
+    `REPORT_EMAIL_TO`/`RESEND_API_KEY` env vars as the weekly/monthly
+    portfolio reports). Cadence (`shouldSendReminderToday` in
+    `personal-lifecycle.ts`): one email at T-30, weekly at T-23/16/9, then
+    daily from T-7 onward — including every day after expiry, indefinitely,
+    until a new version is uploaded.
+  - **Share**: a mail icon per document sends a signed R2 link (7-day
+    expiry) to a typed-in recipient email — never the file as an
+    attachment, so a sensitive document (ID, passport) doesn't sit
+    permanently in someone else's inbox.
+  - Gated by `requireSectionAccess("documents")`; mutations (create,
+    upload a version, edit, delete) require admin, same pattern as every
+    other module.
+
 - **Solana** (`/solana`) — self-custody automated DCA bot. Buys a
   configured USD amount of SOL every `intervalHours` (via Jupiter Swap
   API) from a dedicated wallet, then immediately places a Jupiter Trigger
