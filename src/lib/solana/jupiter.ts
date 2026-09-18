@@ -452,7 +452,13 @@ export async function ensureTriggerV2Vault(token: string): Promise<void> {
     try {
         await v2Fetch("/vault", { token });
     } catch {
-        await v2Fetch("/vault/register", { method: "POST", token });
+        // First use: register is a GET per Jupiter's docs. 409 means the vault
+        // already exists (e.g. GET /vault failed for another reason) — fine.
+        try {
+            await v2Fetch("/vault/register", { token });
+        } catch (err) {
+            if (!(err instanceof Error && err.message.includes("(409)"))) throw err;
+        }
     }
 }
 
