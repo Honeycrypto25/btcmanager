@@ -19,7 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
-import { reconcileEvaOrdersNow } from "@/app/actions/eva";
+import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const PAGE_SIZE = 10;
@@ -58,6 +58,26 @@ export function EvaStatsClient({
     const [checking, setChecking] = useState(false);
     const [checkMessage, setCheckMessage] = useState<string | null>(null);
     const [checkError, setCheckError] = useState<string | null>(null);
+
+    const [migrating, setMigrating] = useState(false);
+    const [migrateMessage, setMigrateMessage] = useState<{ ok: boolean; text: string } | null>(null);
+    const stuckCount = evaPriceUsd
+        ? allLots.filter((l) => l.status === "OPEN" && l.triggerVersion !== 2 && l.targetPriceUsd && Number(l.targetPriceUsd) <= evaPriceUsd).length
+        : 0;
+
+    async function handleMigrateStuck() {
+        if (!window.confirm(`Anulez ${stuckCount} ordine V1 blocate și le recreez pe V2 cu aceleași ținte? Se face pe rând; se oprește la prima eroare.`)) return;
+        setMigrating(true);
+        setMigrateMessage(null);
+        try {
+            const r = await migrateStuckEvaLotsToV2Action();
+            setMigrateMessage({ ok: r.ok, text: r.message });
+        } catch (err) {
+            setMigrateMessage({ ok: false, text: err instanceof Error ? err.message : "Migrarea a eșuat." });
+        } finally {
+            setMigrating(false);
+        }
+    }
 
     async function handleCheckNow() {
         setChecking(true);
@@ -507,6 +527,14 @@ export function EvaStatsClient({
                     <h2 className="text-sm font-medium text-foreground">Cicluri DCA ({lots.length})</h2>
                     <div className="flex items-center gap-3">
                         {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
+                        {migrateMessage && (
+                            <span className={cn("text-xs", migrateMessage.ok ? "text-emerald-300" : "text-red-300")}>{migrateMessage.text}</span>
+                        )}
+                        {isAdmin && stuckCount > 0 && (
+                            <Button variant="outline" size="sm" onClick={handleMigrateStuck} disabled={migrating}>
+                                {migrating ? "Se mută…" : `Mută ${stuckCount} blocate pe V2`}
+                            </Button>
+                        )}
                         {checkError && <span className="text-xs text-red-300">{checkError}</span>}
                         {isAdmin && (
                             <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
@@ -580,6 +608,25 @@ function SolscanLink({ signature, label }: { signature: string; label: string })
 
 function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
     const [page, setPage] = useState(1);
+    const isAdmin = useIsAdmin();
+    const [busyLotId, setBusyLotId] = useState<string | null>(null);
+    const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
+
+    async function handleMigrate(lot: LotDTO) {
+        const target = lot.targetPriceUsd ? formatPrice(Number(lot.targetPriceUsd)) : "—";
+        if (!window.confirm(`Anulez ordinul V1 și îl recreez pe V2 la aceeași țintă (${target})?`)) return;
+        setBusyLotId(lot.id);
+        setRowMessage(null);
+        try {
+            const r = await migrateEvaLotToV2Action(lot.id);
+            setRowMessage({ lotId: lot.id, ok: r.ok, text: r.message });
+        } catch (err) {
+            setRowMessage({ lotId: lot.id, ok: false, text: err instanceof Error ? err.message : "Migrarea a eșuat." });
+        } finally {
+            setBusyLotId(null);
+        }
+    }
+
     if (lots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
@@ -587,7 +634,7 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
-            <table className="w-full min-w-[1560px] text-left text-sm">
+            <table className="w-full min-w-[1700px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
@@ -606,7 +653,8 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                         <th className="pb-2 pr-4">EVA rămas</th>
                         <th className="pb-2 pr-4">Verificat</th>
                         <th className="pb-2 pr-4">Cumpărare</th>
-                        <th className="pb-2">Vânzare</th>
+                        <th className="pb-2 pr-4">Vânzare</th>
+                        <th className="pb-2">Ordin</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -629,6 +677,9 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                     <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs", meta.className)}>
                                         <Icon className="h-3 w-3" /> {meta.label}
                                     </span>
+                                    {isOpen && lot.jupiterOrderKey && (
+                                        <span className="ml-1 rounded border border-white/10 px-1 text-[10px] text-faint">V{lot.triggerVersion ?? 1}</span>
+                                    )}
                                 </td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{Number(lot.evaAcquired).toFixed(3)}</td>
@@ -656,13 +707,27 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                 <td className="py-2 pr-4 text-faint">
                                     {lot.buyTxSignature ? <SolscanLink signature={lot.buyTxSignature} label="Vezi ↗" /> : "—"}
                                 </td>
-                                <td className="py-2 text-faint">
+                                <td className="py-2 pr-4 text-faint">
                                     {lot.sellTxSignature ? (
                                         <SolscanLink signature={lot.sellTxSignature} label="Vânzare ↗" />
                                     ) : lot.sellOrderTxSignature ? (
                                         <SolscanLink signature={lot.sellOrderTxSignature} label="Creare ordin ↗" />
                                     ) : (
                                         "—"
+                                    )}
+                                </td>
+                                <td className="py-2 text-faint">
+                                    {isAdmin && lot.status === "OPEN" && (lot.triggerVersion ?? 1) === 1 ? (
+                                        <Button variant="outline" size="sm" onClick={() => handleMigrate(lot)} disabled={busyLotId !== null}>
+                                            {busyLotId === lot.id ? "Se mută…" : "Mută pe V2"}
+                                        </Button>
+                                    ) : (
+                                        "—"
+                                    )}
+                                    {rowMessage?.lotId === lot.id && (
+                                        <div className={cn("mt-1 max-w-[260px] whitespace-normal text-xs", rowMessage.ok ? "text-emerald-300" : "text-red-300")}>
+                                            {rowMessage.text}
+                                        </div>
                                     )}
                                 </td>
                             </tr>

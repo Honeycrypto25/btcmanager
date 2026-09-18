@@ -1,5 +1,7 @@
 import "server-only";
 import { Connection, VersionedTransaction, Keypair } from "@solana/web3.js";
+import { createPrivateKey, sign as ed25519Sign } from "crypto";
+import bs58 from "bs58";
 import { JUPITER_API_BASE, SOL_MINT } from "./constants";
 import { getRpcUrl } from "./wallet";
 
@@ -347,4 +349,199 @@ export async function getTokenPriceUsd(mint: string): Promise<number> {
 
 export async function getSolPriceUsd(): Promise<number> {
     return getTokenPriceUsd(SOL_MINT);
+}
+
+
+// --- Trigger V1: cancel (used only to migrate stuck V1 sell orders to V2) ---
+
+/**
+ * Cancels a V1 trigger order: Jupiter crafts the cancel tx, we sign it,
+ * and /execute lands it. The order's remaining tokens go back to the
+ * maker wallet. Throws unless Jupiter reports Success.
+ */
+export async function cancelTriggerV1Order(params: { keypair: Keypair; orderKey: string }): Promise<{ txSignature: string }> {
+    const maker = params.keypair.publicKey.toBase58();
+    const crafted = await jupiterFetch<{ transaction: string; requestId: string }>(`${JUPITER_API_BASE}/trigger/v1/cancelOrder`, {
+        method: "POST",
+        body: JSON.stringify({ maker, order: params.orderKey, computeUnitPrice: "auto" }),
+    });
+    const tx = VersionedTransaction.deserialize(Buffer.from(crafted.transaction, "base64"));
+    tx.sign([params.keypair]);
+    const executed = await jupiterFetch<{ signature: string; status: string; error?: string }>(`${JUPITER_API_BASE}/trigger/v1/execute`, {
+        method: "POST",
+        body: JSON.stringify({ signedTransaction: Buffer.from(tx.serialize()).toString("base64"), requestId: crafted.requestId }),
+    });
+    if (executed.status !== "Success") {
+        throw new Error(`Anularea ordinului V1 ${params.orderKey} a eșuat: ${executed.error ?? "eroare necunoscută"}`);
+    }
+    return { txSignature: executed.signature };
+}
+
+// --- Trigger V2 (USD-price triggers, Privy vault, JWT auth) ---
+//
+// Why V2: V1 orders for EVA were never filled by Jupiter's keepers even
+// while the price sat well above target for hours (EVA's pool is thin and
+// V1 keepers route through the classic engine that rejects EVA as
+// TOKEN_NOT_TRADABLE — see the comment above getUltraOrder). V2 triggers
+// on Jupiter's USD price and executes through the newer routing stack.
+// Docs: https://developers.jup.ag/docs/trigger  (base: /trigger/v2)
+// An x-api-key is REQUIRED on every V2 endpoint.
+
+const TRIGGER_V2_BASE = `${JUPITER_API_BASE}/trigger/v2`;
+
+function triggerV2ApiKey(): string {
+    const key = process.env.JUPITER_API_KEY;
+    if (!key) {
+        throw new Error("JUPITER_API_KEY lipsește — Jupiter Trigger V2 cere cheie API (o generezi gratuit pe portal.jup.ag și o adaugi în Vercel).");
+    }
+    return key;
+}
+
+async function v2Fetch<T>(path: string, init: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
+    const headers: Record<string, string> = { "Content-Type": "application/json", "x-api-key": triggerV2ApiKey() };
+    if (init.token) headers["Authorization"] = `Bearer ${init.token}`;
+    const res = await fetch(`${TRIGGER_V2_BASE}${path}`, {
+        method: init.method ?? "GET",
+        headers,
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+        json = text ? JSON.parse(text) : null;
+    } catch {
+        /* non-JSON error body — keep the raw text for the message below */
+    }
+    if (!res.ok) {
+        throw new Error(`Jupiter Trigger V2 (${res.status}) ${init.method ?? "GET"} ${path}: ${text.slice(0, 500)}`);
+    }
+    return json as T;
+}
+
+/** Ed25519-signs a UTF-8 message with the bot keypair (Node crypto, no extra dependency) and returns the base58 signature. */
+function signMessageBase58(keypair: Keypair, message: string): string {
+    const seed = Buffer.from(keypair.secretKey.slice(0, 32));
+    // PKCS#8 wrapper around a raw 32-byte Ed25519 seed.
+    const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]);
+    const key = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+    return bs58.encode(ed25519Sign(null, Buffer.from(message, "utf8"), key));
+}
+
+/** Challenge/verify auth → 24h JWT. Nothing is moved by this; a leaked JWT can cancel/edit orders but never withdraw funds. */
+export async function getTriggerV2Token(keypair: Keypair): Promise<string> {
+    const walletPubkey = keypair.publicKey.toBase58();
+    const { challenge } = await v2Fetch<{ challenge: string }>("/auth/challenge", {
+        method: "POST",
+        body: { walletPubkey, type: "message" },
+    });
+    const signature = signMessageBase58(keypair, challenge);
+    // The docs show two slightly different verify bodies (with `walletPubkey`, or with `challenge`) —
+    // send the first, and fall back to the second on a 4xx so either shape works.
+    let verified: { token?: string };
+    try {
+        verified = await v2Fetch<{ token?: string }>("/auth/verify", { method: "POST", body: { type: "message", walletPubkey, signature } });
+    } catch {
+        verified = await v2Fetch<{ token?: string }>("/auth/verify", { method: "POST", body: { type: "message", walletPubkey, challenge, signature } });
+    }
+    if (!verified.token) throw new Error("Jupiter Trigger V2: autentificarea nu a întors un token.");
+    return verified.token;
+}
+
+/** Makes sure the wallet's Privy vault exists (one-time registration). */
+export async function ensureTriggerV2Vault(token: string): Promise<void> {
+    try {
+        await v2Fetch("/vault", { token });
+    } catch {
+        await v2Fetch("/vault/register", { method: "POST", token });
+    }
+}
+
+/**
+ * Places a single "sell when USD price is above X" order: crafts the
+ * deposit (tokens move wallet → Privy vault), signs it, and creates the
+ * order. A 200 means the deposit landed and the order is live.
+ */
+export async function createTriggerV2SellOrder(params: {
+    keypair: Keypair;
+    token: string;
+    inputMint: string;
+    outputMint: string;
+    inputAmountRaw: string;
+    triggerMint: string;
+    triggerPriceUsd: number;
+    slippageBps: number;
+    expiresAtMs: number;
+}): Promise<{ orderId: string; txSignature: string }> {
+    const userPubkey = params.keypair.publicKey.toBase58();
+
+    const deposit = await v2Fetch<{ requestId: string; transaction: string }>("/deposit/craft", {
+        method: "POST",
+        token: params.token,
+        body: {
+            inputMint: params.inputMint,
+            outputMint: params.outputMint,
+            userAddress: userPubkey,
+            amount: params.inputAmountRaw,
+            orderType: "price",
+            orderSubType: "single",
+        },
+    });
+    const tx = VersionedTransaction.deserialize(Buffer.from(deposit.transaction, "base64"));
+    tx.sign([params.keypair]);
+
+    const order = await v2Fetch<{ id: string; txSignature: string; depositConfirmed?: boolean }>("/orders/price", {
+        method: "POST",
+        token: params.token,
+        body: {
+            orderType: "single",
+            depositRequestId: deposit.requestId,
+            depositSignedTx: Buffer.from(tx.serialize()).toString("base64"),
+            userPubkey,
+            inputMint: params.inputMint,
+            outputMint: params.outputMint,
+            inputAmount: params.inputAmountRaw,
+            triggerMint: params.triggerMint,
+            triggerCondition: "above",
+            triggerPriceUsd: params.triggerPriceUsd,
+            slippageBps: params.slippageBps,
+            expiresAt: params.expiresAtMs,
+        },
+    });
+    if (!order.id) throw new Error("Jupiter Trigger V2: crearea ordinului nu a întors un id.");
+    return { orderId: order.id, txSignature: order.txSignature };
+}
+
+export interface TriggerV2Event {
+    type: string; // "deposit" | "fill" | "withdrawal" | "cancelled" | "expired"
+    timestamp: number; // ms
+    state?: string;
+    txSignature?: string;
+    mint?: string;
+    amount?: string;
+    outputMint?: string;
+    outputAmount?: string;
+}
+
+export interface TriggerV2Order {
+    id: string;
+    orderState: string; // pending | open | executing | filled | pending_withdraw | cancelled | expired | failed
+    initialInputAmount?: string;
+    remainingInputAmount?: string;
+    triggerPriceUsd?: number;
+    triggeredAt?: number;
+    outputAmount?: string;
+    inputUsed?: string;
+    events?: TriggerV2Event[];
+}
+
+/** All V2 price orders in the given bucket ("active" or "past"), paged 100 at a time (bounded to 10 pages). */
+export async function getTriggerV2Orders(token: string, state: "active" | "past"): Promise<TriggerV2Order[]> {
+    const all: TriggerV2Order[] = [];
+    for (let page = 0; page < 10; page++) {
+        const qs = new URLSearchParams({ state, limit: "100", offset: String(page * 100) });
+        const res = await v2Fetch<{ orders: TriggerV2Order[]; pagination?: { total: number } }>(`/orders/history?${qs.toString()}`, { token });
+        all.push(...res.orders);
+        if (res.orders.length < 100) break;
+    }
+    return all;
 }

@@ -53,7 +53,8 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
             { key: "SOLANA_PRIVATE_KEY", description: "Cheia privată a portofelului bot (SOL + EVA — același portofel pentru amândouă).", required: false },
             { key: "SOLANA_RPC_URL", description: "Endpoint RPC Solana folosit de bot.", required: false },
             { key: "SOLANA_SWEEP_DESTINATION", description: "Adresa cold-wallet unde se trimit retragerile lunare (SOL și EVA).", required: false },
-            { key: "JUPITER_API_KEY", description: "Cheie API Jupiter — opțională, dar recomandată pentru rate-limit mai mari.", required: false },
+            { key: "JUPITER_API_KEY", description: "Cheie API Jupiter (portal.jup.ag). Opțională pentru swap/V1, OBLIGATORIE pentru ordinele Trigger V2.", required: false },
+            { key: "EVA_TRIGGER_VERSION", description: "\"2\" = ordinele noi de vânzare EVA se pun pe Jupiter Trigger V2; lipsă/\"1\" = V1 (implicit).", required: false },
         ],
     },
     {

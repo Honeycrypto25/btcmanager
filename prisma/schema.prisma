@@ -1158,6 +1158,9 @@ model EvaLot {
   targetPriceUsd       Decimal? @db.Decimal(14, 4)
   sellAmountEvaPlanned Decimal? @db.Decimal(20, 9) // EVA put up for sale in the order
   jupiterOrderKey      String? // Jupiter's own order id — internal lot id above is what ties buy+sell together for P&L
+  // 1 = Jupiter Trigger V1 (order account on-chain, filled by V1 keepers), 2 = Trigger V2 (Privy vault, USD-price trigger).
+  // jupiterOrderKey holds the V1 order account OR the V2 order UUID accordingly.
+  triggerVersion       Int      @default(1)
   sellOrderCreatedAt   DateTime?
   sellOrderTxSignature String?
 

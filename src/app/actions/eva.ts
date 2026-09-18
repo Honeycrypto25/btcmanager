@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { runEvaDcaForUser, reconcileEvaOrdersForUser } from "@/lib/solana/eva-dca";
+import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2 } from "@/lib/solana/eva-dca";
 import { runEvaSweepForUser } from "@/lib/solana/eva-sweep";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
@@ -169,6 +169,49 @@ export async function reconcileEvaOrdersNow() {
     revalidatePath("/solana/eva");
     revalidatePath("/solana/eva/stats");
     return result;
+}
+
+export interface MigrateActionResult {
+    ok: boolean;
+    message: string;
+}
+
+/**
+ * "Mută pe V2" for ONE lot: cancels its V1 sell order and recreates it on
+ * Trigger V2 at the same target. Returns {ok, message} instead of throwing
+ * so the real reason reaches the UI (Next redacts thrown server-action
+ * errors in production).
+ */
+export async function migrateEvaLotToV2Action(lotId: string): Promise<MigrateActionResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        const r = await migrateEvaLotToV2(userId, lotId);
+        return { ok: true, message: `Mutat pe V2 (țintă $${r.targetPriceUsd}). Ordin nou: ${r.newOrderId.slice(0, 8)}…` };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+        revalidatePath("/solana/eva");
+        revalidatePath("/solana/eva/stats");
+    }
+}
+
+/** "Mută blocatele pe V2": every open V1 order whose target is at/below the current price, one by one, stopping at the first failure. */
+export async function migrateStuckEvaLotsToV2Action(): Promise<MigrateActionResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        const r = await migrateStuckEvaLotsToV2(userId);
+        if (r.error) {
+            return { ok: false, message: `${r.migrated.length} mutate, oprit la prima eroare (${r.skipped} rămase): ${r.error}` };
+        }
+        return { ok: true, message: r.migrated.length === 0 ? "Niciun ordin V1 blocat de mutat." : `${r.migrated.length} ordine mutate pe V2.` };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+        revalidatePath("/solana/eva");
+        revalidatePath("/solana/eva/stats");
+    }
 }
 
 /**

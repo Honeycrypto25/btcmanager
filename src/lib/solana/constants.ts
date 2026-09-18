@@ -15,3 +15,10 @@ export const JUPITER_API_BASE = "https://api.jup.ag";
 
 /** Jupiter Trigger API rejects orders below roughly this USD value. */
 export const MIN_TRIGGER_ORDER_USD = 5;
+
+/** Trigger V2 rejects deposits below ~$10 (input value at the CURRENT price, not at target). */
+export const MIN_TRIGGER_V2_ORDER_USD = 10;
+/** Slippage allowed when a V2 sell order fires (EVA's pool is thin: ~0.6% impact per $10 + fees). */
+export const EVA_V2_SELL_SLIPPAGE_BPS = 300;
+/** V2 orders need an expiry; V1 had none. */
+export const TRIGGER_V2_ORDER_TTL_DAYS = 180;
