@@ -13,8 +13,26 @@ function jupiterHeaders(): Record<string, string> {
     return headers;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * fetch() that waits and retries on Jupiter's 429 "Too many requests"
+ * (the free API-key tier allows ~1 request/second, and a migration or a
+ * multi-page reconcile fires several back to back). Honors Retry-After
+ * when present; gives up after 5 tries.
+ */
+async function fetchWithRateLimitRetry(url: string, init: RequestInit): Promise<Response> {
+    let res = await fetch(url, init);
+    for (let attempt = 1; res.status === 429 && attempt <= 5; attempt++) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1200 * attempt);
+        res = await fetch(url, init);
+    }
+    return res;
+}
+
 async function jupiterFetch<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, { ...init, headers: { ...jupiterHeaders(), ...(init?.headers || {}) } });
+    const res = await fetchWithRateLimitRetry(url, { ...init, headers: { ...jupiterHeaders(), ...(init?.headers || {}) } });
     const body = await res.json();
     if (!res.ok) {
         throw new Error(`Jupiter API error (${res.status}) on ${url}: ${JSON.stringify(body)}`);
@@ -305,6 +323,7 @@ export async function getActiveTriggerOrders(wallet: string): Promise<Map<string
         for (const order of res.orders) byKey.set(order.orderKey, order);
         totalPages = res.totalPages || 1;
         page++;
+        if (page <= totalPages) await sleep(1100);
     } while (page <= totalPages);
     return byKey;
 }
@@ -325,6 +344,7 @@ export async function getHistoricalTriggerOrder(wallet: string, orderKey: string
         if (found) return found;
         totalPages = res.totalPages || 1;
         page++;
+        if (page <= totalPages) await sleep(1100);
     } while (page <= totalPages);
     return null;
 }
@@ -400,7 +420,7 @@ function triggerV2ApiKey(): string {
 async function v2Fetch<T>(path: string, init: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
     const headers: Record<string, string> = { "Content-Type": "application/json", "x-api-key": triggerV2ApiKey() };
     if (init.token) headers["Authorization"] = `Bearer ${init.token}`;
-    const res = await fetch(`${TRIGGER_V2_BASE}${path}`, {
+    const res = await fetchWithRateLimitRetry(`${TRIGGER_V2_BASE}${path}`, {
         method: init.method ?? "GET",
         headers,
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -548,6 +568,7 @@ export async function getTriggerV2Orders(token: string, state: "active" | "past"
         const res = await v2Fetch<{ orders: TriggerV2Order[]; pagination?: { total: number } }>(`/orders/history?${qs.toString()}`, { token });
         all.push(...res.orders);
         if (res.orders.length < 100) break;
+        await sleep(1100);
     }
     return all;
 }

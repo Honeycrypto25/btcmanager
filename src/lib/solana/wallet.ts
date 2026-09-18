@@ -46,3 +46,14 @@ export async function getUsdcBalance(walletAddress: string): Promise<number> {
     const amount = value[0].account.data.parsed?.info?.tokenAmount?.uiAmount;
     return typeof amount === "number" ? amount : 0;
 }
+
+
+/** Free (in-wallet) balance of any SPL token, in UI units — 0 if the wallet has no token account for it. */
+export async function getSplTokenBalance(walletAddress: string, mintAddress: string): Promise<number> {
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const { value } = await connection.getParsedTokenAccountsByOwner(new PublicKey(walletAddress), { mint: new PublicKey(mintAddress) });
+    return value.reduce((sum, acc) => {
+        const amount = acc.account.data.parsed?.info?.tokenAmount?.uiAmount;
+        return sum + (typeof amount === "number" ? amount : 0);
+    }, 0);
+}

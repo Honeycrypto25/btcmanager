@@ -1,7 +1,7 @@
 import "server-only";
 import type { Keypair } from "@solana/web3.js";
 import { db } from "@/lib/db";
-import { loadBotKeypair } from "./wallet";
+import { getSplTokenBalance, loadBotKeypair } from "./wallet";
 import { runEvaSweepForUser } from "./eva-sweep";
 import {
     cancelTriggerV1Order,
@@ -621,6 +621,9 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
     const token = await getTriggerV2Token(keypair); // proves API key + wallet signature work BEFORE cancelling
     await ensureTriggerV2Vault(token);
 
+    // Free EVA in the wallet BEFORE cancelling — the cancel is confirmed by this going up by the order's amount.
+    const evaBalanceBefore = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
+
     // --- claim the lot atomically ---
     const claimed = await db.evaLot.updateMany({
         where: { id: lot.id, status: "OPEN", triggerVersion: 1, jupiterOrderKey: oldKey },
@@ -635,18 +638,25 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
         await db.evaLot.update({ where: { id: lot.id }, data: { status: "OPEN", triggerVersion: 1, notes: null } });
         throw err;
     }
-    // Wait until Jupiter stops listing the order as active, i.e. the EVA is back in the wallet.
-    let gone = false;
-    for (let i = 0; i < 8 && !gone; i++) {
-        await new Promise((r) => setTimeout(r, 2500));
-        gone = !(await getActiveTriggerOrders(settings.walletAddress)).has(oldKey);
+    // Confirm the cancel on-chain: the order's EVA must be back in the wallet. (Jupiter's
+    // "active orders" list lags behind — it kept showing a cancelled order as Open — so it
+    // is NOT used for this.) A balance read error is retried, never fatal on its own.
+    let refunded = false;
+    for (let i = 0; i < 8 && !refunded; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 3000));
+        try {
+            const now = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
+            refunded = now >= evaBalanceBefore + evaAmount * 0.999;
+        } catch {
+            /* transient RPC error — retry */
+        }
     }
-    if (!gone) {
+    if (!refunded) {
         await db.evaLot.update({
             where: { id: lot.id },
-            data: { notes: `V1 ${oldKey}: anulare trimisă dar încă neconfirmată. Lotul e în așteptare; cron-ul va crea ordinul pe V2 când EVA e liber.` },
+            data: { notes: `V1 ${oldKey}: anulare trimisă dar EVA încă nerestituit în wallet. Lotul e în așteptare; cron-ul creează ordinul pe V2 când EVA e liber.` },
         });
-        throw new Error("Anularea V1 a fost trimisă dar nu e încă confirmată. Lotul e în așteptare și va fi creat pe V2 automat.");
+        throw new Error("Anularea V1 a fost trimisă dar EVA nu a apărut încă în wallet. Lotul e în așteptare și va fi creat pe V2 automat.");
     }
 
     // --- create on V2, same target ---
