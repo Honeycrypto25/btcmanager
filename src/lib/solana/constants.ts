@@ -18,6 +18,8 @@ export const MIN_TRIGGER_ORDER_USD = 5;
 
 /** Trigger V2 rejects deposits below ~$10 (input value at the CURRENT price, not at target). */
 export const MIN_TRIGGER_V2_ORDER_USD = 10;
+/** When a lot's sell slice is below the V2 minimum, top it up (from the lot's own unsold EVA) to this value at the current price — a margin over $10 for price drift. */
+export const MIN_TRIGGER_V2_TARGET_USD = 10.3;
 /** Slippage allowed when a V2 sell order fires (EVA's pool is thin: ~0.6% impact per $10 + fees). */
 export const EVA_V2_SELL_SLIPPAGE_BPS = 300;
 /** V2 orders need an expiry; V1 had none. */

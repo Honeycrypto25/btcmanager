@@ -22,6 +22,7 @@ import {
     EVA_V2_SELL_SLIPPAGE_BPS,
     MIN_TRIGGER_ORDER_USD,
     MIN_TRIGGER_V2_ORDER_USD,
+    MIN_TRIGGER_V2_TARGET_USD,
     SOL_DECIMALS,
     SOL_MINT,
     TRIGGER_V2_ORDER_TTL_DAYS,
@@ -192,8 +193,11 @@ async function reconcileV2Lots(lots: Awaited<ReturnType<typeof db.evaLot.findMan
             });
             result.cancelled++;
         } else {
-            // pending / open / executing / pending_withdraw — still in motion.
-            await db.evaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now } });
+            // pending / open / executing / pending_withdraw — still in motion. Surface anything
+            // other than plain "open" so a stuck/odd order is visible in the dashboard.
+            const stateNote =
+                order.orderState === "open" ? null : `V2 stare: ${order.orderState}${order.rawState ? ` (${order.rawState})` : ""}`;
+            await db.evaLot.update({ where: { id: lot.id }, data: { lastCheckedAt: now, ...(stateNote ? { notes: stateNote } : {}) } });
         }
     }
 }
@@ -600,7 +604,8 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
     }
     const oldKey = lot.jupiterOrderKey;
     const targetPriceUsd = Number(lot.targetPriceUsd);
-    const evaAmount = Number(lot.sellAmountEvaPlanned);
+    const plannedAmount = Number(lot.sellAmountEvaPlanned); // what the V1 order holds
+    let evaAmount = plannedAmount; // what the V2 order will hold (may be topped up below)
 
     const keypair = loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
@@ -613,9 +618,17 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
         throw new Error("Ordinul nu mai e activ pe Jupiter V1 (probabil s-a executat sau anulat). Apasă „Verifică acum” și reîncearcă.");
     }
     const price = await getTokenPriceUsd(EVA_MINT);
-    if (evaAmount * price < MIN_TRIGGER_V2_ORDER_USD) {
+    // V2 needs the deposit worth >= $10 at the CURRENT price. A lot keeps ~10% of its EVA
+    // unsold (bought $10, sells a ~$10-at-target slice), so instead of refusing a slice that
+    // is slightly short, top it up from the lot's OWN unsold EVA — never beyond what the lot
+    // acquired. Same target price; the extra EVA just sells too, at that target.
+    if (evaAmount * price < MIN_TRIGGER_V2_TARGET_USD) {
+        const wanted = MIN_TRIGGER_V2_TARGET_USD / price;
+        evaAmount = Math.floor(Math.min(wanted, Number(lot.evaAcquired)) * 1e6) / 1e6;
+    }
+    if (evaAmount * price < MIN_TRIGGER_V2_ORDER_USD + 0.05) {
         throw new Error(
-            `Ordinul nu poate fi mutat pe V2: ${evaAmount.toFixed(4)} EVA valorează acum $${(evaAmount * price).toFixed(2)}, iar V2 cere minim $${MIN_TRIGGER_V2_ORDER_USD}. Nu am anulat nimic.`
+            `Ordinul nu poate fi mutat pe V2: tot ce a cumpărat lotul (${Number(lot.evaAcquired).toFixed(4)} EVA) valorează acum $${(Number(lot.evaAcquired) * price).toFixed(2)}, iar V2 cere minim $${MIN_TRIGGER_V2_ORDER_USD}. Reîncearcă când prețul e mai mare. Nu am anulat nimic.`
         );
     }
     const token = await getTriggerV2Token(keypair); // proves API key + wallet signature work BEFORE cancelling
@@ -624,10 +637,20 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
     // Free EVA in the wallet BEFORE cancelling — the cancel is confirmed by this going up by the order's amount.
     const evaBalanceBefore = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
 
+    const extraEva = evaAmount - plannedAmount;
+    if (extraEva > 0 && evaBalanceBefore < extraEva) {
+        throw new Error(`Completarea ordinului cere încă ${extraEva.toFixed(4)} EVA liber în wallet, dar sunt doar ${evaBalanceBefore.toFixed(4)}. Nu am anulat nimic.`);
+    }
+
     // --- claim the lot atomically ---
     const claimed = await db.evaLot.updateMany({
         where: { id: lot.id, status: "OPEN", triggerVersion: 1, jupiterOrderKey: oldKey },
-        data: { status: "PENDING_SELL_ORDER", triggerVersion: 2, notes: `Migrare V2 în curs (V1 ${oldKey})` },
+        data: {
+            status: "PENDING_SELL_ORDER",
+            triggerVersion: 2,
+            sellAmountEvaPlanned: evaAmount, // so a cron retry recreates the SAME (topped-up) order
+            notes: `Migrare V2 în curs (V1 ${oldKey})`,
+        },
     });
     if (claimed.count !== 1) throw new Error("Lotul e deja în curs de migrare sau și-a schimbat starea.");
 
@@ -635,7 +658,10 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
     try {
         await cancelTriggerV1Order({ keypair, orderKey: oldKey });
     } catch (err) {
-        await db.evaLot.update({ where: { id: lot.id }, data: { status: "OPEN", triggerVersion: 1, notes: null } });
+        await db.evaLot.update({
+            where: { id: lot.id },
+            data: { status: "OPEN", triggerVersion: 1, sellAmountEvaPlanned: plannedAmount, notes: null },
+        });
         throw err;
     }
     // Confirm the cancel on-chain: the order's EVA must be back in the wallet. (Jupiter's
@@ -646,7 +672,7 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
         if (i > 0) await new Promise((r) => setTimeout(r, 3000));
         try {
             const now = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
-            refunded = now >= evaBalanceBefore + evaAmount * 0.999;
+            refunded = now >= evaBalanceBefore + plannedAmount * 0.999;
         } catch {
             /* transient RPC error — retry */
         }
@@ -678,7 +704,10 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
                 sellOrderCreatedAt: new Date(),
                 sellOrderTxSignature: placed.txSignature,
                 lastCheckedAt: new Date(),
-                notes: `Migrat de pe V1 (${oldKey}); ținta ${targetPriceUsd} păstrată.`,
+                sellAmountEvaPlanned: evaAmount,
+                notes:
+                    `Migrat de pe V1 (${oldKey}); ținta ${targetPriceUsd} păstrată.` +
+                    (extraEva > 0 ? ` Completat cu ${extraEva.toFixed(4)} EVA din restul lotului (minim V2 $${MIN_TRIGGER_V2_ORDER_USD}).` : ""),
             },
         });
         return { lotId: lot.id, oldOrderKey: oldKey, newOrderId: placed.orderKey, targetPriceUsd };
