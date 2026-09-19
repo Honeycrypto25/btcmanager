@@ -5,6 +5,7 @@ import { getSplTokenBalance, loadBotKeypair } from "./wallet";
 import { runEvaSweepForUser } from "./eva-sweep";
 import {
     cancelTriggerV1Order,
+    cancelTriggerV2Order,
     createTriggerSellOrder,
     createTriggerV2SellOrder,
     ensureTriggerV2Vault,
@@ -63,7 +64,8 @@ async function placeSellOrder(params: {
     proceedsUsd: number; // USDC the V1 order asks for (= evaAmount * targetPriceUsd)
     forceV2?: boolean;
     v2Token?: string; // reuse an already-obtained JWT
-}): Promise<{ orderKey: string; txSignature: string; version: 1 | 2 }> {
+    slippageBps?: number; // V2 only; defaults to EVA_V2_SELL_SLIPPAGE_BPS
+}): Promise<{ orderKey: string; txSignature: string; version: 1 | 2; slippageBps?: number }> {
     const useV2 = params.forceV2 === true || process.env.EVA_TRIGGER_VERSION === "2";
     if (!useV2) {
         const { orderKey, txSignature } = await createTriggerSellOrder({
@@ -83,6 +85,7 @@ async function placeSellOrder(params: {
             `Trigger V2 cere un depozit de cel puțin $${MIN_TRIGGER_V2_ORDER_USD} la prețul curent; ${params.evaAmount.toFixed(4)} EVA valorează acum $${valueNowUsd.toFixed(2)}.`
         );
     }
+    const slippageBps = params.slippageBps ?? EVA_V2_SELL_SLIPPAGE_BPS;
     const token = params.v2Token ?? (await getTriggerV2Token(params.keypair));
     await ensureTriggerV2Vault(token);
     const { orderId, txSignature } = await createTriggerV2SellOrder({
@@ -93,10 +96,10 @@ async function placeSellOrder(params: {
         inputAmountRaw: toRawAmount(params.evaAmount, EVA_DECIMALS),
         triggerMint: EVA_MINT,
         triggerPriceUsd: params.targetPriceUsd,
-        slippageBps: EVA_V2_SELL_SLIPPAGE_BPS,
+        slippageBps,
         expiresAtMs: Date.now() + TRIGGER_V2_ORDER_TTL_DAYS * 24 * 60 * 60 * 1000,
     });
-    return { orderKey: orderId, txSignature, version: 2 };
+    return { orderKey: orderId, txSignature, version: 2, slippageBps };
 }
 
 export interface DcaRunResult {
@@ -336,12 +339,13 @@ async function retryPendingSellOrders(
                 : Number(lot.buyPriceUsd) * (1 + Number(settings.takeProfitPercent) / 100);
             const sellAmountEva = lot.sellAmountEvaPlanned ? Number(lot.sellAmountEvaPlanned) : Number(settings.sellAmountUsd) / targetPriceUsd;
 
-            const { orderKey, txSignature, version } = await placeSellOrder({
+            const { orderKey, txSignature, version, slippageBps } = await placeSellOrder({
                 keypair,
                 evaAmount: sellAmountEva,
                 targetPriceUsd,
                 proceedsUsd: sellAmountEva * targetPriceUsd,
                 forceV2: lot.triggerVersion === 2,
+                slippageBps: lot.v2SlippageBps ?? undefined,
             });
 
             await db.evaLot.update({
@@ -352,6 +356,7 @@ async function retryPendingSellOrders(
                     sellAmountEvaPlanned: sellAmountEva,
                     jupiterOrderKey: orderKey,
                     triggerVersion: version,
+                    v2SlippageBps: slippageBps ?? null,
                     sellOrderCreatedAt: new Date(),
                     sellOrderTxSignature: txSignature,
                     notes: null,
@@ -477,7 +482,7 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
             const targetPriceUsd = buyPriceUsd * (1 + Number(settings.takeProfitPercent) / 100);
             const sellAmountEva = sellAmountUsd / targetPriceUsd;
 
-            const { orderKey, txSignature, version } = await placeSellOrder({
+            const { orderKey, txSignature, version, slippageBps } = await placeSellOrder({
                 keypair,
                 evaAmount: sellAmountEva,
                 targetPriceUsd,
@@ -492,6 +497,7 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
                     sellAmountEvaPlanned: sellAmountEva,
                     jupiterOrderKey: orderKey,
                     triggerVersion: version,
+                    v2SlippageBps: slippageBps ?? null,
                     sellOrderCreatedAt: new Date(),
                     sellOrderTxSignature: txSignature,
                 },
@@ -702,6 +708,7 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
                 status: "OPEN",
                 triggerVersion: 2,
                 jupiterOrderKey: placed.orderKey,
+                v2SlippageBps: placed.slippageBps ?? null,
                 sellOrderCreatedAt: new Date(),
                 sellOrderTxSignature: placed.txSignature,
                 lastCheckedAt: new Date(),
@@ -823,6 +830,117 @@ export async function setEvaV2Slippage(userId: string, lotId: string, slippageBp
     await updateTriggerV2OrderSlippage(token, lot.jupiterOrderKey, slippageBps);
     await db.evaLot.update({
         where: { id: lot.id },
-        data: { notes: `${lot.notes ? lot.notes + " " : ""}Slippage V2 setat la ${slippageBps} bps.`.slice(0, 500) },
+        data: { v2SlippageBps: slippageBps },
     });
+}
+
+
+/**
+ * "Anulează și recreează V2" for ONE lot whose V2 order is stuck (e.g. failed fills):
+ *   1. pre-flight: the order must be "open" on Jupiter (not executing/filled), value at the
+ *      current price must clear the V2 minimum;
+ *   2. the lot is claimed atomically (OPEN → PENDING_SELL_ORDER);
+ *   3. the V2 order is cancelled (two-step withdrawal) and the refund is confirmed via the
+ *      wallet's EVA balance;
+ *   4. a fresh V2 order is created at the SAME target with slippage `slippageBps`.
+ * If 3 fails the lot is restored untouched. If 4 fails the EVA is safe in the wallet and the
+ * lot stays PENDING_SELL_ORDER (V2), so the cron retry recreates the order.
+ */
+export async function recreateEvaV2Order(userId: string, lotId: string, slippageBps = EVA_V2_SELL_SLIPPAGE_BPS): Promise<{ lotId: string; oldOrderId: string; newOrderId: string; targetPriceUsd: number }> {
+    const settings = await db.evaSettings.findUnique({ where: { userId } });
+    if (!settings) throw new Error("Setările botului EVA nu sunt configurate.");
+    const lot = await db.evaLot.findFirst({ where: { id: lotId, userId } });
+    if (!lot) throw new Error("Lotul nu există.");
+    if (lot.status !== "OPEN" || lot.triggerVersion !== 2 || !lot.jupiterOrderKey) throw new Error("Lotul nu are un ordin V2 deschis.");
+    if (!lot.targetPriceUsd || !lot.sellAmountEvaPlanned) throw new Error("Lotul nu are ținta sau suma planificată — nu pot recrea ordinul în siguranță.");
+    const oldId = lot.jupiterOrderKey;
+    const targetPriceUsd = Number(lot.targetPriceUsd);
+    const keypair = loadBotKeypair();
+    if (keypair.publicKey.toBase58() !== settings.walletAddress) {
+        throw new Error("SOLANA_PRIVATE_KEY nu corespunde wallet-ului din setări — refuz să tranzacționez.");
+    }
+
+    // --- pre-flight (nothing moved yet) ---
+    const token = await getTriggerV2Token(keypair);
+    const active = await getTriggerV2Orders(token, "active");
+    const order = active.find((o) => o.id === oldId);
+    if (!order) throw new Error("Ordinul nu mai e activ pe Jupiter V2 (probabil s-a executat sau anulat). Apasă „Verifică acum” și reîncearcă.");
+    if (order.orderState !== "open") throw new Error(`Ordinul e în starea „${order.orderState}” — nu-l anulez acum. Reîncearcă peste câteva minute.`);
+    const held = order.remainingInputAmount ? parseAmount(order.remainingInputAmount, EVA_DECIMALS) : null;
+    if (held === null || held <= 0) throw new Error("Nu pot citi suma EVA din ordin — nu anulez.");
+    const price = await getTokenPriceUsd(EVA_MINT);
+    if (held * price < MIN_TRIGGER_V2_ORDER_USD + 0.05) {
+        throw new Error(`După anulare, ${held.toFixed(4)} EVA ar valora $${(held * price).toFixed(2)} < minimul V2 de $${MIN_TRIGGER_V2_ORDER_USD} și nu aș putea recrea ordinul. Nu am anulat nimic.`);
+    }
+    const balanceBefore = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
+
+    // --- claim the lot atomically ---
+    const claimed = await db.evaLot.updateMany({
+        where: { id: lot.id, status: "OPEN", triggerVersion: 2, jupiterOrderKey: oldId },
+        data: { status: "PENDING_SELL_ORDER", sellAmountEvaPlanned: held, v2SlippageBps: slippageBps, notes: `Recreare V2 în curs (ordin ${oldId})` },
+    });
+    if (claimed.count !== 1) throw new Error("Lotul e deja în curs de modificare sau și-a schimbat starea.");
+
+    // --- cancel on V2 ---
+    try {
+        await cancelTriggerV2Order({ keypair, token, orderId: oldId });
+    } catch (err) {
+        await db.evaLot.update({
+            where: { id: lot.id },
+            data: { status: "OPEN", sellAmountEvaPlanned: lot.sellAmountEvaPlanned, v2SlippageBps: lot.v2SlippageBps, notes: lot.notes },
+        });
+        throw err;
+    }
+    let refunded = false;
+    for (let i = 0; i < 10 && !refunded; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 3000));
+        try {
+            const now = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
+            refunded = now >= balanceBefore + held * 0.999;
+        } catch {
+            /* transient RPC error — retry */
+        }
+    }
+    if (!refunded) {
+        await db.evaLot.update({
+            where: { id: lot.id },
+            data: { notes: `Ordinul V2 ${oldId}: anulare trimisă dar EVA încă nerestituit. Lotul e în așteptare; cron-ul creează ordinul nou când EVA e liber.` },
+        });
+        throw new Error("Anularea V2 a fost trimisă dar EVA nu a apărut încă în wallet. Lotul e în așteptare și ordinul se recreează automat.");
+    }
+
+    // --- recreate at the same target ---
+    try {
+        const placed = await placeSellOrder({
+            keypair,
+            evaAmount: held,
+            targetPriceUsd,
+            proceedsUsd: held * targetPriceUsd,
+            forceV2: true,
+            v2Token: token,
+            slippageBps,
+        });
+        await db.evaLot.update({
+            where: { id: lot.id },
+            data: {
+                status: "OPEN",
+                triggerVersion: 2,
+                jupiterOrderKey: placed.orderKey,
+                v2SlippageBps: placed.slippageBps ?? null,
+                sellOrderCreatedAt: new Date(),
+                sellOrderTxSignature: placed.txSignature,
+                lastCheckedAt: new Date(),
+                sellAmountEvaPlanned: held,
+                notes: `Ordin V2 recreat (vechi ${oldId}); ținta ${targetPriceUsd} păstrată, slippage ${slippageBps} bps.`,
+            },
+        });
+        return { lotId: lot.id, oldOrderId: oldId, newOrderId: placed.orderKey, targetPriceUsd };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await db.evaLot.update({
+            where: { id: lot.id },
+            data: { notes: `Ordinul V2 ${oldId} anulat; recrearea a eșuat: ${message}. EVA e în wallet, se reîncearcă automat.` },
+        });
+        throw new Error(`Ordinul vechi a fost anulat, dar recrearea a eșuat: ${message}. EVA e în wallet și cron-ul reîncearcă automat.`);
+    }
 }

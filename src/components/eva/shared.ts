@@ -16,6 +16,7 @@ export interface LotDTO {
     sellAmountEvaPlanned: string | null;
     jupiterOrderKey: string | null;
     triggerVersion: number;
+    v2SlippageBps: number | null;
     sellOrderCreatedAt: string | null;
     sellOrderTxSignature: string | null;
     soldAt: string | null;

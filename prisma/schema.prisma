@@ -1161,6 +1161,8 @@ model EvaLot {
   // 1 = Jupiter Trigger V1 (order account on-chain, filled by V1 keepers), 2 = Trigger V2 (Privy vault, USD-price trigger).
   // jupiterOrderKey holds the V1 order account OR the V2 order UUID accordingly.
   triggerVersion       Int      @default(1)
+  // Slippage (bps) last set on the V2 order via the dashboard; null = default from EVA_V2_SELL_SLIPPAGE_BPS.
+  v2SlippageBps        Int?
   sellOrderCreatedAt   DateTime?
   sellOrderTxSignature String?
 

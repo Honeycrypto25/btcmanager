@@ -16,7 +16,9 @@ import {
     ResponsiveContainer,
 } from "recharts";
 import { format } from "date-fns";
-import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter, Copy, Check } from "lucide-react";
+import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter, Copy, Check, RefreshCw } from "lucide-react";
+import { checkAllPolygonOrdersNow } from "@/app/actions/polygon";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Card, Button, cn } from "@/components/ui/core";
 
 const PAGE_SIZE = 10;
@@ -187,6 +189,31 @@ function Pager({
 }
 
 export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, currentPrices }: Props) {
+    const isAdmin = useIsAdmin();
+    const [checking, setChecking] = useState(false);
+    const [checkMessage, setCheckMessage] = useState<string | null>(null);
+    const [checkWarnings, setCheckWarnings] = useState<string[]>([]);
+    const [checkError, setCheckError] = useState<string | null>(null);
+
+    async function handleCheckNow() {
+        setChecking(true);
+        setCheckMessage(null);
+        setCheckWarnings([]);
+        setCheckError(null);
+        try {
+            const r = await checkAllPolygonOrdersNow();
+            const parts = [`${r.checked} verificate`];
+            if (r.filled > 0) parts.push(`${r.filled} răscumpărate`);
+            if (r.cancelled > 0) parts.push(`${r.cancelled} anulate`);
+            setCheckMessage(r.checked === 0 ? "Niciun ordin activ de verificat." : parts.join(", "));
+            setCheckWarnings(r.warnings);
+        } catch (err) {
+            setCheckError(err instanceof Error ? err.message : "Verificarea a eșuat.");
+        } finally {
+            setChecking(false);
+        }
+    }
+
     const [tokenFilter, setTokenFilter] = useState<string | "all">("all");
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
@@ -373,7 +400,24 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                     <h1 className="font-display text-2xl font-medium text-foreground">Statistici Polygon Reverse-DCA</h1>
                     <p className="text-muted text-sm">Vânzări, ordine de răscumpărare și retrageri, pe toate token-urile.</p>
                 </div>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+                    {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
+                    {checkError && <span className="text-xs text-red-300">{checkError}</span>}
+                    {isAdmin && (
+                        <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
+                            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", checking && "animate-spin")} />
+                            {checking ? "Se verifică..." : "Verifică acum"}
+                        </Button>
+                    )}
+                </div>
             </div>
+            {checkWarnings.length > 0 && (
+                <Card className="space-y-1 border-orange-500/20 bg-orange-500/5 p-4">
+                    {checkWarnings.map((w) => (
+                        <p key={w} className="text-xs text-orange-300">⚠ {w}</p>
+                    ))}
+                </Card>
+            )}
 
             <div className="flex flex-wrap gap-2">
                 <button

@@ -579,3 +579,21 @@ export async function getTriggerV2Orders(token: string, state: "active" | "past"
 export async function updateTriggerV2OrderSlippage(token: string, orderId: string, slippageBps: number): Promise<void> {
     await v2Fetch(`/orders/price/${orderId}`, { method: "PATCH", token, body: { orderType: "single", slippageBps } });
 }
+
+/**
+ * Cancels an open V2 price order: step 1 returns an unsigned withdrawal tx (vault → wallet),
+ * step 2 sends it back signed. The EVA returns to the bot wallet once it confirms on-chain.
+ */
+export async function cancelTriggerV2Order(params: { keypair: Keypair; token: string; orderId: string }): Promise<{ txSignature?: string }> {
+    const cancel = await v2Fetch<{ id: string; transaction: string; requestId: string }>(`/orders/price/cancel/${params.orderId}`, {
+        method: "POST",
+        token: params.token,
+    });
+    const tx = VersionedTransaction.deserialize(Buffer.from(cancel.transaction, "base64"));
+    tx.sign([params.keypair]);
+    return v2Fetch<{ id: string; txSignature?: string }>(`/orders/price/confirm-cancel/${params.orderId}`, {
+        method: "POST",
+        token: params.token,
+        body: { signedTransaction: Buffer.from(tx.serialize()).toString("base64"), cancelRequestId: cancel.requestId },
+    });
+}

@@ -19,7 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
-import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action, setEvaV2SlippageAction } from "@/app/actions/eva";
+import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action, setEvaV2SlippageAction, recreateEvaV2OrderAction } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const PAGE_SIZE = 10;
@@ -650,6 +650,21 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
         }
     }
 
+    async function handleRecreate(lot: LotDTO) {
+        const target = lot.targetPriceUsd ? formatPrice(Number(lot.targetPriceUsd)) : "—";
+        if (!window.confirm(`Anulez ordinul V2 (EVA revine în wallet) și îl recreez la aceeași țintă (${target}) cu slippage 6%? Durează ~15-30 s.`)) return;
+        setBusyLotId(lot.id);
+        setRowMessage(null);
+        try {
+            const r = await recreateEvaV2OrderAction(lot.id);
+            setRowMessage({ lotId: lot.id, ok: r.ok, text: r.message });
+        } catch (err) {
+            setRowMessage({ lotId: lot.id, ok: false, text: err instanceof Error ? err.message : "Recrearea a eșuat." });
+        } finally {
+            setBusyLotId(null);
+        }
+    }
+
     async function handleMigrate(lot: LotDTO) {
         const target = lot.targetPriceUsd ? formatPrice(Number(lot.targetPriceUsd)) : "—";
         if (!window.confirm(`Anulez ordinul V1 și îl recreez pe V2 la aceeași țintă (${target})?`)) return;
@@ -760,9 +775,18 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                             {busyLotId === lot.id ? "Se mută…" : "Mută pe V2"}
                                         </Button>
                                     ) : isAdmin && lot.status === "OPEN" && lot.triggerVersion === 2 ? (
-                                        <Button variant="outline" size="sm" onClick={() => handleSlippage(lot)} disabled={busyLotId !== null}>
-                                            {busyLotId === lot.id ? "Se aplică…" : "Slippage 6%"}
-                                        </Button>
+                                        <div className="flex flex-col items-start gap-1">
+                                            {(lot.v2SlippageBps ?? 0) >= 600 ? (
+                                                <span className="text-xs text-emerald-300">Slippage 6% ✓</span>
+                                            ) : (
+                                                <Button variant="outline" size="sm" onClick={() => handleSlippage(lot)} disabled={busyLotId !== null}>
+                                                    {busyLotId === lot.id ? "Se aplică…" : "Slippage 6%"}
+                                                </Button>
+                                            )}
+                                            <Button variant="outline" size="sm" onClick={() => handleRecreate(lot)} disabled={busyLotId !== null}>
+                                                {busyLotId === lot.id ? "Se recreează…" : "Anulează și recreează V2"}
+                                            </Button>
+                                        </div>
                                     ) : (
                                         "—"
                                     )}

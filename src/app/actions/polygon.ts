@@ -169,6 +169,46 @@ export async function reconcilePolygonOrdersNow(settingsId: string) {
     return result;
 }
 
+export interface PolygonCheckAllResult {
+    checked: number;
+    filled: number;
+    cancelled: number;
+    /** Open buy-back orders whose target is at/above the live price but which 1inch has not filled. */
+    warnings: string[];
+}
+
+/** "Verifică acum" on the stats page: reconciles every token's open buy-back orders, then flags open orders whose target the price has already reached. */
+export async function checkAllPolygonOrdersNow(): Promise<PolygonCheckAllResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const settings = await db.polygonTokenSettings.findMany({ where: { userId } });
+    const total: PolygonCheckAllResult = { checked: 0, filled: 0, cancelled: 0, warnings: [] };
+    for (const s of settings) {
+        const r = await reconcilePolygonOrdersForSettings(s.id);
+        total.checked += r.checked;
+        total.filled += r.filled;
+        total.cancelled += r.cancelled;
+    }
+    const [prices, open] = await Promise.all([
+        getPolygonCurrentPrices().catch(() => [] as PolygonCurrentPrice[]),
+        db.polygonTokenLot.findMany({ where: { userId, status: "OPEN" }, orderBy: { soldAt: "asc" } }),
+    ]);
+    const priceById = new Map(prices.map((p) => [p.settingsId, p.priceUsd]));
+    const symbolById = new Map(settings.map((s) => [s.id, s.tokenSymbol]));
+    for (const lot of open) {
+        const price = priceById.get(lot.settingsId);
+        if (price == null || !lot.targetPriceUsd) continue;
+        if (price <= Number(lot.targetPriceUsd)) {
+            total.warnings.push(
+                `${symbolById.get(lot.settingsId) ?? "?"} ${lot.soldAt.toISOString().slice(0, 10)}: prețul $${price} e sub ținta $${Number(lot.targetPriceUsd)} dar ordinul e încă activ în 1inch.`
+            );
+        }
+    }
+    revalidatePath("/polygon");
+    revalidatePath("/polygon/stats");
+    return total;
+}
+
 /** Native POL balance — the gas float needed for both the sell swap and placing/filling orders. */
 export async function getPolygonGasStatus(): Promise<{ nativeBalance: number } | { error: string }> {
     await requireUserId();

@@ -21,6 +21,6 @@ export const MIN_TRIGGER_V2_ORDER_USD = 10;
 /** When a lot's sell slice is below the V2 minimum, top it up (from the lot's own unsold EVA) to this value at the current price — a margin over $10 for price drift. */
 export const MIN_TRIGGER_V2_TARGET_USD = 10.3;
 /** Slippage allowed when a V2 sell order fires (EVA's pool is thin: ~0.6% impact per $10 + fees). */
-export const EVA_V2_SELL_SLIPPAGE_BPS = 300;
+export const EVA_V2_SELL_SLIPPAGE_BPS = 600;
 /** V2 orders need an expiry; V1 had none. */
 export const TRIGGER_V2_ORDER_TTL_DAYS = 180;

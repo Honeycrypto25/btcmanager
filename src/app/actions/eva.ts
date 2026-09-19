@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2, diagnoseEvaV2, setEvaV2Slippage } from "@/lib/solana/eva-dca";
+import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2, diagnoseEvaV2, setEvaV2Slippage, recreateEvaV2Order } from "@/lib/solana/eva-dca";
 import { runEvaSweepForUser } from "@/lib/solana/eva-sweep";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
@@ -189,6 +189,20 @@ export async function setEvaV2SlippageAction(lotId: string, slippageBps: number)
     try {
         await setEvaV2Slippage(userId, lotId, slippageBps);
         return { ok: true, message: `Slippage setat la ${(slippageBps / 100).toFixed(1)}%.` };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+        revalidatePath("/solana/eva/stats");
+    }
+}
+
+/** "Anulează și recreează V2" for one lot with a stuck V2 order. */
+export async function recreateEvaV2OrderAction(lotId: string): Promise<MigrateActionResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        const r = await recreateEvaV2Order(userId, lotId);
+        return { ok: true, message: `Ordin recreat pe V2 la ținta $${r.targetPriceUsd} (id nou ${r.newOrderId.slice(0, 8)}…).` };
     } catch (err) {
         return { ok: false, message: err instanceof Error ? err.message : String(err) };
     } finally {
