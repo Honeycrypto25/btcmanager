@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2, diagnoseEvaV2 } from "@/lib/solana/eva-dca";
+import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2, diagnoseEvaV2, setEvaV2Slippage } from "@/lib/solana/eva-dca";
 import { runEvaSweepForUser } from "@/lib/solana/eva-sweep";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
@@ -179,6 +179,20 @@ export async function diagnoseEvaV2Action(): Promise<{ ok: boolean; lines: strin
         return { ok: true, lines: await diagnoseEvaV2(userId) };
     } catch (err) {
         return { ok: false, lines: [err instanceof Error ? err.message : String(err)] };
+    }
+}
+
+/** Widen slippage on one open V2 order (in place). */
+export async function setEvaV2SlippageAction(lotId: string, slippageBps: number): Promise<MigrateActionResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        await setEvaV2Slippage(userId, lotId, slippageBps);
+        return { ok: true, message: `Slippage setat la ${(slippageBps / 100).toFixed(1)}%.` };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+        revalidatePath("/solana/eva/stats");
     }
 }
 

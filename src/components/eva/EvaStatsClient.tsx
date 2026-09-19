@@ -19,7 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
-import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action } from "@/app/actions/eva";
+import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action, setEvaV2SlippageAction } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const PAGE_SIZE = 10;
@@ -636,6 +636,20 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
     const [busyLotId, setBusyLotId] = useState<string | null>(null);
     const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
 
+    async function handleSlippage(lot: LotDTO) {
+        if (!window.confirm("Cresc toleranța de slippage a acestui ordin V2 la 6%? Ordinul rămâne pe loc; poate vinde până la 6% sub preț.")) return;
+        setBusyLotId(lot.id);
+        setRowMessage(null);
+        try {
+            const r = await setEvaV2SlippageAction(lot.id, 600);
+            setRowMessage({ lotId: lot.id, ok: r.ok, text: r.message });
+        } catch (err) {
+            setRowMessage({ lotId: lot.id, ok: false, text: err instanceof Error ? err.message : "Modificarea a eșuat." });
+        } finally {
+            setBusyLotId(null);
+        }
+    }
+
     async function handleMigrate(lot: LotDTO) {
         const target = lot.targetPriceUsd ? formatPrice(Number(lot.targetPriceUsd)) : "—";
         if (!window.confirm(`Anulez ordinul V1 și îl recreez pe V2 la aceeași țintă (${target})?`)) return;
@@ -744,6 +758,10 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                     {isAdmin && lot.status === "OPEN" && (lot.triggerVersion ?? 1) === 1 ? (
                                         <Button variant="outline" size="sm" onClick={() => handleMigrate(lot)} disabled={busyLotId !== null}>
                                             {busyLotId === lot.id ? "Se mută…" : "Mută pe V2"}
+                                        </Button>
+                                    ) : isAdmin && lot.status === "OPEN" && lot.triggerVersion === 2 ? (
+                                        <Button variant="outline" size="sm" onClick={() => handleSlippage(lot)} disabled={busyLotId !== null}>
+                                            {busyLotId === lot.id ? "Se aplică…" : "Slippage 6%"}
                                         </Button>
                                     ) : (
                                         "—"

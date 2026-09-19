@@ -10,6 +10,7 @@ import {
     ensureTriggerV2Vault,
     executeUltraOrder,
     getTriggerV2Orders,
+    updateTriggerV2OrderSlippage,
     getTriggerV2Token,
     getActiveTriggerOrders,
     getHistoricalTriggerOrder,
@@ -786,7 +787,7 @@ export async function diagnoseEvaV2(userId: string): Promise<string[]> {
         if (issues.length > 0) problems++;
         out.push(`${issues.length > 0 ? "⚠" : "✓"} ${label}: ${issues.length > 0 ? issues.join("; ") : "open, țintă și sumă corecte"}`);
         // For a flagged order, include Jupiter's raw record (state, events, execution attempts) so the cause is visible.
-        if (issues.length > 0) out.push(`   raw: ${JSON.stringify(order).slice(0, 900)}`);
+        if (issues.length > 0) out.push(`   raw: ${JSON.stringify(order).slice(0, 2200)}`);
     }
 
     const total = lots.reduce((acc, l) => acc + Number(l.evaAcquired) - Number(l.evaSold ?? 0), 0);
@@ -805,4 +806,23 @@ export async function diagnoseEvaV2(userId: string): Promise<string[]> {
     }
     out.push(problems === 0 ? "Rezultat: totul e în ordine." : `Rezultat: ${problems} probleme de verificat.`);
     return out;
+}
+
+
+/** Widens the slippage tolerance of ONE open V2 order in place (nothing is cancelled or moved). */
+export async function setEvaV2Slippage(userId: string, lotId: string, slippageBps: number): Promise<void> {
+    if (!Number.isInteger(slippageBps) || slippageBps < 50 || slippageBps > 1500) {
+        throw new Error("Slippage-ul trebuie să fie între 50 și 1500 bps.");
+    }
+    const lot = await db.evaLot.findFirst({ where: { id: lotId, userId } });
+    if (!lot || lot.status !== "OPEN" || lot.triggerVersion !== 2 || !lot.jupiterOrderKey) {
+        throw new Error("Lotul nu are un ordin V2 deschis.");
+    }
+    const keypair = loadBotKeypair();
+    const token = await getTriggerV2Token(keypair);
+    await updateTriggerV2OrderSlippage(token, lot.jupiterOrderKey, slippageBps);
+    await db.evaLot.update({
+        where: { id: lot.id },
+        data: { notes: `${lot.notes ? lot.notes + " " : ""}Slippage V2 setat la ${slippageBps} bps.`.slice(0, 500) },
+    });
 }

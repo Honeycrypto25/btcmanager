@@ -574,3 +574,8 @@ export async function getTriggerV2Orders(token: string, state: "active" | "past"
     }
     return all;
 }
+
+/** Edits an open V2 single price order in place (no new deposit needed) — used to widen slippage on an order whose fills keep failing. */
+export async function updateTriggerV2OrderSlippage(token: string, orderId: string, slippageBps: number): Promise<void> {
+    await v2Fetch(`/orders/price/${orderId}`, { method: "PATCH", token, body: { orderType: "single", slippageBps } });
+}
