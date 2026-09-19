@@ -785,6 +785,8 @@ export async function diagnoseEvaV2(userId: string): Promise<string[]> {
         if (issues.length === 0 && above) issues.push(`prețul ($${price.toFixed(4)}) e PESTE țintă dar ordinul e încă „open" — Jupiter nu l-a declanșat încă`);
         if (issues.length > 0) problems++;
         out.push(`${issues.length > 0 ? "⚠" : "✓"} ${label}: ${issues.length > 0 ? issues.join("; ") : "open, țintă și sumă corecte"}`);
+        // For a flagged order, include Jupiter's raw record (state, events, execution attempts) so the cause is visible.
+        if (issues.length > 0) out.push(`   raw: ${JSON.stringify(order).slice(0, 900)}`);
     }
 
     const total = lots.reduce((acc, l) => acc + Number(l.evaAcquired) - Number(l.evaSold ?? 0), 0);
