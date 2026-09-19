@@ -19,7 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
-import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action } from "@/app/actions/eva";
+import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const PAGE_SIZE = 10;
@@ -58,6 +58,22 @@ export function EvaStatsClient({
     const [checking, setChecking] = useState(false);
     const [checkMessage, setCheckMessage] = useState<string | null>(null);
     const [checkError, setCheckError] = useState<string | null>(null);
+
+    const [diagnosing, setDiagnosing] = useState(false);
+    const [diagnosis, setDiagnosis] = useState<string[] | null>(null);
+
+    async function handleDiagnose() {
+        setDiagnosing(true);
+        setDiagnosis(null);
+        try {
+            const r = await diagnoseEvaV2Action();
+            setDiagnosis(r.lines);
+        } catch (err) {
+            setDiagnosis([err instanceof Error ? err.message : "Diagnosticul a eșuat."]);
+        } finally {
+            setDiagnosing(false);
+        }
+    }
 
     const [migrating, setMigrating] = useState(false);
     const [migrateMessage, setMigrateMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -530,6 +546,11 @@ export function EvaStatsClient({
                         {migrateMessage && (
                             <span className={cn("text-xs", migrateMessage.ok ? "text-emerald-300" : "text-red-300")}>{migrateMessage.text}</span>
                         )}
+                        {isAdmin && (
+                            <Button variant="outline" size="sm" onClick={handleDiagnose} disabled={diagnosing}>
+                                {diagnosing ? "Se verifică…" : "Diagnostic V2"}
+                            </Button>
+                        )}
                         {isAdmin && stuckCount > 0 && (
                             <Button variant="outline" size="sm" onClick={handleMigrateStuck} disabled={migrating}>
                                 {migrating ? "Se mută…" : `Mută ${stuckCount} blocate pe V2`}
@@ -547,6 +568,9 @@ export function EvaStatsClient({
                 <p className="mb-4 text-xs text-faint">
                     Fiecare rând e un ciclu complet — cumpărare (mereu confirmată pe blockchain) și, alături, statusul vânzării ({pendingLots.length} în așteptare, {finalLots.length} finalizate).
                 </p>
+                {diagnosis && (
+                    <pre className="mb-3 whitespace-pre-wrap rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs text-muted">{diagnosis.join("\n")}</pre>
+                )}
                 <CyclesTable lots={lots} currentPriceUsd={evaPriceUsd} />
             </Card>
 

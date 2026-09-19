@@ -741,3 +741,66 @@ export async function migrateStuckEvaLotsToV2(userId: string): Promise<{ migrate
     }
     return { migrated, skipped: 0 };
 }
+
+
+/**
+ * Read-only health check of the V2 side (moves nothing): for every open V2 lot it
+ * finds the order on Jupiter and compares state, trigger price and amount with the
+ * DB, and it compares the wallet's free EVA with what the DB says it should be.
+ */
+export async function diagnoseEvaV2(userId: string): Promise<string[]> {
+    const out: string[] = [];
+    const settings = await db.evaSettings.findUnique({ where: { userId } });
+    if (!settings) return ["Setările botului EVA nu sunt configurate."];
+    const keypair = loadBotKeypair();
+    const [price, token, lots] = await Promise.all([
+        getTokenPriceUsd(EVA_MINT),
+        getTriggerV2Token(keypair),
+        db.evaLot.findMany({ where: { userId, status: { not: "FAILED" } }, orderBy: { boughtAt: "asc" } }),
+    ]);
+    const [active, past] = [await getTriggerV2Orders(token, "active"), await (async () => { await new Promise((r) => setTimeout(r, 1100)); return getTriggerV2Orders(token, "past"); })()];
+    const byId = new Map([...past, ...active].map((o) => [o.id, o]));
+    out.push(`Preț EVA acum: $${price.toFixed(4)} · ordine V2 active la Jupiter: ${active.length}`);
+
+    let problems = 0;
+    for (const lot of lots.filter((l) => l.triggerVersion === 2 && (l.status === "OPEN" || l.status === "PENDING_SELL_ORDER"))) {
+        const label = `${lot.boughtAt.toISOString().slice(5, 10)} (ținta $${Number(lot.targetPriceUsd).toFixed(4)})`;
+        const order = lot.jupiterOrderKey ? byId.get(lot.jupiterOrderKey) : undefined;
+        if (!order) {
+            out.push(`⚠ ${label}: NU găsesc ordinul V2 ${lot.jupiterOrderKey?.slice(0, 8) ?? "—"} la Jupiter (lot ${lot.status}).`);
+            problems++;
+            continue;
+        }
+        const issues: string[] = [];
+        if (order.orderState !== "open") issues.push(`stare „${order.orderState}"${order.rawState ? ` (${order.rawState})` : ""}`);
+        if (order.triggerPriceUsd !== undefined && Math.abs(Number(order.triggerPriceUsd) - Number(lot.targetPriceUsd)) > 0.0002) {
+            issues.push(`țintă Jupiter $${order.triggerPriceUsd} ≠ DB $${Number(lot.targetPriceUsd)}`);
+        }
+        const remaining = parseAmount(order.remainingInputAmount ?? order.initialInputAmount, EVA_DECIMALS);
+        const planned = Number(lot.sellAmountEvaPlanned ?? 0);
+        if (remaining !== null && planned > 0 && Math.abs(remaining - planned) / planned > 0.005) {
+            issues.push(`sumă Jupiter ${remaining.toFixed(4)} EVA ≠ DB ${planned.toFixed(4)}`);
+        }
+        const above = price >= Number(lot.targetPriceUsd);
+        if (issues.length === 0 && above) issues.push(`prețul ($${price.toFixed(4)}) e PESTE țintă dar ordinul e încă „open" — Jupiter nu l-a declanșat încă`);
+        if (issues.length > 0) problems++;
+        out.push(`${issues.length > 0 ? "⚠" : "✓"} ${label}: ${issues.length > 0 ? issues.join("; ") : "open, țintă și sumă corecte"}`);
+    }
+
+    const total = lots.reduce((acc, l) => acc + Number(l.evaAcquired) - Number(l.evaSold ?? 0), 0);
+    const inOrders = lots.filter((l) => l.status === "OPEN" || l.status === "PENDING_SELL_ORDER").reduce((acc, l) => acc + Number(l.sellAmountEvaPlanned ?? 0), 0);
+    const expectedFree = total - inOrders;
+    try {
+        const freeNow = await getSplTokenBalance(settings.walletAddress, EVA_MINT);
+        const diff = freeNow - expectedFree;
+        out.push(`EVA liber în wallet (RPC): ${freeNow.toFixed(4)} · așteptat din DB: ${expectedFree.toFixed(4)} · diferență ${diff >= 0 ? "+" : ""}${diff.toFixed(4)}`);
+        if (Math.abs(diff) > 0.01) {
+            problems++;
+            out.push("⚠ Diferența de EVA liber e peste 0,01 — verifică depozitele/anulările recente.");
+        }
+    } catch (err) {
+        out.push(`(nu am putut citi soldul EVA: ${err instanceof Error ? err.message : String(err)})`);
+    }
+    out.push(problems === 0 ? "Rezultat: totul e în ordine." : `Rezultat: ${problems} probleme de verificat.`);
+    return out;
+}

@@ -552,6 +552,7 @@ export interface TriggerV2Order {
     id: string;
     orderState: string; // pending | open | executing | filled | pending_withdraw | cancelled | expired | failed
     rawState?: string;
+    expiresAt?: number;
     initialInputAmount?: string;
     remainingInputAmount?: string;
     triggerPriceUsd?: number;

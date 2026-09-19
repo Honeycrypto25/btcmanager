@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2 } from "@/lib/solana/eva-dca";
+import { runEvaDcaForUser, reconcileEvaOrdersForUser, migrateEvaLotToV2, migrateStuckEvaLotsToV2, diagnoseEvaV2 } from "@/lib/solana/eva-dca";
 import { runEvaSweepForUser } from "@/lib/solana/eva-sweep";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
@@ -169,6 +169,17 @@ export async function reconcileEvaOrdersNow() {
     revalidatePath("/solana/eva");
     revalidatePath("/solana/eva/stats");
     return result;
+}
+
+/** Read-only V2 health check — see diagnoseEvaV2. */
+export async function diagnoseEvaV2Action(): Promise<{ ok: boolean; lines: string[] }> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        return { ok: true, lines: await diagnoseEvaV2(userId) };
+    } catch (err) {
+        return { ok: false, lines: [err instanceof Error ? err.message : String(err)] };
+    }
 }
 
 export interface MigrateActionResult {
