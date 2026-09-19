@@ -19,6 +19,7 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 import type { AssetEvolution, ValuePoint } from "@/lib/overview-evolution";
+import type { BotProfit } from "@/lib/bot-profit";
 
 export interface AssetFigures {
     invested: number;
@@ -235,7 +236,9 @@ export function OverviewClient({
     vanguardOnlySeries,
     fidelity,
     fidelitySeries,
+    botProfits,
 }: {
+    botProfits?: BotProfit[];
     data: OverviewData;
     usdToGbp: number;
     selfEmployed?: SelfEmployedSnapshot | null;
@@ -530,6 +533,39 @@ export function OverviewClient({
                         </div>
                     </Card>
                 </Link>
+            )}
+
+            {/* Realized profit per bot, last 30 days (vs the 30 days before) */}
+            {botProfits && botProfits.length > 0 && (
+                <div className="space-y-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <h2 className="text-sm font-medium text-foreground">Profit boți — ultimele 30 de zile</h2>
+                        <p className={cn("text-sm font-num font-medium", pnlColor(botProfits.reduce((a, b) => a + b.profit30d, 0)))}>
+                            Total: {fmt(botProfits.reduce((a, b) => a + b.profit30d, 0) * factor)}
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {botProfits.map((b) => {
+                            const delta = b.profit30d - b.profitPrev30d;
+                            return (
+                                <Link key={b.key} href={b.href} className="block">
+                                    <Card hover className="group cursor-pointer">
+                                        <p className="text-xs font-medium text-muted uppercase tracking-wider mb-3">{b.label}</p>
+                                        <h3 className={cn("text-2xl font-medium font-num", pnlColor(b.profit30d))}>
+                                            {b.profit30d >= 0 ? "+" : ""}{fmt(b.profit30d * factor)}
+                                        </h3>
+                                        <p className="mt-2 text-xs text-faint">
+                                            {b.count30d} {b.count30d === 1 ? "ciclu închis" : "cicluri închise"} · {b.openOrders} {b.openOrders === 1 ? "ordin activ" : "ordine active"}
+                                        </p>
+                                        <p className={cn("mt-1 text-xs", pnlColor(delta))}>
+                                            {delta >= 0 ? "▲" : "▼"} {fmt(Math.abs(delta) * factor)} față de cele 30 de zile dinainte
+                                        </p>
+                                    </Card>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </div>
             )}
 
             {/* Per-asset stats */}

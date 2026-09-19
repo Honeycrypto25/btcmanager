@@ -7,6 +7,7 @@ import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getOverviewData } from "@/lib/overview-data";
+import { getBotProfits, type BotProfit } from "@/lib/bot-profit";
 import { OverviewClient, type VanguardOverviewSnapshot, type AssetFigures } from "@/components/overview/OverviewClient";
 import { getSelfEmployedSummary } from "@/app/actions/self-employed";
 import { getCurrentUkTaxYear } from "@/lib/tax/uk-tax-year";
@@ -126,9 +127,19 @@ export default async function OverviewPage() {
         fidelitySeries = [];
     }
 
+    // Realized bot profit over the last 30 days — isolated like the blocks above so a bot-table read failure can't take the page down.
+    let botProfits: BotProfit[] = [];
+    try {
+        const userId = (session.user as { id?: string }).id;
+        if (userId) botProfits = await getBotProfits(userId);
+    } catch {
+        botProfits = [];
+    }
+
     return (
         <DashboardLayout>
             <OverviewClient
+                botProfits={botProfits}
                 data={data}
                 usdToGbp={usdToGbp}
                 selfEmployed={selfEmployed}
