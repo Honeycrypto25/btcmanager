@@ -91,3 +91,43 @@ export async function getBotProfits(userId: string): Promise<BotProfit[]> {
     }
     return out;
 }
+
+export interface BotCycleEvent {
+    botKey: string;
+    botLabel: string;
+    /** ISO timestamp of the moment the cycle was completed. */
+    at: string;
+}
+
+/**
+ * Completed cycles of the last 60 days, one event per cycle, stamped with the
+ * day the FULL cycle finished: DCA bots (SOL, EVA, Base, BNB) = the sell
+ * filled (soldAt); Polygon reverse-DCA = the buy-back filled (filledAt, i.e.
+ * sold high AND bought back low).
+ */
+export async function getBotCycleEvents(userId: string): Promise<BotCycleEvent[]> {
+    const since = new Date(Date.now() - 60 * DAY_MS);
+    const dcaWhere = { userId, status: "FILLED" as const, soldAt: { gte: since } };
+    const [sol, eva, evm, bnb, polySettings, poly] = await Promise.all([
+        db.solanaLot.findMany({ where: dcaWhere, select: { soldAt: true } }),
+        db.evaLot.findMany({ where: dcaWhere, select: { soldAt: true } }),
+        db.evmLot.findMany({ where: dcaWhere, select: { soldAt: true } }),
+        db.bnbLot.findMany({ where: dcaWhere, select: { soldAt: true } }),
+        db.polygonTokenSettings.findMany({ where: { userId }, select: { id: true, tokenSymbol: true } }),
+        db.polygonTokenLot.findMany({ where: { userId, status: "FILLED", filledAt: { gte: since } }, select: { settingsId: true, filledAt: true } }),
+    ]);
+    const out: BotCycleEvent[] = [];
+    const add = (rows: { soldAt: Date | null }[], botKey: string, botLabel: string) => {
+        for (const r of rows) if (r.soldAt) out.push({ botKey, botLabel, at: r.soldAt.toISOString() });
+    };
+    add(sol, "sol", "Solana (SOL)");
+    add(eva, "eva", "EVA");
+    add(evm, "base", "Base (WETH)");
+    add(bnb, "bnb", "BNB");
+    const symbolById = new Map(polySettings.map((s) => [s.id, s.tokenSymbol]));
+    for (const l of poly) {
+        if (!l.filledAt) continue;
+        out.push({ botKey: `poly-${l.settingsId}`, botLabel: `Polygon (${symbolById.get(l.settingsId) ?? "?"})`, at: l.filledAt.toISOString() });
+    }
+    return out;
+}

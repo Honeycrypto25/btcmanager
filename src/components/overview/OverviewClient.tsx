@@ -19,7 +19,7 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 import type { AssetEvolution, ValuePoint } from "@/lib/overview-evolution";
-import type { BotProfit } from "@/lib/bot-profit";
+import type { BotProfit, BotCycleEvent } from "@/lib/bot-profit";
 
 export interface AssetFigures {
     invested: number;
@@ -237,8 +237,10 @@ export function OverviewClient({
     fidelity,
     fidelitySeries,
     botProfits,
+    botCycles,
 }: {
     botProfits?: BotProfit[];
+    botCycles?: BotCycleEvent[];
     data: OverviewData;
     usdToGbp: number;
     selfEmployed?: SelfEmployedSnapshot | null;
@@ -567,6 +569,8 @@ export function OverviewClient({
                     </div>
                 </div>
             )}
+
+            {botCycles && botProfits && botProfits.length > 0 && <BotCyclesChart events={botCycles} bots={botProfits.map((b) => ({ key: b.key, label: b.label }))} />}
 
             {/* Per-asset stats */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1980,6 +1984,88 @@ function MonthlyBarsChart({
                     Showing {isolated} only &mdash; click it again to show all
                 </p>
             )}
+        </Card>
+    );
+}
+
+
+/** Completed bot cycles per day: last 30 days (green) vs the 30 days before (yellow), aligned by position so day N of each period sit side by side. */
+function BotCyclesChart({ events, bots }: { events: BotCycleEvent[]; bots: { key: string; label: string }[] }) {
+    const [botFilter, setBotFilter] = useState<string>("all");
+
+    const { data, totalCur, totalPrev } = useMemo(() => {
+        const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const counts = new Map<string, number>();
+        for (const e of events) {
+            if (botFilter !== "all" && e.botKey !== botFilter) continue;
+            const k = dayKey(new Date(e.at));
+            counts.set(k, (counts.get(k) ?? 0) + 1);
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const rows: { label: string; prevLabel: string; current: number; previous: number }[] = [];
+        let totalCur = 0;
+        let totalPrev = 0;
+        for (let i = 29; i >= 0; i--) {
+            const cur = new Date(today);
+            cur.setDate(cur.getDate() - i);
+            const prev = new Date(today);
+            prev.setDate(prev.getDate() - i - 30);
+            const c = counts.get(dayKey(cur)) ?? 0;
+            const p = counts.get(dayKey(prev)) ?? 0;
+            totalCur += c;
+            totalPrev += p;
+            const fmtDay = (d: Date) => `${d.getDate()} ${MONTH_NAMES_SHORT[d.getMonth()]}`;
+            rows.push({ label: fmtDay(cur), prevLabel: fmtDay(prev), current: c, previous: p });
+        }
+        return { data: rows, totalCur, totalPrev };
+    }, [events, botFilter]);
+
+    return (
+        <Card>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 className="text-sm font-medium text-foreground">Cicluri finalizate pe zi</h2>
+                    <p className="mt-0.5 text-xs text-faint">
+                        Ziua în care s-a încheiat ciclul complet. Verde: ultimele 30 de zile ({totalCur}) · Galben: cele 30 de zile dinainte ({totalPrev}).
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {[{ key: "all", label: "Toți" }, ...bots].map((b) => (
+                        <button
+                            key={b.key}
+                            onClick={() => setBotFilter(b.key)}
+                            className={cn(
+                                "px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
+                                botFilter === b.key ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted hover:text-foreground"
+                            )}
+                        >
+                            {b.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="h-[260px]">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data} barGap={1} barCategoryGap="20%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                        <XAxis dataKey="label" stroke="rgba(255,255,255,0.08)" tick={{ fontSize: 10, fill: "#565550" }} tickLine={false} minTickGap={16} />
+                        <YAxis stroke="rgba(255,255,255,0.08)" tick={{ fontSize: 10, fill: "#565550" }} tickLine={false} axisLine={false} allowDecimals={false} width={28} />
+                        <Tooltip
+                            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                            contentStyle={{ background: "#121210", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}
+                            labelStyle={{ color: "#c9c7bd" }}
+                            formatter={(v, name, item) => {
+                                const row = item?.payload as { label: string; prevLabel: string } | undefined;
+                                return [String(v), name === "previous" ? `Cicluri (${row?.prevLabel ?? ""})` : `Cicluri (${row?.label ?? ""})`];
+                            }}
+                            labelFormatter={() => ""}
+                        />
+                        <Bar dataKey="current" name="current" fill="#52c98a" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                        <Bar dataKey="previous" name="previous" fill="#eab308" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
         </Card>
     );
 }
