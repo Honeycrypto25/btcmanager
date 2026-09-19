@@ -783,9 +783,15 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
                                                     {busyLotId === lot.id ? "Se aplică…" : "Slippage 6%"}
                                                 </Button>
                                             )}
-                                            <Button variant="outline" size="sm" onClick={() => handleRecreate(lot)} disabled={busyLotId !== null}>
-                                                {busyLotId === lot.id ? "Se recreează…" : "Anulează și recreează V2"}
-                                            </Button>
+                                            {lot.sellOrderCreatedAt && Date.now() - new Date(lot.sellOrderCreatedAt).getTime() < 60 * 60 * 1000 ? (
+                                                <span className="text-xs text-emerald-300">
+                                                    Ordin recreat ✓ {new Date(lot.sellOrderCreatedAt).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}
+                                                </span>
+                                            ) : (
+                                                <Button variant="outline" size="sm" onClick={() => handleRecreate(lot)} disabled={busyLotId !== null}>
+                                                    {busyLotId === lot.id ? "Se recreează…" : "Anulează și recreează V2"}
+                                                </Button>
+                                            )}
                                         </div>
                                     ) : (
                                         "—"
