@@ -131,3 +131,77 @@ export async function getBotCycleEvents(userId: string): Promise<BotCycleEvent[]
     }
     return out;
 }
+
+export interface BotPeriodRow {
+    label: string;
+    cycles: number;
+    profit: number;
+    prevCycles: number;
+    prevProfit: number;
+}
+
+/**
+ * Per-bot summary for the weekly/monthly report emails: cycles closed and
+ * realized profit in [start, end) versus the equally-long period before it.
+ * Household-wide like the rest of the report (not scoped to a user). A cycle
+ * counts on the day it completed: DCA bots = sell filled (soldAt); Polygon =
+ * buy-back filled (filledAt). DCA profit = realizedPnlUsd of those lots.
+ * Polygon profit = usdcProfit of the sales made in the period (it is realized
+ * at sale time, not when the buy-back fills).
+ */
+export async function getBotPeriodReport(start: Date, end: Date): Promise<BotPeriodRow[]> {
+    const len = end.getTime() - start.getTime();
+    const prevStart = new Date(start.getTime() - len);
+    const inCur = (d: Date | null) => !!d && d >= start && d < end;
+    const inPrev = (d: Date | null) => !!d && d >= prevStart && d < start;
+
+    const dcaWhere = { status: "FILLED" as const, soldAt: { gte: prevStart, lt: end } };
+    const sel = { soldAt: true, realizedPnlUsd: true };
+    const [sol, eva, evm, bnb, polySettings, polySales, polyFills] = await Promise.all([
+        db.solanaLot.findMany({ where: dcaWhere, select: sel }),
+        db.evaLot.findMany({ where: dcaWhere, select: sel }),
+        db.evmLot.findMany({ where: dcaWhere, select: sel }),
+        db.bnbLot.findMany({ where: dcaWhere, select: sel }),
+        db.polygonTokenSettings.findMany({ select: { id: true, tokenSymbol: true }, orderBy: { createdAt: "asc" } }),
+        db.polygonTokenLot.findMany({
+            where: { status: { not: "FAILED" }, soldAt: { gte: prevStart, lt: end } },
+            select: { settingsId: true, soldAt: true, usdcProfit: true },
+        }),
+        db.polygonTokenLot.findMany({
+            where: { status: "FILLED", filledAt: { gte: prevStart, lt: end } },
+            select: { settingsId: true, filledAt: true },
+        }),
+    ]);
+
+    const dcaRow = (label: string, lots: { soldAt: Date | null; realizedPnlUsd: unknown }[]): BotPeriodRow => {
+        const row: BotPeriodRow = { label, cycles: 0, profit: 0, prevCycles: 0, prevProfit: 0 };
+        for (const l of lots) {
+            const v = Number(l.realizedPnlUsd ?? 0);
+            if (inCur(l.soldAt)) { row.cycles++; row.profit += v; }
+            else if (inPrev(l.soldAt)) { row.prevCycles++; row.prevProfit += v; }
+        }
+        return row;
+    };
+    const rows: BotPeriodRow[] = [
+        dcaRow("Solana (SOL)", sol),
+        dcaRow("EVA", eva),
+        dcaRow("Base (WETH)", evm),
+        dcaRow("BNB", bnb),
+    ];
+    for (const s of polySettings) {
+        const row: BotPeriodRow = { label: `Polygon (${s.tokenSymbol})`, cycles: 0, profit: 0, prevCycles: 0, prevProfit: 0 };
+        for (const l of polySales) {
+            if (l.settingsId !== s.id) continue;
+            const v = Number(l.usdcProfit);
+            if (inCur(l.soldAt)) row.profit += v;
+            else if (inPrev(l.soldAt)) row.prevProfit += v;
+        }
+        for (const l of polyFills) {
+            if (l.settingsId !== s.id) continue;
+            if (inCur(l.filledAt)) row.cycles++;
+            else if (inPrev(l.filledAt)) row.prevCycles++;
+        }
+        rows.push(row);
+    }
+    return rows;
+}

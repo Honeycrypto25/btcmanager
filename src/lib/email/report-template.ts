@@ -1,6 +1,7 @@
 import type { OverviewData, PeriodRow } from "@/components/overview/OverviewClient";
 import type { AssetEvolution } from "@/lib/overview-evolution";
 import type { DcaReportAsset, PolygonDcaReportSummary } from "@/lib/email/dca-report-data";
+import type { BotPeriodRow } from "@/lib/bot-profit";
 
 interface WindowStats {
     btcInvested: number;
@@ -172,6 +173,73 @@ function polygonReportCard(summary: PolygonDcaReportSummary, accentColor: string
     });
 }
 
+/** Bots summary for the period: cycles closed + realized profit, each next to the previous equally-long period. */
+function botPeriodSection(rows: BotPeriodRow[], periodType: 'weekly' | 'monthly'): string {
+    if (rows.length === 0) return '';
+    const thisLabel = periodType === 'weekly' ? 'this week' : 'last month';
+    const prevLabel = periodType === 'weekly' ? 'the week before' : 'the month before';
+    const money = (n: number) => `${n >= 0 ? '+' : ''}${fmt(n)}`;
+    const delta = (cur: number, prev: number, isMoney: boolean) => {
+        const d = cur - prev;
+        if (Math.abs(d) < 0.005) return `<span style="color:${COLORS.faint};">= ${prevLabel}</span>`;
+        const arrow = d > 0 ? '&#9650;' : '&#9660;';
+        const txt = isMoney ? fmt(Math.abs(d)) : String(Math.abs(d));
+        return `<span style="color:${pnlColor(d)};">${arrow} ${txt}</span> <span style="color:${COLORS.faint};">vs ${isMoney ? money(prev) : prev}</span>`;
+    };
+    const cell = (main: string, sub: string, mainColor: string) =>
+        `<td align="right" style="padding:10px 0 10px 12px; border-top:1px solid ${COLORS.cardBorder};">
+          <div style="font-family:${FONT_MONO}; font-size:14px; font-weight:600; color:${mainColor};">${main}</div>
+          <div style="font-family:${FONT_BODY}; font-size:10px; margin-top:2px;">${sub}</div>
+        </td>`;
+    const total = rows.reduce(
+        (a, r) => ({ cycles: a.cycles + r.cycles, profit: a.profit + r.profit, prevCycles: a.prevCycles + r.prevCycles, prevProfit: a.prevProfit + r.prevProfit }),
+        { cycles: 0, profit: 0, prevCycles: 0, prevProfit: 0 }
+    );
+    const body = rows
+        .map(
+            (r) => `<tr>
+          <td style="padding:10px 0; border-top:1px solid ${COLORS.cardBorder}; font-family:${FONT_BODY}; font-size:13px; color:${COLORS.foreground};">${r.label}</td>
+          ${cell(String(r.cycles), delta(r.cycles, r.prevCycles, false), COLORS.foreground)}
+          ${cell(money(r.profit), delta(r.profit, r.prevProfit, true), pnlColor(r.profit))}
+        </tr>`
+        )
+        .join('');
+    return `
+        <!-- Bots this period -->
+        <tr>
+          <td style="padding-bottom:20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${COLORS.card}; border:1px solid ${COLORS.cardBorder}; border-radius:14px;">
+              <tr>
+                <td style="padding:20px 22px;">
+                  <div style="font-family:${FONT_DISPLAY}; font-size:14px; font-weight:600; color:${COLORS.foreground}; margin-bottom:4px;">Bots &mdash; ${thisLabel}</div>
+                  <div style="font-family:${FONT_BODY}; font-size:11px; color:${COLORS.faint}; margin-bottom:10px;">Cycles closed and realized profit, compared with ${prevLabel}.</div>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="font-family:${FONT_BODY}; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:${COLORS.faint}; padding-bottom:6px;">Bot</td>
+                      <td align="right" style="font-family:${FONT_BODY}; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:${COLORS.faint}; padding-bottom:6px;">Cycles</td>
+                      <td align="right" style="font-family:${FONT_BODY}; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:${COLORS.faint}; padding-bottom:6px;">Profit</td>
+                    </tr>
+                    ${body}
+                    <tr>
+                      <td style="padding:12px 0 0; border-top:1px solid ${COLORS.faint}; font-family:${FONT_DISPLAY}; font-size:13px; font-weight:600; color:${COLORS.foreground};">Total</td>
+                      <td align="right" style="padding:12px 0 0 12px; border-top:1px solid ${COLORS.faint};">
+                        <div style="font-family:${FONT_MONO}; font-size:14px; font-weight:600; color:${COLORS.foreground};">${total.cycles}</div>
+                        <div style="font-family:${FONT_BODY}; font-size:10px; margin-top:2px;">${delta(total.cycles, total.prevCycles, false)}</div>
+                      </td>
+                      <td align="right" style="padding:12px 0 0 12px; border-top:1px solid ${COLORS.faint};">
+                        <div style="font-family:${FONT_MONO}; font-size:14px; font-weight:600; color:${pnlColor(total.profit)};">${money(total.profit)}</div>
+                        <div style="font-family:${FONT_BODY}; font-size:10px; margin-top:2px;">${delta(total.profit, total.prevProfit, true)}</div>
+                      </td>
+                    </tr>
+                  </table>
+                  <div style="font-family:${FONT_BODY}; font-size:10px; color:${COLORS.faint}; margin-top:10px;">A cycle counts on the day it completed. Polygon: cycle = buy-back filled; its profit is counted on the day of the sale.</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>`;
+}
+
 function monthsTable(rows: PeriodRow[]): string {
     const recent = rows.slice(0, 6);
     if (recent.length === 0) return '';
@@ -227,8 +295,10 @@ export function buildReportHtml(opts: {
     bnbDca?: DcaReportAsset | null;
     evaDca?: DcaReportAsset | null;
     polygonDca?: PolygonDcaReportSummary | null;
+    /** Cycles closed + realized profit per bot for the period vs the one before; empty/omitted hides the section. */
+    botPeriod?: BotPeriodRow[];
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca, botPeriod } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
 
@@ -329,6 +399,8 @@ export function buildReportHtml(opts: {
             </table>
           </td>
         </tr>
+
+        ${botPeriodSection(botPeriod ?? [], periodType)}
 
         <!-- Per-asset cards -->
         <tr>

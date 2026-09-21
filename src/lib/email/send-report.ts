@@ -1,3 +1,4 @@
+import { getBotPeriodReport, type BotPeriodRow } from "@/lib/bot-profit";
 import { Resend } from "resend";
 import { getOverviewData, getCalendarWeekStats, getCalendarMonthStats } from "@/lib/overview-data";
 import { buildReportHtml } from "@/lib/email/report-template";
@@ -88,8 +89,10 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
         // nu ultimele 7 zile de la momentul rulării.
         const { start, end, ...windowStats } = await getCalendarWeekStats(1);
         const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = await getReportExtras();
+        const botPeriod = await getBotPeriodReport(start, end).catch((): BotPeriodRow[] => []);
 
         const html = buildReportHtml({
+            botPeriod,
             periodType: "weekly",
             periodLabel: rangeLabel(start, end),
             data,
@@ -135,10 +138,12 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
         // nu "primul rând din monthlyRows" (fragil dacă sync-ul de dimineață
         // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
         // raportul, tot pe ziua 1, să ruleze).
-        const { start, ...windowStats } = await getCalendarMonthStats(1);
+        const { start, end, ...windowStats } = await getCalendarMonthStats(1);
         const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = await getReportExtras();
+        const botPeriod = await getBotPeriodReport(start, end).catch((): BotPeriodRow[] => []);
 
         const html = buildReportHtml({
+            botPeriod,
             periodType: "monthly",
             periodLabel: monthLabel(start),
             data,
