@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { runPolygonReverseDcaForSettings, reconcilePolygonOrdersForSettings } from "@/lib/polygon/reverse-dca";
+import { runPolygonReverseDcaForSettings, reconcilePolygonOrdersForSettings, executeBuybackNow } from "@/lib/polygon/reverse-dca";
 import { runPolygonSweepForUser } from "@/lib/polygon/sweep";
 import { loadBotWallet, getUsdcBalance, getNativeBalance, getTokenMeta } from "@/lib/polygon/wallet";
 import { getTokenPriceUsd } from "@/lib/polygon/oneinch";
@@ -167,6 +167,26 @@ export async function reconcilePolygonOrdersNow(settingsId: string) {
     revalidatePath("/polygon");
     revalidatePath("/polygon/stats");
     return result;
+}
+
+export interface PolygonBuybackNowResult {
+    ok: boolean;
+    message: string;
+}
+
+/** "Cumpără acum" for one lot whose buy-back order has been open a long time without a resolver filling it — cancels it and buys at market instead. */
+export async function buyBackPolygonLotNowAction(lotId: string): Promise<PolygonBuybackNowResult> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    try {
+        const r = await executeBuybackNow(userId, lotId);
+        return { ok: true, message: `Cumpărat ${r.tokenReacquired.toFixed(4)} la piață, $${r.usdcSpent.toFixed(2)}.` };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+        revalidatePath("/polygon");
+        revalidatePath("/polygon/stats");
+    }
 }
 
 export interface PolygonCheckAllResult {

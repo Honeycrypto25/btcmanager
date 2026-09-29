@@ -5,6 +5,7 @@ import type { PolygonTokenSettings } from "@prisma/client";
 import { loadConnectedBotWallet, getTokenBalance } from "./wallet";
 import {
     createLimitOrder,
+    cancelLimitOrder,
     executeSwap,
     getActiveOrders,
     getOrderByHash,
@@ -192,6 +193,12 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
         }
 
         await retryPendingBuybackOrders(settings, wallet);
+        await forceStuckPolygonBuybacks(settings, wallet).catch((err) => {
+            // Never let a force-buyback hiccup (a bad quote, an RPC blip) block
+            // the rest of this cycle — the daily sell/interval logic below must
+            // still run even if this pass couldn't act on stuck lots.
+            console.error(`forceStuckPolygonBuybacks failed for ${settings.tokenSymbol}`, err);
+        });
 
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
@@ -352,4 +359,166 @@ export async function runPolygonReverseDcaForAllSettings(): Promise<PolygonDcaRu
         results.push(await runPolygonReverseDcaForSettings(s.id));
     }
     return results;
+}
+
+
+export interface BuybackNowResult {
+    lotId: string;
+    tokenReacquired: number;
+    usdcSpent: number;
+}
+
+/**
+ * "Cumpără acum" for ONE lot whose buy-back limit order has been open a long
+ * time without a resolver taking it (1inch limit orders — unlike Jupiter
+ * Trigger — rely entirely on an external party choosing to fill them; for a
+ * low-volume token that may just never happen even once the price has
+ * crossed the target). Cancels the on-chain order and immediately market-
+ * buys the same USDC amount that was reserved for it, via the same swap
+ * path used for the sell leg. Refuses if the current price is no longer at
+ * or below the lot's target — that would mean paying more than the plan
+ * called for, so the caller should leave the order in place instead.
+ */
+type BuybackAttempt =
+    | { ok: true; tokenReacquired: number; usdcSpent: number }
+    | { ok: false; skip: true; reason: string } // not eligible right now (order gone, or price not favorable) — not an error
+    | { ok: false; skip: false; reason: string }; // eligible but something failed while acting on it
+
+/**
+ * Core of "Cumpără acum": cancels the resting 1inch buy-back order for one
+ * OPEN lot and market-buys the same USDC amount instead, PROVIDED the
+ * current price is still at/below the lot's target (never pays more than
+ * the plan called for). Shared by the manual per-lot button
+ * (executeBuybackNow, which throws so the UI can show the reason) and the
+ * daily cron's auto-force pass (forceStuckPolygonBuybacks, which treats
+ * "not eligible yet" as a routine skip rather than an error).
+ */
+async function attemptBuybackNow(
+    lot: Awaited<ReturnType<typeof db.polygonTokenLot.findFirst>>,
+    settings: PolygonTokenSettings,
+    wallet: Wallet
+): Promise<BuybackAttempt> {
+    if (!lot || lot.status !== "OPEN" || !lot.oneInchOrderHash || !lot.targetPriceUsd) {
+        return { ok: false, skip: true, reason: "Lotul nu are un ordin de răscumpărare activ." };
+    }
+    const oldHash = lot.oneInchOrderHash;
+    const targetPriceUsd = Number(lot.targetPriceUsd);
+    const usdcToBuyback = Number(lot.usdcToBuyback);
+    const tokenBuybackPlanned = Number(lot.tokenSold);
+
+    // --- pre-flight (nothing on-chain yet) ---
+    const existing = await getOrderByHash(oldHash);
+    if (!existing || BigInt(existing.remainingMakerAmount) === 0n) {
+        return { ok: false, skip: true, reason: "Ordinul nu mai e activ în 1inch (probabil s-a executat sau a expirat)." };
+    }
+    const priceNow = await getTokenPriceUsd(settings.tokenAddress, settings.tokenDecimals, USDC_ADDRESS);
+    if (priceNow > targetPriceUsd) {
+        return {
+            ok: false,
+            skip: true,
+            reason: `Prețul curent ($${priceNow.toFixed(6)}) e peste ținta ($${targetPriceUsd.toFixed(6)}) — cumpărarea acum ar costa mai mult decât planul.`,
+        };
+    }
+
+    // --- claim the lot atomically ---
+    const claimed = await db.polygonTokenLot.updateMany({
+        where: { id: lot.id, status: "OPEN", oneInchOrderHash: oldHash },
+        data: { status: "PENDING_BUYBACK_ORDER", notes: `Cumpărare imediată în curs (anulare ordin 1inch ${oldHash.slice(0, 10)}…).` },
+    });
+    if (claimed.count !== 1) return { ok: false, skip: true, reason: "Lotul e deja în curs de modificare sau și-a schimbat starea." };
+
+    // --- cancel the resting limit order on-chain ---
+    try {
+        await cancelLimitOrder(wallet, oldHash);
+    } catch (err) {
+        await db.polygonTokenLot.update({
+            where: { id: lot.id },
+            data: { status: "OPEN", notes: lot.notes },
+        });
+        return { ok: false, skip: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+
+    // --- buy back at market: spend the exact USDC that was reserved ---
+    try {
+        const amountRaw = parseUnits(usdcToBuyback.toFixed(USDC_DECIMALS), USDC_DECIMALS);
+        const { dstAmountRaw } = await executeSwap(wallet, {
+            srcToken: USDC_ADDRESS,
+            dstToken: settings.tokenAddress,
+            amountRaw,
+            slippageBps: settings.slippageBps,
+        });
+        const tokenReacquired = Number(formatUnits(dstAmountRaw, settings.tokenDecimals));
+
+        await db.polygonTokenLot.update({
+            where: { id: lot.id },
+            data: {
+                status: "FILLED",
+                filledAt: new Date(),
+                tokenReacquired,
+                usdcSpent: usdcToBuyback,
+                notes: `Cumpărat imediat (preț sub țintă, ordin 1inch ${oldHash.slice(0, 10)}… anulat); plănuit ${tokenBuybackPlanned.toFixed(4)}, primit ${tokenReacquired.toFixed(4)}.`,
+            },
+        });
+
+        await notifyRebuyFilled({
+            tokenSymbol: settings.tokenSymbol,
+            tokenReacquired,
+            usdcSpent: usdcToBuyback,
+            buybackPriceUsd: tokenReacquired > 0 ? usdcToBuyback / tokenReacquired : 0,
+            originalSellPriceUsd: Number(lot.sellPriceUsd),
+        });
+
+        return { ok: true, tokenReacquired, usdcSpent: usdcToBuyback };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await db.polygonTokenLot.update({
+            where: { id: lot.id },
+            data: { notes: `Ordin 1inch ${oldHash.slice(0, 10)}… anulat; cumpărarea la piață a eșuat: ${message}. USDC e în wallet, se reîncearcă automat cu un ordin nou.` },
+        });
+        return { ok: false, skip: false, reason: `Ordinul vechi a fost anulat, dar cumpărarea la piață a eșuat: ${message}. USDC e în wallet și cron-ul recreează automat un ordin de răscumpărare.` };
+    }
+}
+
+/** Manual "Cumpără acum" button for one lot — throws with a user-facing reason on any non-success outcome (both "not eligible" and "failed" cases), since a person clicked expecting an explanation either way. */
+export async function executeBuybackNow(userId: string, lotId: string): Promise<BuybackNowResult> {
+    const lot = await db.polygonTokenLot.findFirst({ where: { id: lotId, userId } });
+    if (!lot) throw new Error("Lotul nu există.");
+    const settings = await db.polygonTokenSettings.findFirst({ where: { id: lot.settingsId, userId } });
+    if (!settings) throw new Error("Setările acestui token nu mai există.");
+    const wallet = loadConnectedBotWallet();
+    if ((await wallet.getAddress()).toLowerCase() !== settings.walletAddress.toLowerCase()) {
+        throw new Error("BASE_PRIVATE_KEY nu corespunde wallet-ului din setări — refuz să tranzacționez.");
+    }
+    const result = await attemptBuybackNow(lot, settings, wallet);
+    if (!result.ok) throw new Error(result.reason + (result.skip ? " Nu am anulat nimic." : ""));
+    return { lotId: lot.id, tokenReacquired: result.tokenReacquired, usdcSpent: result.usdcSpent };
+}
+
+/**
+ * Daily auto-force pass, run from the polygon-dca cron right after
+ * reconciling: for every OPEN lot whose price has already dipped to/below
+ * its buy-back target, gives it one full day for a 1inch resolver to take
+ * it naturally (reconcileOpenLots above runs first, every cron pass) — if
+ * it's STILL open on this pass despite being favorable, force it via the
+ * same cancel+market-buy path as the manual button. Runs household-wide
+ * across every enabled token (MYST, GEOD, and anything added later), not
+ * hardcoded to specific symbols, since the underlying cause (1inch resting
+ * orders needing an external taker) applies to any of them. "Not eligible"
+ * lots are skipped silently; real failures leave a note on the lot for the
+ * next pass to retry (see attemptBuybackNow).
+ */
+export async function forceStuckPolygonBuybacks(settings: PolygonTokenSettings, wallet: Wallet): Promise<{ forced: number; skipped: number }> {
+    const openLots = await db.polygonTokenLot.findMany({ where: { settingsId: settings.id, status: "OPEN" }, orderBy: { soldAt: "asc" } });
+    let forced = 0;
+    let skipped = 0;
+    for (const lot of openLots) {
+        try {
+            const result = await attemptBuybackNow(lot, settings, wallet);
+            if (result.ok) forced++;
+            else skipped++;
+        } catch {
+            skipped++; // defensive — attemptBuybackNow does not itself throw, but never let one lot's crash stop the rest
+        }
+    }
+    return { forced, skipped };
 }

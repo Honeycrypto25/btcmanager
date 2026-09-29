@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter, Copy, Check, RefreshCw } from "lucide-react";
-import { checkAllPolygonOrdersNow } from "@/app/actions/polygon";
+import { checkAllPolygonOrdersNow, buyBackPolygonLotNowAction } from "@/app/actions/polygon";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Card, Button, cn } from "@/components/ui/core";
 
@@ -644,7 +644,7 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
 
             <Card className="p-6 space-y-4">
                 <h3 className="text-sm font-medium text-foreground">Loturi (vânzare → răscumpărare) ({lots.length})</h3>
-                <LotsTable lots={lots} symbolBySettingsId={symbolBySettingsId} priceBySettingsId={priceBySettingsId} />
+                <LotsTable lots={lots} symbolBySettingsId={symbolBySettingsId} priceBySettingsId={priceBySettingsId} isAdmin={isAdmin} />
             </Card>
 
             <Card className="p-6 space-y-4">
@@ -655,9 +655,25 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
     );
 }
 
-function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number> }) {
+function LotsTable({ lots, symbolBySettingsId, priceBySettingsId, isAdmin }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number>; isAdmin: boolean }) {
     const [page, setPage] = useState(1);
     const [copiedHash, setCopiedHash] = useState<string | null>(null);
+    const [busyLotId, setBusyLotId] = useState<string | null>(null);
+    const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
+
+    async function handleBuyNow(lot: LotDTO) {
+        if (!window.confirm("Anulez ordinul 1inch și cumpăr acum la prețul pieței, în loc să mai aștept un resolver? Suma USDC rezervată rămâne aceeași.")) return;
+        setBusyLotId(lot.id);
+        setRowMessage(null);
+        try {
+            const r = await buyBackPolygonLotNowAction(lot.id);
+            setRowMessage({ lotId: lot.id, ok: r.ok, text: r.message });
+        } catch (err) {
+            setRowMessage({ lotId: lot.id, ok: false, text: err instanceof Error ? err.message : "Cumpărarea a eșuat." });
+        } finally {
+            setBusyLotId(null);
+        }
+    }
     // 1inch is a gasless off-chain orderbook -- there's no public page to view
     // a single order by hash (unlike a block explorer tx), so the best we can
     // offer is the hash itself, made copyable, for cross-referencing.
@@ -685,7 +701,7 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
     return (
         <>
             <div className="overflow-x-auto -mx-6">
-                <table className="w-full text-sm min-w-[1380px]">
+                <table className="w-full text-sm min-w-[1520px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
                             <th className="px-6 py-2 font-medium">Token</th>
@@ -701,6 +717,7 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Data</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Vânzare</th>
                             <th className="px-3 py-2 font-medium">Ordin 1inch</th>
+                            {isAdmin && <th className="px-3 py-2 font-medium">Acțiune</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -769,6 +786,24 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId }: { lots: LotD
                                         "—"
                                     )}
                                 </td>
+                                {isAdmin && (
+                                    <td className="px-3 py-2.5 text-xs">
+                                        {isOpen ? (
+                                            <>
+                                                <Button variant="outline" size="sm" onClick={() => handleBuyNow(lot)} disabled={busyLotId !== null}>
+                                                    {busyLotId === lot.id ? "Se cumpără…" : "Cumpără acum"}
+                                                </Button>
+                                                {rowMessage?.lotId === lot.id && (
+                                                    <div className={cn("mt-1 max-w-[220px] whitespace-normal text-xs", rowMessage.ok ? "text-emerald-300" : "text-red-300")}>
+                                                        {rowMessage.text}
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            "—"
+                                        )}
+                                    </td>
+                                )}
                             </tr>
                             );
                         })}

@@ -124,6 +124,27 @@ export async function executeSwap(wallet: Wallet, params: {
  * traded token for USDC): for the reverse-DCA buy-back order,
  * makerAsset = USDC, takerAsset = the token being reacquired.
  */
+/**
+ * Cancels an open limit order on-chain: fetches the order from 1inch (its
+ * makerTraits are needed to invalidate the correct bit — we don't need to
+ * have kept them ourselves, the orderbook API returns the exact signed
+ * value for any order by hash) and calls the Limit Order Protocol
+ * contract's cancelOrder directly. Used for a buy-back order that's been
+ * open a long time and needs to be replaced by an immediate market buy
+ * instead of waiting indefinitely for a resolver to take it.
+ */
+export async function cancelLimitOrder(wallet: Wallet, orderHash: string): Promise<{ txHash: string }> {
+    const order = await getOrderByHash(orderHash);
+    if (!order) throw new Error("Ordinul nu mai există în orderbook-ul 1inch (probabil s-a executat sau a expirat deja).");
+    const contract = new Contract(getLimitOrderContract(POLYGON_CHAIN_ID), ["function cancelOrder(uint256 makerTraits, bytes32 orderHash) external"], wallet);
+    const tx = await contract.cancelOrder(BigInt(order.data.makerTraits), orderHash);
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+        throw new Error(`Anularea ordinului a eșuat on-chain (${tx.hash})`);
+    }
+    return { txHash: tx.hash };
+}
+
 export async function createLimitOrder(wallet: Wallet, params: {
     makerAsset: string;
     takerAsset: string;
