@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { parseFidelityAccountDetails } from "@/lib/vanguard/fidelity-csv";
+import { detectFidelityCsvKind, parseFidelityAccountDetails, parseFidelityTransactions } from "@/lib/vanguard/fidelity-csv";
 import { extractVanguardTransactionsFromPdf } from "@/lib/vanguard/transactions-pdf";
 
 async function requireUserId(): Promise<string> {
@@ -566,62 +566,145 @@ const FIDELITY_CHILD_FUND_ISIN = "GB00BD3RZ582";
 const FIDELITY_CHILD_FUND_NAME = "FTSE Global All Cap Index Fund Accumulation";
 
 export interface FidelityImportResult {
+    /** Which Fidelity export the uploaded file turned out to be. */
+    kind: "accountSummary" | "transactionHistory";
     accountsCreated: number;
     accountsUpdated: number;
     holdingsCreated: number;
     holdingsUpdated: number;
     pendingAccountNumbers: string[];
+    /** Transaction-history imports only. */
+    transactionsFound: number;
+    contributionsCreated: number;
+    contributionsSkippedAsDuplicate: number;
 }
 
+const FIDELITY_REF_NOTE_PREFIX = "Import Fidelity ref ";
+const MONEY_EPSILON = 0.01;
+
+function fidelityAccountTypeFor(product: string): string {
+    return /isa/i.test(product) ? "JISA" : /sipp/i.test(product) ? "SIPP" : "Other";
+}
+
+/** Finds the Fidelity account by the account number embedded in its name
+ * ("Junior ISA (AS10427098)"), creating it if this is the first upload
+ * that mentions it. Shared by both CSV kinds so either one can be the
+ * first file ever uploaded. */
+async function findOrCreateFidelityAccount(
+    userId: string,
+    existingAccounts: any[],
+    accountNumber: string,
+    product: string,
+    currency: string,
+    ownerLabel: string,
+    result: FidelityImportResult
+) {
+    let account = existingAccounts.find((a) => a.name.includes(`(${accountNumber})`));
+    if (account) return { account, created: false };
+
+    const created = await db.vanguardAccount.create({
+        data: {
+            userId,
+            name: `${product} (${accountNumber})`,
+            accountType: fidelityAccountTypeFor(product),
+            currency,
+            owner: "child",
+            ownerLabel,
+            provider: "fidelity",
+        },
+    });
+    account = { ...created, holdings: [] as any[] };
+    existingAccounts.push(account);
+    result.accountsCreated++;
+    return { account, created: true };
+}
+
+/**
+ * Single entry point for the Fidelity page's "Import Fidelity CSV" button:
+ * looks at the file's contents and handles either export Fidelity offers.
+ *
+ * - "Account summary" -- the authoritative CURRENT TOTALS (book cost,
+ *   value, cash). Sets the holding's costBasis/currentValue from it. Units
+ *   come from the contribution ledger when that ledger already accounts
+ *   for the whole book cost (Fidelity's Quantity column is rounded to
+ *   2 dp; the ledger's amount ÷ price units are exact), otherwise from the
+ *   summary's own Quantity.
+ *
+ * - "Transaction history" -- the dated PURCHASES. Each "Buy…" row becomes
+ *   a VanguardContribution (deduplicated by Fidelity's Reference Number, or
+ *   by same date + same amount for a row entered by hand), so re-uploading
+ *   overlapping periods is safe. The export only covers the period picked
+ *   on Fidelity's site (default: last 30 days), so it's often only PART of
+ *   the history: the holding's totals are only raised to the ledger sum
+ *   when the ledger now covers at least what the holding already showed --
+ *   older purchases outside the window stay in the totals (from the
+ *   summary) as the undated remainder, never get dropped.
+ *
+ * Uploading both, in either order, converges on the same state.
+ */
 export async function importFidelityAccountsCsv(csvText: string, ownerLabel: string): Promise<FidelityImportResult> {
     await requireAdmin();
     const userId = await requireUserId();
 
-    const blocks = parseFidelityAccountDetails(csvText);
+    const kind = detectFidelityCsvKind(csvText);
+    if (kind === "unknown") {
+        throw new Error(
+            'Fișierul nu pare a fi un export Fidelity cunoscut ("Account summary" sau "Transaction history"). Nimic nu a fost modificat.'
+        );
+    }
+
     const result: FidelityImportResult = {
+        kind,
         accountsCreated: 0,
         accountsUpdated: 0,
         holdingsCreated: 0,
         holdingsUpdated: 0,
         pendingAccountNumbers: [],
+        transactionsFound: 0,
+        contributionsCreated: 0,
+        contributionsSkippedAsDuplicate: 0,
     };
 
-    const existingAccounts = await db.vanguardAccount.findMany({ where: { userId }, include: { holdings: true } });
+    const existingAccounts = (await db.vanguardAccount.findMany({
+        where: { userId },
+        include: { holdings: { include: { contributions: true } } },
+    })) as any[];
+
+    if (kind === "accountSummary") {
+        await importFidelitySummary(userId, csvText, ownerLabel, existingAccounts, result);
+    } else {
+        await importFidelityTransactions(userId, csvText, ownerLabel, existingAccounts, result);
+    }
+
+    revalidatePath("/vanguard");
+    revalidatePath("/fidelity");
+    revalidatePath("/investments");
+    return result;
+}
+
+async function importFidelitySummary(
+    userId: string,
+    csvText: string,
+    ownerLabel: string,
+    existingAccounts: any[],
+    result: FidelityImportResult
+) {
+    const blocks = parseFidelityAccountDetails(csvText);
 
     for (const block of blocks) {
-        let account = (existingAccounts as any[]).find((a) => a.name.includes(`(${block.accountNumber})`));
-
-        if (!account) {
-            const accountType = /isa/i.test(block.product) ? "JISA" : /sipp/i.test(block.product) ? "SIPP" : "Other";
-            const created = await db.vanguardAccount.create({
-                data: {
-                    userId,
-                    name: `${block.product} (${block.accountNumber})`,
-                    accountType,
-                    currency: block.currency,
-                    owner: "child",
-                    ownerLabel,
-                    provider: "fidelity",
-                    pendingCash: block.cashAvailableGBP ?? 0,
-                    pendingCashUpdatedAt: new Date(),
-                },
-            });
-            account = { ...created, holdings: [] as any[] };
-            (existingAccounts as any[]).push(account);
-            result.accountsCreated++;
-        } else {
-            // Cash available moves every time money settles into a
-            // holding (or a fresh contribution lands) -- keep it current
-            // on every re-import, not just the first one.
-            await db.vanguardAccount.update({
-                where: { id: account.id },
-                data: { pendingCash: block.cashAvailableGBP ?? 0, pendingCashUpdatedAt: new Date() },
-            });
-            result.accountsUpdated++;
-        }
+        const { account, created } = await findOrCreateFidelityAccount(
+            userId, existingAccounts, block.accountNumber, block.product, block.currency, ownerLabel, result
+        );
+        // Cash available moves every time money settles into a holding
+        // (or a fresh contribution lands) -- keep it current on every
+        // import, not just the first one.
+        await db.vanguardAccount.update({
+            where: { id: account.id },
+            data: { pendingCash: block.cashAvailableGBP ?? 0, pendingCashUpdatedAt: new Date() },
+        });
+        if (!created) result.accountsUpdated++;
 
         const fundAssets = block.assets.filter((a) => a.quantity !== null && a.quantity > 0 && !/^cash$/i.test(a.holdingName));
-
         if (fundAssets.length === 0) {
             result.pendingAccountNumbers.push(block.accountNumber);
             continue;
@@ -632,18 +715,25 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
             // by ticker/ISIN (stable across uploads) rather than Fidelity's
             // free-text asset name.
             const existingHolding = (account.holdings as any[]).find((h) => h.ticker === FIDELITY_CHILD_FUND_ISIN);
-            const units = asset.quantity as number;
             const costBasis = asset.bookCostGBP ?? asset.valueGBP ?? 0;
             const currentValue = asset.valueGBP ?? costBasis;
 
+            let units = asset.quantity as number;
             if (existingHolding) {
+                const contribs = (existingHolding.contributions ?? []) as any[];
+                const ledgerCost = contribs.reduce((s, c) => s + Number(c.amount), 0);
+                const ledgerUnits = contribs.reduce((s, c) => s + Number(c.units), 0);
+                // Ledger explains the whole book cost -> its exact units
+                // beat the summary's 2-dp rounded Quantity.
+                if (contribs.length > 0 && Math.abs(ledgerCost - costBasis) < MONEY_EPSILON) units = ledgerUnits;
+
                 await db.vanguardHolding.update({
                     where: { id: existingHolding.id },
                     data: { units, costBasis, currentValue, valueUpdatedAt: new Date() },
                 });
                 result.holdingsUpdated++;
             } else {
-                await db.vanguardHolding.create({
+                const createdHolding = await db.vanguardHolding.create({
                     data: {
                         userId,
                         accountId: account.id,
@@ -654,15 +744,112 @@ export async function importFidelityAccountsCsv(csvText: string, ownerLabel: str
                         currentValue,
                     },
                 });
+                account.holdings.push({ ...createdHolding, contributions: [] });
                 result.holdingsCreated++;
             }
         }
     }
+}
 
-    revalidatePath("/vanguard");
-    revalidatePath("/fidelity");
-    revalidatePath("/investments");
-    return result;
+async function importFidelityTransactions(
+    userId: string,
+    csvText: string,
+    ownerLabel: string,
+    existingAccounts: any[],
+    result: FidelityImportResult
+) {
+    const txs = parseFidelityTransactions(csvText);
+    result.transactionsFound = txs.length;
+
+    const byAccount = new Map<string, typeof txs>();
+    for (const tx of txs) {
+        const list = byAccount.get(tx.accountNumber) ?? [];
+        list.push(tx);
+        byAccount.set(tx.accountNumber, list);
+    }
+
+    for (const [accountNumber, accountTxs] of byAccount) {
+        const { account, created } = await findOrCreateFidelityAccount(
+            userId, existingAccounts, accountNumber, accountTxs[0].productWrapper, "GBP", ownerLabel, result
+        );
+        if (!created) result.accountsUpdated++;
+
+        let holding = (account.holdings as any[]).find((h) => h.ticker === FIDELITY_CHILD_FUND_ISIN);
+        let holdingCreated = false;
+        if (!holding) {
+            const createdHolding = await db.vanguardHolding.create({
+                data: {
+                    userId,
+                    accountId: account.id,
+                    fundName: FIDELITY_CHILD_FUND_NAME,
+                    ticker: FIDELITY_CHILD_FUND_ISIN,
+                    units: 0,
+                    costBasis: 0,
+                    currentValue: 0,
+                },
+            });
+            holding = { ...createdHolding, contributions: [] as any[] };
+            account.holdings.push(holding);
+            holdingCreated = true;
+            result.holdingsCreated++;
+        }
+
+        const contribs = (holding.contributions ?? []) as any[];
+        let createdAny = false;
+
+        for (const tx of accountTxs) {
+            const refNote = tx.reference ? `${FIDELITY_REF_NOTE_PREFIX}${tx.reference}` : null;
+            const already = contribs.some(
+                (c) =>
+                    (refNote && typeof c.notes === "string" && c.notes.includes(refNote)) ||
+                    (c.date.toISOString().slice(0, 10) === tx.date && Math.abs(Number(c.amount) - tx.amountGBP) < MONEY_EPSILON)
+            );
+            if (already) {
+                result.contributionsSkippedAsDuplicate++;
+                continue;
+            }
+            const row = await db.vanguardContribution.create({
+                data: {
+                    holdingId: holding.id,
+                    date: new Date(`${tx.date}T00:00:00.000Z`),
+                    units: tx.units,
+                    amount: tx.amountGBP,
+                    notes: refNote ?? "Import Fidelity",
+                },
+            });
+            contribs.push(row);
+            result.contributionsCreated++;
+            createdAny = true;
+        }
+
+        if (!createdAny && !holdingCreated) continue;
+
+        const ledgerCost = contribs.reduce((s, c) => s + Number(c.amount), 0);
+        const ledgerUnits = contribs.reduce((s, c) => s + Number(c.units), 0);
+        const oldCost = Number(holding.costBasis);
+        const oldValue = Number(holding.currentValue);
+
+        // Only let the ledger drive the totals when it now explains at
+        // least everything the holding already showed. If it's smaller,
+        // the summary's totals include older buys outside this export's
+        // date window -- keep them; the gap is shown as undated remainder.
+        if (ledgerCost >= oldCost - MONEY_EPSILON) {
+            const added = Math.max(0, ledgerCost - oldCost);
+            await db.vanguardHolding.update({
+                where: { id: holding.id },
+                data: {
+                    units: ledgerUnits,
+                    costBasis: ledgerCost,
+                    // Same-day best guess for newly bought units, like
+                    // addVanguardContribution(); the daily price sync then
+                    // re-prices units × NAV.
+                    currentValue: holdingCreated ? ledgerCost : oldValue + added,
+                    valueUpdatedAt: new Date(),
+                },
+            });
+            if (!holdingCreated) result.holdingsUpdated++;
+        }
+    }
 }
 
 /** Same shape as listVanguardAccounts(), pre-serialized to plain

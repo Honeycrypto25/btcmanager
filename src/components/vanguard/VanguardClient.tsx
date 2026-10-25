@@ -116,6 +116,7 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
     const [error, setError] = useState<string | null>(null);
     const [importing, setImporting] = useState(false);
     const [importMessage, setImportMessage] = useState<string | null>(null);
+    const [importTick, setImportTick] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     async function handleImportFidelityCsv(e: React.ChangeEvent<HTMLInputElement>) {
@@ -132,13 +133,21 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
             // member yet, so this isn't asked for on every import.
             const res = await importFidelityAccountsCsv(text, "Eva-Maria");
             setAccounts(await listVanguardAccountsSerialized(provider));
+            setImportTick((t) => t + 1); // remount cards so open contribution lists reload
 
             const parts: string[] = [];
             if (res.accountsCreated) parts.push(`${res.accountsCreated} cont${res.accountsCreated > 1 ? "uri noi" : " nou"}`);
-            if (res.holdingsCreated) parts.push(`${res.holdingsCreated} holding${res.holdingsCreated > 1 ? "uri noi" : " nou"}`);
-            if (res.holdingsUpdated) parts.push(`${res.holdingsUpdated} holding${res.holdingsUpdated > 1 ? "uri actualizate" : " actualizat"}`);
-            if (res.pendingAccountNumbers.length) parts.push(`${res.pendingAccountNumbers.length} cont(uri) încă în așteptare — doar cash, nimic investit încă`);
-            setImportMessage(parts.length ? `Import reușit: ${parts.join(", ")}.` : "Import reușit — nimic nou de actualizat.");
+            if (res.kind === "transactionHistory") {
+                if (res.contributionsCreated) parts.push(`${res.contributionsCreated} tranzacți${res.contributionsCreated > 1 ? "i noi adăugate" : "e nouă adăugată"}`);
+                if (res.contributionsSkippedAsDuplicate) parts.push(`${res.contributionsSkippedAsDuplicate} deja importat${res.contributionsSkippedAsDuplicate > 1 ? "e" : "ă"} (ignorat${res.contributionsSkippedAsDuplicate > 1 ? "e" : "ă"})`);
+                if (res.transactionsFound === 0) parts.push("nicio cumpărare în perioada exportată (doar mișcări de cash)");
+                setImportMessage(`Istoric tranzacții importat${parts.length ? `: ${parts.join(", ")}` : " — nimic nou"}.`);
+            } else {
+                if (res.holdingsCreated) parts.push(`${res.holdingsCreated} holding${res.holdingsCreated > 1 ? "uri noi" : " nou"}`);
+                if (res.holdingsUpdated) parts.push(`${res.holdingsUpdated} holding${res.holdingsUpdated > 1 ? "uri actualizate" : " actualizat"}`);
+                if (res.pendingAccountNumbers.length) parts.push(`${res.pendingAccountNumbers.length} cont(uri) încă în așteptare — doar cash, nimic investit încă`);
+                setImportMessage(parts.length ? `Sumar cont importat: ${parts.join(", ")}.` : "Sumar cont importat — nimic nou de actualizat.");
+            }
         } catch (err: any) {
             setImportMessage(`Eroare la import: ${err?.message || "necunoscută"}.`);
         } finally {
@@ -168,6 +177,7 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
             const base64 = btoa(binary);
             const res = await importVanguardTransactionsPdf(base64);
             setAccounts(await listVanguardAccountsSerialized(provider));
+            setImportTick((t) => t + 1);
 
             const parts: string[] = [];
             if (res.accountCreated) parts.push(`cont nou creat (${res.accountName})`);
@@ -359,7 +369,7 @@ export function VanguardClient({ initialAccounts, provider }: { initialAccounts:
                         </Card>
                     ) : (
                         accounts.map((account) => (
-                            <AccountCard key={account.id} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} syncTick={syncTick} />
+                            <AccountCard key={`${account.id}-${importTick}`} account={account} onRemoveAccount={removeAccount} setAccounts={setAccounts} syncTick={syncTick} />
                         ))
                     )}
                 </>
@@ -1202,6 +1212,16 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                     ) : (contributions[h.id]?.length ?? 0) === 0 ? (
                                                         <p className="text-xs text-faint italic text-center py-4">Nicio contribuție înregistrată încă — holdingul are doar totalul inițial.</p>
                                                     ) : (
+                                                        <>
+                                                        {(() => {
+                                                            const loggedCost = contributions[h.id]!.reduce((s, c) => s + c.amount, 0);
+                                                            const gap = h.costBasis - loggedCost;
+                                                            return gap > 0.01 ? (
+                                                                <p className="text-xs text-faint italic mb-2">
+                                                                    {formatMoney(gap, account.currency)} din totalul investit nu au dată — cumpărări mai vechi decât istoricul importat. Exportă &bdquo;Transaction history&rdquo; pe o perioadă mai lungă ca să apară și ele.
+                                                                </p>
+                                                            ) : null;
+                                                        })()}
                                                         <table className="w-full text-left">
                                                             <thead>
                                                                 <tr className="text-[10px] text-muted uppercase tracking-wider">
@@ -1230,6 +1250,7 @@ function AccountCard({ account, onRemoveAccount, setAccounts, syncTick }: { acco
                                                                 ))}
                                                             </tbody>
                                                         </table>
+                                                        </>
                                                     )}
                                                 </td>
                                             </tr>
