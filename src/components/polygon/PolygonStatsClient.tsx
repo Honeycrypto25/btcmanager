@@ -20,6 +20,7 @@ import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filt
 import { checkAllPolygonOrdersNow, buyBackPolygonLotNowAction } from "@/app/actions/polygon";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Card, Button, cn } from "@/components/ui/core";
+import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
 
 const PAGE_SIZE = 10;
 
@@ -655,8 +656,10 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
     );
 }
 
-function LotsTable({ lots, symbolBySettingsId, priceBySettingsId, isAdmin }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number>; isAdmin: boolean }) {
+function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isAdmin }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number>; isAdmin: boolean }) {
     const [page, setPage] = useState(1);
+    const lotFilter = useLotStatusFilter(tableLots, ["PENDING_BUYBACK_ORDER", "OPEN"]);
+    const lots = lotFilter.filtered;
     const [copiedHash, setCopiedHash] = useState<string | null>(null);
     const [busyLotId, setBusyLotId] = useState<string | null>(null);
     const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
@@ -693,13 +696,23 @@ function LotsTable({ lots, symbolBySettingsId, priceBySettingsId, isAdmin }: { l
         setCopiedHash(hash);
         setTimeout(() => setCopiedHash(null), 2000);
     };
-    if (lots.length === 0) return <p className="text-sm text-muted">Niciun lot încă.</p>;
+    if (tableLots.length === 0) return <p className="text-sm text-muted">Niciun lot încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
+            <div className="mb-4">
+                <LotStatusFilter
+                    labels={STATUS_LABELS}
+                    counts={lotFilter.counts}
+                    total={lotFilter.total}
+                    selected={lotFilter.selected}
+                    onChange={(next) => { lotFilter.setSelected(next); setPage(1); }}
+                />
+            </div>
+            {lots.length === 0 && <p className="text-sm text-muted py-4">Niciun lot cu statusul selectat.</p>}
             <div className="overflow-x-auto -mx-6">
                 <table className="w-full text-sm min-w-[1520px]">
                     <thead>

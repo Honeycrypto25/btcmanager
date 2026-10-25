@@ -21,6 +21,9 @@ import { Card, Button, cn } from "@/components/ui/core";
 import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action, setEvaV2SlippageAction, recreateEvaV2OrderAction } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+
+const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
 const PAGE_SIZE = 10;
 
@@ -630,8 +633,10 @@ function SolscanLink({ signature, label }: { signature: string; label: string })
     );
 }
 
-function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
+function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
     const [page, setPage] = useState(1);
+    const lotFilter = useLotStatusFilter(tableLots, PENDING_STATUSES);
+    const lots = lotFilter.filtered;
     const isAdmin = useIsAdmin();
     const [busyLotId, setBusyLotId] = useState<string | null>(null);
     const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
@@ -680,13 +685,23 @@ function CyclesTable({ lots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUs
         }
     }
 
-    if (lots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
+    if (tableLots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
     const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
     return (
         <>
+            <div className="mb-4">
+                <LotStatusFilter
+                    labels={STATUS_LABEL_MAP}
+                    counts={lotFilter.counts}
+                    total={lotFilter.total}
+                    selected={lotFilter.selected}
+                    onChange={(next) => { lotFilter.setSelected(next); setPage(1); }}
+                />
+            </div>
+            {lots.length === 0 && <p className="text-sm text-muted py-4">Niciun lot cu statusul selectat.</p>}
             <table className="w-full min-w-[1700px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
