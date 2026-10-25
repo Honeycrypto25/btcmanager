@@ -162,7 +162,7 @@ export default function AvgCostChart({ transactions }: AvgCostChartProps) {
             try {
                 const days = daysForRange(range, earliestTxTime);
                 const res = await fetch(
-                    `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}&interval=daily`
+                    `/api/btc/price-history?days=${days}`
                 );
                 if (!res.ok) throw new Error('Failed to fetch price data');
                 const data = await res.json();

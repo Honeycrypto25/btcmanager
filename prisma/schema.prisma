@@ -879,6 +879,18 @@ model VanguardPriceHistory {
   @@index([holdingId, capturedAt])
 }
 
+// Daily BTC/USD close, cached server-side so the BTC charts (Price
+// history, ROI evolution, average cost) never depend on a third-party API
+// answering from the visitor's browser. Filled lazily by
+// lib/btc-price-history.ts from Binance -> Kraken -> CoinGecko, whichever
+// answers first; if all are down the charts still render from what's here.
+model BtcDailyPrice {
+  date      String   @id // YYYY-MM-DD (UTC)
+  priceUsd  Float
+  source    String
+  updatedAt DateTime @updatedAt
+}
+
 model FinancialGoal {
   id     String @id @default(cuid())
   userId String

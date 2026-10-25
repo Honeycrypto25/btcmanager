@@ -63,6 +63,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
     useEffect(() => {
         const fetchHistory = async () => {
             setLoading(true);
+            setError(null);
             try {
                 let daysParam: string | number = days;
 
@@ -82,7 +83,7 @@ export default function PriceChart({ transactions }: PriceChartProps) {
                 }
 
                 // Fetch daily data for the selected range
-                const res = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${daysParam}&interval=daily`);
+                const res = await fetch(`/api/btc/price-history?days=${daysParam}`);
                 if (!res.ok) throw new Error("Failed to fetch price data");
 
                 const data = await res.json();

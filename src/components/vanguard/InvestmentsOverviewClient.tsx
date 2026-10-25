@@ -4,6 +4,8 @@ import React from "react";
 import Link from "next/link";
 import { Card, cn } from "@/components/ui/core";
 import { Bitcoin, BarChart3, Landmark, Building2, ArrowRight, Info } from "lucide-react";
+import { InvestmentKpis } from "@/components/vanguard/InvestmentKpis";
+import { RoiByPeriodTable } from "@/components/vanguard/RoiByPeriodTable";
 
 interface AssetFigures {
     invested: number;
@@ -203,6 +205,22 @@ export function InvestmentsOverviewClient({
                     </Card>
                 </div>
             </div>
+
+            {vanguard.holdingCount > 0 && (
+                <section className="space-y-4 pt-2">
+                    <h2 className="text-sm font-bold text-muted uppercase tracking-wider">Vanguard — statistici</h2>
+                    <InvestmentKpis provider="vanguard" />
+                    <RoiByPeriodTable provider="vanguard" title="Vanguard — ROI pe perioadă" />
+                </section>
+            )}
+
+            {fidelity.holdingCount > 0 && (
+                <section className="space-y-4 pt-2">
+                    <h2 className="text-sm font-bold text-muted uppercase tracking-wider">Fidelity — statistici</h2>
+                    <InvestmentKpis provider="fidelity" />
+                    <RoiByPeriodTable provider="fidelity" title="Fidelity — ROI pe perioadă" />
+                </section>
+            )}
         </div>
     );
 }

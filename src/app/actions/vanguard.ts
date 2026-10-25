@@ -493,6 +493,87 @@ export async function getVanguardRoiByPeriod(provider?: string): Promise<{
     return { weekly: bucketsToRows(weekMap), monthly: bucketsToRows(monthMap), yearly: bucketsToRows(yearMap) };
 }
 
+export interface VanguardAccountPurchaseStats {
+    accountId: string;
+    accountName: string;
+    currency: string;
+    invested: number;
+    value: number;
+    units: number;
+    /** Distinct tickers held in this account -- units/avg price are only
+     * meaningful summed across holdings of the SAME fund. */
+    tickers: string[];
+    purchaseCount: number;
+    largestPurchase: { amount: number; date: string } | null;
+    /** Earliest dated purchase, or the earliest holding's creation date
+     * when nothing is dated yet. */
+    firstDate: string | null;
+    /** Invested money not explained by any dated contribution (e.g. a
+     * Fidelity holding imported from the Account summary only). */
+    undatedAmount: number;
+}
+
+/** Per-account purchase statistics for the BTC-ROI-style KPI cards on
+ * /vanguard, /fidelity and /investments. Built from the same
+ * VanguardContribution ledger as getVanguardRoiByPeriod(). */
+export async function getVanguardPurchaseStats(provider?: string): Promise<VanguardAccountPurchaseStats[]> {
+    const userId = await requireUserId();
+    const accounts = await db.vanguardAccount.findMany({
+        where: { userId, ...(provider ? { provider } : {}) },
+        orderBy: { createdAt: "asc" },
+        include: { holdings: { include: { contributions: true } } },
+    });
+
+    return (accounts as any[]).map((a) => {
+        let invested = 0;
+        let value = 0;
+        let units = 0;
+        let purchaseCount = 0;
+        let largest: { amount: number; date: Date } | null = null;
+        let firstDate: Date | null = null;
+        let undatedAmount = 0;
+        const tickers = new Set<string>();
+
+        for (const h of a.holdings) {
+            const hCost = Number(h.costBasis);
+            invested += hCost;
+            value += Number(h.currentValue);
+            units += Number(h.units ?? 0);
+            if (h.ticker) tickers.add(h.ticker);
+
+            let logged = 0;
+            for (const c of h.contributions) {
+                const amount = Number(c.amount);
+                logged += amount;
+                purchaseCount++;
+                if (!largest || amount > largest.amount) largest = { amount, date: c.date };
+                if (!firstDate || c.date < firstDate) firstDate = c.date;
+            }
+            const residual = hCost - logged;
+            if (residual > 0.01) {
+                undatedAmount += residual;
+                if (h.contributions.length === 0 && (!firstDate || h.createdAt < firstDate)) firstDate = h.createdAt;
+            }
+        }
+
+        const lp = largest as { amount: number; date: Date } | null;
+        const fd = firstDate as Date | null;
+        return {
+            accountId: a.id as string,
+            accountName: a.name as string,
+            currency: a.currency as string,
+            invested,
+            value,
+            units,
+            tickers: Array.from(tickers),
+            purchaseCount,
+            largestPurchase: lp ? { amount: lp.amount, date: lp.date.toISOString() } : null,
+            firstDate: fd ? fd.toISOString() : null,
+            undatedAmount,
+        };
+    });
+}
+
 export interface VanguardHoldingSignal {
     holdingId: string;
     currentPrice: number | null;
