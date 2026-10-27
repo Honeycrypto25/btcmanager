@@ -8,6 +8,21 @@ interface PeriodAgg {
     btcAmount: number;
     t212Invested: number;
     t212Value: number;
+    /** Vanguard / Fidelity cohort figures (USD): money that went in this
+     * period, and what those specific units are worth today. */
+    vgInvested: number;
+    vgValue: number;
+    fdInvested: number;
+    fdValue: number;
+}
+
+const EMPTY_AGG: PeriodAgg = { btcInvested: 0, btcAmount: 0, t212Invested: 0, t212Value: 0, vgInvested: 0, vgValue: 0, fdInvested: 0, fdValue: 0 };
+
+function mergeAgg(existing: PeriodAgg | undefined, patch: Partial<PeriodAgg>): PeriodAgg {
+    const base = existing ?? EMPTY_AGG;
+    const out = { ...base };
+    for (const k of Object.keys(patch) as (keyof PeriodAgg)[]) out[k] = base[k] + (patch[k] ?? 0);
+    return out;
 }
 
 function computeAssetStats(monthlyRows: PeriodRow[], asset: 'btc' | 't212', transactionCount: number): AssetStats {
@@ -90,28 +105,22 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
     const yearly = new Map<number, PeriodAgg>();
     const monthly = new Map<string, PeriodAgg>();
 
-    const addTo = (map: Map<any, PeriodAgg>, key: any, patch: Partial<PeriodAgg>) => {
-        const existing = map.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0, t212Value: 0 };
-        map.set(key, {
-            btcInvested: existing.btcInvested + (patch.btcInvested ?? 0),
-            btcAmount: existing.btcAmount + (patch.btcAmount ?? 0),
-            t212Invested: existing.t212Invested + (patch.t212Invested ?? 0),
-            t212Value: existing.t212Value + (patch.t212Value ?? 0),
-        });
+    const addTo = <K,>(map: Map<K, PeriodAgg>, key: K, patch: Partial<PeriodAgg>) => {
+        map.set(key, mergeAgg(map.get(key), patch));
     };
 
     const addToWeek = (d: Date, patch: Partial<PeriodAgg>) => {
         const monday = mondayOf(d);
         const key = monday.toISOString().slice(0, 10);
         const label = monday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        const existing = weekly.get(key) ?? { btcInvested: 0, btcAmount: 0, t212Invested: 0, t212Value: 0, label };
-        weekly.set(key, {
-            btcInvested: existing.btcInvested + (patch.btcInvested ?? 0),
-            btcAmount: existing.btcAmount + (patch.btcAmount ?? 0),
-            t212Invested: existing.t212Invested + (patch.t212Invested ?? 0),
-            t212Value: existing.t212Value + (patch.t212Value ?? 0),
-            label,
-        });
+        weekly.set(key, { ...mergeAgg(weekly.get(key), patch), label });
+    };
+
+    const addToAll = (d: Date, patch: Partial<PeriodAgg>) => {
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        addTo(yearly, d.getFullYear(), patch);
+        addTo(monthly, monthKey, patch);
+        addToWeek(d, patch);
     };
 
     for (const tx of allBtcTx) {
@@ -154,12 +163,62 @@ export async function getOverviewData(): Promise<{ data: OverviewData; usdToGbp:
         }
     }
 
+    // --- Vanguard / Fidelity, from the per-purchase contribution ledger ---
+    // Same cohort logic as getVanguardRoiByPeriod(): each contribution lands
+    // in the period it was bought, valued at today's unit price. Money in a
+    // holding that no dated contribution explains (e.g. a Fidelity holding
+    // imported only as a total) goes to the holding's earliest known date.
+    try {
+        const vgAccounts = await db.vanguardAccount.findMany({ include: { holdings: { include: { contributions: true } } } });
+        const fxCache = new Map<string, number>();
+        const toUsd = async (currency: string) => {
+            if (currency === 'USD') return 1;
+            if (!fxCache.has(currency)) fxCache.set(currency, await getExchangeRate(currency, 'USD'));
+            return fxCache.get(currency)!;
+        };
+        for (const account of vgAccounts as any[]) {
+            const fx = await toUsd(account.currency || 'GBP');
+            const isFidelity = account.provider === 'fidelity';
+            for (const h of account.holdings) {
+                const totalUnits = Number(h.units ?? 0);
+                const ppu = totalUnits > 0 ? Number(h.currentValue) / totalUnits : 0;
+                let loggedUnits = 0;
+                let loggedCost = 0;
+                let earliest: Date | null = null;
+                const add = (d: Date, invested: number, value: number) =>
+                    addToAll(d, isFidelity ? { fdInvested: invested * fx, fdValue: value * fx } : { vgInvested: invested * fx, vgValue: value * fx });
+                for (const c of h.contributions) {
+                    const units = Number(c.units);
+                    const amount = Number(c.amount);
+                    loggedUnits += units;
+                    loggedCost += amount;
+                    if (!earliest || c.date < earliest) earliest = c.date;
+                    add(new Date(c.date), amount, units * ppu);
+                }
+                const residualCost = Number(h.costBasis) - loggedCost;
+                const residualUnits = totalUnits - loggedUnits;
+                if (Math.abs(residualCost) > 0.01 || Math.abs(residualUnits) > 0.0001) {
+                    add(new Date(earliest ?? h.createdAt), residualCost, residualUnits * ppu);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[overview] Vanguard/Fidelity breakdown failed:', err);
+    }
+
     const buildRow = (label: string, agg: PeriodAgg): PeriodRow => {
         const btcValue = agg.btcAmount * currentBtcPrice;
         const btcRow = computeAsset(agg.btcInvested, btcValue);
         const t212Row = computeAsset(agg.t212Invested, agg.t212Value);
         const totalRow = computeAsset(agg.btcInvested + agg.t212Invested, btcValue + agg.t212Value);
-        return { label, btc: btcRow, t212: t212Row, total: totalRow };
+        return {
+            label,
+            btc: btcRow,
+            t212: t212Row,
+            total: totalRow,
+            vanguard: computeAsset(agg.vgInvested, agg.vgValue),
+            fidelity: computeAsset(agg.fdInvested, agg.fdValue),
+        };
     };
 
     const yearlyRows: PeriodRow[] = Array.from(yearly.entries())

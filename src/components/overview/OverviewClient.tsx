@@ -32,7 +32,12 @@ export interface PeriodRow {
     label: string;
     btc: AssetFigures;
     t212: AssetFigures;
+    /** btc + t212 only. */
     total: AssetFigures;
+    /** Vanguard / Fidelity cohorts for this period (invested that period,
+     * worth today), from the contribution ledger -- see getOverviewData(). */
+    vanguard?: AssetFigures;
+    fidelity?: AssetFigures;
 }
 
 export interface AssetStats {
@@ -102,6 +107,8 @@ function scaleRow(row: PeriodRow, factor: number): PeriodRow {
         btc: scaleFigures(row.btc, factor),
         t212: scaleFigures(row.t212, factor),
         total: scaleFigures(row.total, factor),
+        vanguard: row.vanguard ? scaleFigures(row.vanguard, factor) : undefined,
+        fidelity: row.fidelity ? scaleFigures(row.fidelity, factor) : undefined,
     };
 }
 
@@ -113,116 +120,26 @@ export interface PeriodRowWithVanguard extends PeriodRow {
     combinedTotal: AssetFigures;
 }
 
-/** Monday of the week containing `date`, at midnight — must match
- * mondayOf() in lib/overview-data.ts exactly, since weekly labels below
- * are joined against weeklyRows by plain string equality. */
-function mondayOfLocal(date: Date): Date {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = (day + 6) % 7;
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - diff);
-    return d;
-}
-
 const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** Buckets Vanguard's total-value series into week/month/year labels using
- * the exact same label format getOverviewData() uses for weeklyRows/
- * monthlyRows/yearlyRows, so they can be joined by label string below.
- * Each map holds the LAST value recorded within that bucket (ascending
- * iteration — later points overwrite earlier ones in the same bucket). */
-function buildVanguardPeriodMaps(series: ValuePoint[]) {
-    const week = new Map<string, number>();
-    const month = new Map<string, number>();
-    const year = new Map<string, number>();
-    for (const p of series) {
-        const d = new Date(p.date);
-        week.set(mondayOfLocal(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), p.value);
-        month.set(`${MONTH_NAMES_SHORT[d.getMonth()]} ${d.getFullYear()}`, p.value);
-        year.set(String(d.getFullYear()), p.value);
-    }
-    return { week, month, year };
-}
-
-/**
- * Merges Vanguard into a set of period rows (weekly/monthly/yearly),
- * forward-filling the last known total value into periods with no new
- * price point — same idea as the account value-history reconstruction on
- * /vanguard. Vanguard has no dated contribution log (holdings just carry a
- * current cost basis, not a purchase-by-purchase history like BTC/T212),
- * so there's no way to know which period the money actually went in. The
- * whole current invested total is attributed to the FIRST period that has
- * a value — a single-lump-sum approximation that at least keeps "sum of
- * invested across periods" equal to the true total instead of inventing
- * money — every other period gets invested=0 with its real value still
- * shown (AssetSubRow shows value/invested independently for this reason).
- */
-function withVanguard(rows: PeriodRow[], periodMap: Map<string, number>, totalInvested: number): PeriodRowWithVanguard[] {
-    const chronological = [...rows].reverse(); // rows arrive newest-first
-    let lastValue = 0;
-    let investedAssigned = false;
-    const built = chronological.map((row) => {
-        if (periodMap.has(row.label)) lastValue = periodMap.get(row.label)!;
-        let invested = 0;
-        if (!investedAssigned && lastValue > 0) {
-            invested = totalInvested;
-            investedAssigned = true;
-        }
-        const value = lastValue;
-        const pnl = value - invested;
-        const vanguard: AssetFigures = { invested, value, pnl, pnlPercent: invested > 0 ? (pnl / invested) * 100 : 0 };
-        const combinedInvested = row.total.invested + invested;
-        const combinedValue = row.total.value + value;
-        const combinedPnl = row.total.pnl + pnl;
-        const combinedTotal: AssetFigures = {
-            invested: combinedInvested,
-            value: combinedValue,
-            pnl: combinedPnl,
-            pnlPercent: combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0,
-        };
-        // fidelity starts out zeroed here -- withFidelity() below fills it in
-        // and folds it into combinedTotal as a second pass, same lump-sum
-        // approximation, kept as a separate platform so it doesn't get
-        // double-counted with Vanguard's own money.
-        return { ...row, vanguard, fidelity: ZERO_FIGURES, combinedTotal };
-    });
-    return built.reverse(); // back to newest-first, matching the input order
-}
 
 const ZERO_FIGURES: AssetFigures = { invested: 0, value: 0, pnl: 0, pnlPercent: 0 };
 
-/** Same lump-sum approximation as withVanguard() above, applied as a second
- * pass on top of its output so Fidelity (Eva-Maria's Junior ISA/SIPP) gets
- * its own column instead of being merged into Vanguard's figures -- the two
- * providers can hold the same underlying fund, but the money going in is
- * tracked per-platform (see VanguardAccount.provider). */
-function withFidelity(rows: PeriodRowWithVanguard[], periodMap: Map<string, number>, totalInvested: number): PeriodRowWithVanguard[] {
-    const chronological = [...rows].reverse(); // rows arrive newest-first
-    let lastValue = 0;
-    let investedAssigned = false;
-    const built = chronological.map((row) => {
-        if (periodMap.has(row.label)) lastValue = periodMap.get(row.label)!;
-        let invested = 0;
-        if (!investedAssigned && lastValue > 0) {
-            invested = totalInvested;
-            investedAssigned = true;
-        }
-        const value = lastValue;
-        const pnl = value - invested;
-        const fidelity: AssetFigures = { invested, value, pnl, pnlPercent: invested > 0 ? (pnl / invested) * 100 : 0 };
-        const combinedInvested = row.combinedTotal.invested + invested;
-        const combinedValue = row.combinedTotal.value + value;
-        const combinedPnl = row.combinedTotal.pnl + pnl;
-        const combinedTotal: AssetFigures = {
-            invested: combinedInvested,
-            value: combinedValue,
-            pnl: combinedPnl,
-            pnlPercent: combinedInvested > 0 ? (combinedPnl / combinedInvested) * 100 : 0,
-        };
-        return { ...row, fidelity, combinedTotal };
+function pct(invested: number, pnl: number) {
+    return invested > 0 ? (pnl / invested) * 100 : 0;
+}
+
+/** Adds Vanguard / Fidelity (already bucketed per period on the server,
+ * from each purchase's real date) on top of btc + t212 for the combined
+ * row total. */
+function withPlatforms(rows: PeriodRow[], includeVanguard: boolean, includeFidelity: boolean): PeriodRowWithVanguard[] {
+    return rows.map((row) => {
+        const vanguard = includeVanguard ? row.vanguard ?? ZERO_FIGURES : ZERO_FIGURES;
+        const fidelity = includeFidelity ? row.fidelity ?? ZERO_FIGURES : ZERO_FIGURES;
+        const invested = row.total.invested + vanguard.invested + fidelity.invested;
+        const value = row.total.value + vanguard.value + fidelity.value;
+        const pnl = row.total.pnl + vanguard.pnl + fidelity.pnl;
+        return { ...row, vanguard, fidelity, combinedTotal: { invested, value, pnl, pnlPercent: pct(invested, pnl) } };
     });
-    return built.reverse(); // back to newest-first, matching the input order
 }
 
 export function OverviewClient({
@@ -308,34 +225,11 @@ export function OverviewClient({
     // both the "Invested vs. value" bar chart and the "Invested by ..."
     // table below, so the two stay in sync with each other and with the
     // top card's evolution chart (all three read from the same
-    // vanguardSeries, just bucketed differently). See withVanguard() for
+    // vanguardSeries, just bucketed differently). See withPlatforms() for
     // the "first period gets the whole invested total" approximation.
-    const vanguardOnlyPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.vanguardOnlySeries), [view.vanguardOnlySeries]);
-    const fidelityPeriodMaps = useMemo(() => buildVanguardPeriodMaps(view.fidelitySeries), [view.fidelitySeries]);
-    const weeklyRowsV = useMemo(
-        () => withFidelity(
-            withVanguard(view.weeklyRows, vanguardOnlyPeriodMaps.week, view.vanguardOnlyInvested),
-            fidelityPeriodMaps.week,
-            view.fidelityInvested
-        ),
-        [view.weeklyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
-    );
-    const monthlyRowsV = useMemo(
-        () => withFidelity(
-            withVanguard(view.monthlyRows, vanguardOnlyPeriodMaps.month, view.vanguardOnlyInvested),
-            fidelityPeriodMaps.month,
-            view.fidelityInvested
-        ),
-        [view.monthlyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
-    );
-    const yearlyRowsV = useMemo(
-        () => withFidelity(
-            withVanguard(view.yearlyRows, vanguardOnlyPeriodMaps.year, view.vanguardOnlyInvested),
-            fidelityPeriodMaps.year,
-            view.fidelityInvested
-        ),
-        [view.yearlyRows, vanguardOnlyPeriodMaps, view.vanguardOnlyInvested, fidelityPeriodMaps, view.fidelityInvested]
-    );
+    const weeklyRowsV = useMemo(() => withPlatforms(view.weeklyRows, !!vanguardOnly, !!fidelity), [view.weeklyRows, vanguardOnly, fidelity]);
+    const monthlyRowsV = useMemo(() => withPlatforms(view.monthlyRows, !!vanguardOnly, !!fidelity), [view.monthlyRows, vanguardOnly, fidelity]);
+    const yearlyRowsV = useMemo(() => withPlatforms(view.yearlyRows, !!vanguardOnly, !!fidelity), [view.yearlyRows, vanguardOnly, fidelity]);
 
     return (
         <>
@@ -1226,10 +1120,9 @@ function PeriodBreakdown({
                     </div>
                     {(hasVanguard || hasFidelity) && (
                         <p className="text-[10px] text-faint mt-3 leading-relaxed">
-                            {hasVanguard && hasFidelity ? "Vanguard and Fidelity have" : hasVanguard ? "Vanguard has" : "Fidelity has"} no dated contribution history (holdings carry a current total, not a
-                            purchase-by-purchase log), so each platform&apos;s full &quot;invested&quot; figure is shown once, in the
-                            earliest period with price data &mdash; every other period shows its real value with no
-                            new investment attributed to it.
+                            Vanguard &amp; Fidelity: each purchase is counted in the period it was bought, valued at
+                            today&apos;s unit price. Amounts imported only as a total (no purchase date) are counted in the
+                            earliest period known for that holding.
                         </p>
                     )}
                 </>
@@ -1253,7 +1146,7 @@ function AssetSubRow({
 }) {
     // Invested and value are shown independently — Vanguard rows can have a
     // real value with no "new investment" attributed to that period (see
-    // withVanguard()), and should still show the value rather than a dash.
+    // withPlatforms()), and should still show the value rather than a dash.
     const hasInvested = figures.invested !== 0;
     const hasValue = figures.value !== 0;
     return (
@@ -1477,7 +1370,7 @@ function TrailingPeriodsCard({
  * period -- deliberately the simple version of MonthlyBarsChart right below
  * it, with no per-asset breakdown or isolate toggle: just "how much is it
  * all worth this week/month/year". Reads row.combinedTotal, which already
- * sums every asset (see withVanguard/withFidelity above). */
+ * sums every asset (see withPlatforms above). */
 function TotalBarsChart({
     weeklyRows,
     monthlyRows,

@@ -434,8 +434,8 @@ function bucketsToRows(map: Map<string, RoiBucket>): VanguardRoiPeriodRow[] {
  * holdings predating the contribution-ledger feature may too) — whatever
  * cost/units aren't accounted for by that holding's own contribution rows
  * (the "residual") is folded into the EARLIEST period the holding has any
- * evidence for (its earliest contribution date, or valueUpdatedAt if it
- * has no contributions at all), mirroring the same lump-sum approximation
+ * evidence for (its earliest contribution date, or when the holding was created
+ * if it has no contributions at all), mirroring the same lump-sum approximation
  * already used for the Overview page's weekly/monthly/yearly breakdown —
  * so the periods always sum to the true total instead of silently
  * dropping undated money. */
@@ -481,7 +481,7 @@ export async function getVanguardRoiByPeriod(provider?: string): Promise<{
             const residualUnits = totalUnits - loggedUnits;
             const residualCost = totalCostBasis - loggedCost;
             if (Math.abs(residualCost) > 0.01 || Math.abs(residualUnits) > 0.0001) {
-                const fallbackDate = earliestDate ?? holding.valueUpdatedAt;
+                const fallbackDate = earliestDate ?? holding.createdAt;
                 const residualValue = residualUnits * pricePerUnit;
                 addToBucket(weekMap, mondayKeyUtc(fallbackDate), residualCost, residualValue, residualUnits);
                 addToBucket(monthMap, monthKeyUtc(fallbackDate), residualCost, residualValue, residualUnits);
