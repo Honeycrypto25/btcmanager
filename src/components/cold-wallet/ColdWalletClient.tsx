@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
@@ -89,19 +89,82 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
             }));
     }, [view, year, scoped, sweeps, years]);
 
-    const chartData = useMemo(
-        () =>
-            buckets.map((b) => {
-                const row: Record<string, number | string> = { label: b.label };
-                for (const a of ASSETS) {
-                    const v = b.items.filter((s) => s.asset === a.key).reduce((t, s) => t + value(s), 0);
-                    row[a.key] = Math.round(v * 100) / 100;
-                }
-                return row;
-            }),
+    // Chart: a rolling window of the last 12 months (ending this month, or
+    // December of a past selected year) or the last 12 years — independent of
+    // the calendar-year scope used by the table below.
+    const chartWindow = useMemo(() => {
+        const now = new Date();
+        if (view === "month") {
+            const endYear = year;
+            const endMonth = year === now.getFullYear() ? now.getMonth() : 11;
+            return Array.from({ length: 12 }, (_, i) => {
+                const d = new Date(endYear, endMonth - 11 + i, 1);
+                const y = d.getFullYear();
+                const m = d.getMonth();
+                return {
+                    label: `${MONTHS[m]} '${String(y).slice(2)}`,
+                    fullLabel: `${MONTHS[m]} ${y}`,
+                    items: sweeps.filter((sw) => {
+                        const t = new Date(sw.createdAt);
+                        return t.getFullYear() === y && t.getMonth() === m;
+                    }),
+                };
+            });
+        }
+        const endYear = now.getFullYear();
+        return Array.from({ length: 12 }, (_, i) => {
+            const y = endYear - 11 + i;
+            return {
+                label: String(y),
+                fullLabel: String(y),
+                items: sweeps.filter((sw) => new Date(sw.createdAt).getFullYear() === y),
+            };
+        });
+    }, [view, year, sweeps]);
+
+    // Assets shown in the chart (empty = all), toggled from the legend.
+    const [chartAssets, setChartAssets] = useState<Set<ColdAsset>>(new Set());
+    const chartAssetOn = (a: ColdAsset) => chartAssets.size === 0 || chartAssets.has(a);
+    function toggleChartAsset(a: ColdAsset) {
+        setChartAssets((prev) => {
+            const next = new Set(prev);
+            if (next.has(a)) next.delete(a);
+            else next.add(a);
+            return next.size === ASSETS.length ? new Set() : next;
+        });
+    }
+
+    const chart = useMemo(() => {
+        const rows = chartWindow.map((b) => {
+            const row: Record<string, number | string> = { label: b.label, fullLabel: b.fullLabel };
+            let total = 0;
+            for (const a of ASSETS) {
+                const v = chartAssetOn(a.key)
+                    ? b.items.filter((sw) => sw.asset === a.key).reduce((t, sw) => t + value(sw), 0)
+                    : 0;
+                row[a.key] = Math.round(v * 100) / 100;
+                total += v;
+            }
+            row.total = Math.round(total * 100) / 100;
+            return row;
+        });
+        // Legend totals: every asset over the window (shown even when hidden).
+        const assetTotals = Object.fromEntries(
+            ASSETS.map((a) => [
+                a.key,
+                chartWindow.reduce((t, b) => t + b.items.filter((sw) => sw.asset === a.key).reduce((u, sw) => u + value(sw), 0), 0),
+            ])
+        ) as Record<ColdAsset, number>;
+        const total = ASSETS.filter((a) => chartAssetOn(a.key)).reduce((t, a) => t + assetTotals[a.key], 0);
+        // Average per period for the selected assets, counted from the first
+        // period with a sweep of those assets — months/years before the bots
+        // existed would only drag it towards zero.
+        const first = rows.findIndex((r) => Number(r.total) > 0);
+        const periods = first === -1 ? 0 : rows.length - first;
+        const average = periods > 0 ? total / periods : 0;
+        return { rows, assetTotals, total, average, periods };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [buckets, basis]
-    );
+    }, [chartWindow, basis, chartAssets]);
 
     // Table rows: in the monthly view, from the first month with a sweep up
     // to the current month (or December for a past year), newest first.
@@ -264,41 +327,83 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
 
                     {/* Chart */}
                     <Card className="space-y-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <h2 className="font-display text-base font-medium text-foreground">
-                                {view === "month" ? `Profit scos pe luni · ${year}` : "Profit scos pe ani"}
-                            </h2>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                                {ASSETS.map((a) => (
-                                    <span key={a.key} className="flex items-center gap-2 text-xs text-muted">
-                                        <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: a.color }} />
-                                        {a.key} <span className="text-faint">· {a.chain}</span>
-                                    </span>
-                                ))}
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                                <h2 className="font-display text-base font-medium text-foreground">
+                                    {view === "month" ? "Profit scos · ultimele 12 luni" : "Profit scos · ultimii 12 ani"}
+                                </h2>
+                                <p className="text-xs text-muted">
+                                    {chartWindow[0].fullLabel} – {chartWindow[chartWindow.length - 1].fullLabel} · apasă pe un activ ca să-l selectezi
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Active afișate în grafic">
+                                {ASSETS.map((a) => {
+                                    const on = chartAssetOn(a.key);
+                                    const selected = chartAssets.has(a.key);
+                                    return (
+                                        <button
+                                            key={a.key}
+                                            type="button"
+                                            aria-pressed={selected}
+                                            onClick={() => toggleChartAsset(a.key)}
+                                            className={cn(
+                                                "inline-flex min-h-[32px] items-center gap-2 rounded-full border px-3 text-xs transition-colors",
+                                                selected ? "border-primary/50 bg-primary/10" : "border-white/10 bg-white/[0.03] hover:border-white/20",
+                                                on ? "text-foreground" : "text-faint"
+                                            )}
+                                        >
+                                            <span aria-hidden className={cn("h-2.5 w-2.5 rounded-sm", !on && "opacity-30")} style={{ background: a.color }} />
+                                            {a.key}
+                                            <span className={cn("font-mono", on ? "text-muted" : "text-faint")}>{usd(chart.assetTotals[a.key])}</span>
+                                        </button>
+                                    );
+                                })}
+                                {chartAssets.size > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setChartAssets(new Set())}
+                                        className="min-h-[32px] px-1 text-xs text-faint underline decoration-dotted hover:text-muted"
+                                    >
+                                        Toate
+                                    </button>
+                                )}
+                                <span className="inline-flex min-h-[32px] items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 text-xs text-primary-strong">
+                                    Total <span className="font-mono font-medium">{usd(chart.total)}</span>
+                                </span>
                             </div>
                         </div>
-                        <ResponsiveContainer width="100%" height={280}>
-                            <BarChart data={chartData}>
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={chart.rows} margin={{ top: 16, right: 8, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                                 <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                                 <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickFormatter={(v) => `$${v}`} width={56} />
-                                <Tooltip
-                                    cursor={{ fill: "rgba(255,255,255,0.03)" }}
-                                    contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                    formatter={(v, name) => (Number(v) > 0 ? [usd(Number(v)), String(name)] : [null, null])}
-                                />
-                                {ASSETS.map((a, i) => (
-                                    <Bar
-                                        key={a.key}
-                                        dataKey={a.key}
-                                        stackId="sweep"
-                                        fill={a.color}
-                                        radius={i === ASSETS.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                                        maxBarSize={56}
-                                    />
+                                <Tooltip cursor={{ fill: "rgba(255,255,255,0.03)" }} content={<ChartTooltip average={chart.average} />} />
+                                {ASSETS.filter((a) => chartAssetOn(a.key)).map((a) => (
+                                    <Bar key={a.key} dataKey={a.key} name={a.key} stackId="sweep" fill={a.color} maxBarSize={56} />
                                 ))}
+                                {chart.average > 0 && (
+                                    <ReferenceLine
+                                        y={Math.round(chart.average * 100) / 100}
+                                        stroke="#e8bc70"
+                                        strokeDasharray="6 4"
+                                        strokeWidth={1.5}
+                                        ifOverflow="extendDomain"
+                                        label={{
+                                            value: `Medie ${usd(chart.average)}/${view === "month" ? "lună" : "an"}`,
+                                            position: "insideTopLeft",
+                                            fill: "#e8bc70",
+                                            fontSize: 11,
+                                        }}
+                                    />
+                                )}
                             </BarChart>
                         </ResponsiveContainer>
+                        {chart.average > 0 && (
+                            <p className="text-xs text-faint">
+                                Media e calculată pe {chart.periods} {view === "month" ? (chart.periods === 1 ? "lună" : "luni") : chart.periods === 1 ? "an" : "ani"}, de la prima retragere din interval
+                                {chartAssets.size > 0 ? `, doar pentru ${Array.from(chartAssets).join(", ")}` : ""}.
+                            </p>
+                        )}
                     </Card>
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -575,6 +680,44 @@ function Segmented<T extends string | number>({
                     </button>
                 );
             })}
+        </div>
+    );
+}
+
+type TooltipEntry = { dataKey?: string | number; value?: number | string; color?: string; payload?: Record<string, number | string> };
+
+function ChartTooltip({ active, payload, average }: { active?: boolean; payload?: TooltipEntry[]; average: number }) {
+    if (!active || !payload || payload.length === 0) return null;
+    const row = payload[0].payload ?? {};
+    const items = payload
+        .filter((p) => Number(p.value) > 0)
+        .sort((a, b) => Number(b.value) - Number(a.value));
+    const total = Number(row.total ?? 0);
+    return (
+        <div className="min-w-[180px] space-y-1.5 rounded-lg border border-white/10 bg-[#111] px-3 py-2.5 text-xs shadow-lg">
+            <p className="font-medium text-foreground">{String(row.fullLabel ?? "")}</p>
+            {items.length === 0 ? (
+                <p className="text-faint">Nicio retragere</p>
+            ) : (
+                items.map((p) => (
+                    <div key={String(p.dataKey)} className="flex items-center justify-between gap-4">
+                        <span className="flex items-center gap-2 text-muted">
+                            <span aria-hidden className="h-2 w-2 rounded-sm" style={{ background: p.color }} />
+                            {String(p.dataKey)}
+                        </span>
+                        <span className="font-mono text-foreground">{usd(Number(p.value))}</span>
+                    </div>
+                ))
+            )}
+            <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-1.5">
+                <span className="text-muted">Total</span>
+                <span className="font-mono font-medium text-primary-strong">{usd(total)}</span>
+            </div>
+            {average > 0 && total > 0 && (
+                <p className={cn("text-[11px]", total >= average ? "text-emerald-300" : "text-faint")}>
+                    {total >= average ? "+" : "−"}{usd(Math.abs(total - average))} față de medie
+                </p>
+            )}
         </div>
     );
 }
