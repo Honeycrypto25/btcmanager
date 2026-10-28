@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { format } from "date-fns";
-import { Download, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import type { ColdAsset, ColdWalletData, ColdWalletSweep } from "@/app/actions/cold-wallet";
 
@@ -41,6 +41,19 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
         return withData;
     });
     const [basis, setBasis] = useState<Basis>("at");
+    // History table only: asset filter (empty = all) and 12-row pages.
+    const [assetFilter, setAssetFilter] = useState<Set<ColdAsset>>(new Set());
+    const [page, setPage] = useState(1);
+
+    function toggleAsset(a: ColdAsset) {
+        setAssetFilter((prev) => {
+            const next = new Set(prev);
+            if (next.has(a)) next.delete(a);
+            else next.add(a);
+            return next;
+        });
+        setPage(1);
+    }
 
     const valueAt = (s: ColdWalletSweep) => (s.priceUsd != null ? s.amount * s.priceUsd : 0);
     const valueNow = (s: ColdWalletSweep) => {
@@ -145,9 +158,19 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
     const diff = totals.totalNow - totals.totalAt;
     const scopeLabel = view === "month" ? String(year) : "toți anii";
 
+    // History table: the period scope, narrowed by the asset chips, 12 per page.
+    const PAGE_SIZE = 12;
+    const assetsInScope = ASSETS.filter((a) => scoped.some((s) => s.asset === a.key));
+    const history = assetFilter.size === 0 ? scoped : scoped.filter((s) => assetFilter.has(s.asset));
+    const totalPages = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const pageStart = (currentPage - 1) * PAGE_SIZE;
+    const pageRows = history.slice(pageStart, pageStart + PAGE_SIZE);
+    const historyTotalAt = history.reduce((t, s) => t + valueAt(s), 0);
+
     function exportCsv() {
         const header = ["Data", "Activ", "Retea", "Cantitate", "Pret USD la retragere", "Sursa pret", "USD la retragere", "USD azi", "Tip", "Tranzactie"];
-        const lines = scoped.map((s) => [
+        const lines = history.map((s) => [
             format(new Date(s.createdAt), "yyyy-MM-dd HH:mm"),
             s.asset,
             ASSET_META[s.asset].chain,
@@ -164,7 +187,8 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `cold-wallet-${view === "month" ? year : "toti-anii"}.csv`;
+        const assetPart = assetFilter.size > 0 ? `-${Array.from(assetFilter).join("-").toLowerCase()}` : "";
+        a.download = `cold-wallet-${view === "month" ? year : "toti-anii"}${assetPart}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     }
@@ -184,14 +208,14 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                     <Segmented
                         label="Perioadă"
                         value={view}
-                        onChange={setView}
+                        onChange={(v) => { setView(v); setPage(1); }}
                         options={[{ value: "month", label: "Lunar" }, { value: "year", label: "Anual" }]}
                     />
                     {view === "month" && years.length > 0 && (
                         <Segmented
                             label="An"
                             value={year}
-                            onChange={setYear}
+                            onChange={(y) => { setYear(y); setPage(1); }}
                             options={years.map((y) => ({ value: y, label: String(y) }))}
                         />
                     )}
@@ -361,6 +385,47 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                                 <Download className="h-4 w-4" /> Export CSV
                             </button>
                         </div>
+                        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrează după activ">
+                            <button
+                                type="button"
+                                aria-pressed={assetFilter.size === 0}
+                                onClick={() => { setAssetFilter(new Set()); setPage(1); }}
+                                className={cn(
+                                    "min-h-[32px] rounded-full border px-3 text-xs transition-colors",
+                                    assetFilter.size === 0
+                                        ? "border-primary/50 bg-primary/15 text-primary-strong"
+                                        : "border-white/10 bg-white/[0.03] text-muted hover:text-foreground"
+                                )}
+                            >
+                                Toate · {scoped.length}
+                            </button>
+                            {assetsInScope.map((a) => {
+                                const active = assetFilter.has(a.key);
+                                const n = scoped.filter((s) => s.asset === a.key).length;
+                                return (
+                                    <button
+                                        key={a.key}
+                                        type="button"
+                                        aria-pressed={active}
+                                        onClick={() => toggleAsset(a.key)}
+                                        className={cn(
+                                            "inline-flex min-h-[32px] items-center gap-2 rounded-full border px-3 text-xs transition-colors",
+                                            active
+                                                ? "border-primary/50 bg-primary/15 text-primary-strong"
+                                                : "border-white/10 bg-white/[0.03] text-muted hover:text-foreground"
+                                        )}
+                                    >
+                                        <span aria-hidden className="h-2 w-2 rounded-sm" style={{ background: a.color }} />
+                                        {a.key} · {n}
+                                    </button>
+                                );
+                            })}
+                            {assetFilter.size > 0 && (
+                                <span className="ml-1 text-xs text-faint">
+                                    {history.length} {history.length === 1 ? "retragere" : "retrageri"} · {usd(historyTotalAt)} la retragere
+                                </span>
+                            )}
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full min-w-[760px] text-sm">
                                 <thead>
@@ -376,7 +441,7 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {scoped.map((s) => {
+                                    {pageRows.map((s) => {
                                         const est = s.priceSource === "lot-estimate";
                                         return (
                                             <tr key={`${s.asset}-${s.id}`} className="border-b border-white/[0.05]">
@@ -415,6 +480,47 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                                 </tbody>
                             </table>
                         </div>
+                        {history.length > PAGE_SIZE && (
+                            <nav aria-label="Paginare istoric" className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+                                <span>
+                                    {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, history.length)} din {history.length}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPage(currentPage - 1)}
+                                        disabled={currentPage <= 1}
+                                        aria-label="Pagina anterioară"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-muted transition-colors hover:text-foreground disabled:opacity-40"
+                                    >
+                                        <ChevronLeft className="h-4 w-4" />
+                                    </button>
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                                        <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => setPage(p)}
+                                            aria-current={p === currentPage ? "page" : undefined}
+                                            className={cn(
+                                                "h-8 min-w-[32px] rounded-lg px-2 font-mono transition-colors",
+                                                p === currentPage ? "bg-primary/15 text-primary-strong" : "text-muted hover:text-foreground"
+                                            )}
+                                        >
+                                            {p}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => setPage(currentPage + 1)}
+                                        disabled={currentPage >= totalPages}
+                                        aria-label="Pagina următoare"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-muted transition-colors hover:text-foreground disabled:opacity-40"
+                                    >
+                                        <ChevronRight className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </nav>
+                        )}
                         {(totals.estimated > 0 || totals.missing > 0) && (
                             <p className="text-xs text-faint">
                                 {totals.estimated > 0 &&
