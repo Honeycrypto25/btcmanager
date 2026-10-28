@@ -1,6 +1,8 @@
 import "server-only";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { db } from "@/lib/db";
+import { priceForSweep } from "@/lib/sweep-price";
+import { getSolPriceUsd } from "./jupiter";
 import { loadBotKeypair, getRpcUrl } from "./wallet";
 import { notifySweep } from "@/lib/email/tx-notify";
 
@@ -129,6 +131,7 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
             throw new Error(`Transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
         }
 
+        const priceUsd = await priceForSweep(getSolPriceUsd);
         await db.$transaction([
             db.solanaSweep.create({
                 data: {
@@ -139,6 +142,7 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
                     destination: destinationRaw.trim(),
                     txSignature: signature,
                     manual: force,
+                    priceUsd,
                 },
             }),
             db.solanaSettings.update({

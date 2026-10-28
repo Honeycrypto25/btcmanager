@@ -1,6 +1,8 @@
 import "server-only";
 import { Contract, formatUnits, parseUnits } from "ethers";
 import { db } from "@/lib/db";
+import { priceForSweep } from "@/lib/sweep-price";
+import { getBnbPriceUsd } from "./oneinch";
 import { loadConnectedBotWallet } from "./wallet";
 import { WBNB_ADDRESS, WBNB_DECIMALS } from "./constants";
 import { notifySweep } from "@/lib/email/tx-notify";
@@ -145,6 +147,7 @@ export async function runBnbSweepForUser(userId: string, force = false): Promise
             throw new Error(`Transfer failed on-chain (${tx.hash})`);
         }
 
+        const priceUsd = await priceForSweep(getBnbPriceUsd);
         await db.$transaction([
             db.bnbSweep.create({
                 data: {
@@ -155,6 +158,7 @@ export async function runBnbSweepForUser(userId: string, force = false): Promise
                     destination,
                     txHash: tx.hash,
                     manual: force,
+                    priceUsd,
                 },
             }),
             db.bnbSettings.update({

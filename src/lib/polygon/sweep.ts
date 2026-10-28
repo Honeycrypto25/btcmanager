@@ -107,6 +107,8 @@ export async function runPolygonSweepForUser(userId: string, force = false): Pro
             throw new Error(`Transfer failed on-chain (${tx.hash})`);
         }
 
+        // USDC is the dollar — no lookup needed.
+        const priceUsd = 1;
         await db.$transaction([
             db.polygonTokenSweep.create({
                 data: {
@@ -117,6 +119,7 @@ export async function runPolygonSweepForUser(userId: string, force = false): Pro
                     destination,
                     txHash: tx.hash,
                     manual: force,
+                    priceUsd,
                 },
             }),
             db.polygonSweepSettings.update({

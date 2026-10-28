@@ -981,6 +981,10 @@ model SolanaSweep {
   txSignature       String?
   errorMessage      String? @db.Text
   manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+  // USD price of one token at the moment of the sweep — so the /cold-wallet
+  // stats can show what was "taken out" in dollars. Null if the price lookup
+  // failed (never blocks a sweep) or for rows older than this column.
+  priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
 
@@ -1129,6 +1133,10 @@ model EvaSweep {
   txSignature       String?
   errorMessage      String? @db.Text
   manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+  // USD price of one token at the moment of the sweep — so the /cold-wallet
+  // stats can show what was "taken out" in dollars. Null if the price lookup
+  // failed (never blocks a sweep) or for rows older than this column.
+  priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
 
@@ -1292,6 +1300,10 @@ model EvmSweep {
   txHash            String?
   errorMessage      String? @db.Text
   manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+  // USD price of one token at the moment of the sweep — so the /cold-wallet
+  // stats can show what was "taken out" in dollars. Null if the price lookup
+  // failed (never blocks a sweep) or for rows older than this column.
+  priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
 
@@ -1449,6 +1461,10 @@ model BnbSweep {
   txHash            String?
   errorMessage      String? @db.Text
   manual            Boolean @default(false) // true if triggered via "Trimite acum", false if the monthly cron
+  // USD price of one token at the moment of the sweep — so the /cold-wallet
+  // stats can show what was "taken out" in dollars. Null if the price lookup
+  // failed (never blocks a sweep) or for rows older than this column.
+  priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
 
@@ -1687,6 +1703,10 @@ model PolygonTokenSweep {
   txHash            String?
   errorMessage      String? @db.Text
   manual            Boolean @default(false)
+  // USD price of one token at the moment of the sweep — so the /cold-wallet
+  // stats can show what was "taken out" in dollars. Null if the price lookup
+  // failed (never blocks a sweep) or for rows older than this column.
+  priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
 

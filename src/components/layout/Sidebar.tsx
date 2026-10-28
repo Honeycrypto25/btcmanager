@@ -36,7 +36,8 @@ import {
     Repeat,
     Sparkles,
     FileSignature,
-    FolderOpen
+    FolderOpen,
+    ShieldCheck
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -112,6 +113,13 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'Reverse-DCA', href: '/polygon', icon: Repeat },
             { name: 'Statistici', href: '/polygon/stats', icon: BarChart3 },
+        ],
+    },
+    {
+        // No sectionKey: aggregates every bot section, so admin-only (like Overview).
+        section: 'Cold wallet',
+        items: [
+            { name: 'Profit scos', href: '/cold-wallet', icon: ShieldCheck },
         ],
     },
     {

@@ -6,6 +6,8 @@ import {
     getAssociatedTokenAddress,
 } from "@solana/spl-token";
 import { db } from "@/lib/db";
+import { priceForSweep } from "@/lib/sweep-price";
+import { getTokenPriceUsd } from "./jupiter";
 import { loadBotKeypair, getRpcUrl } from "./wallet";
 import { EVA_DECIMALS, EVA_MINT } from "./constants";
 import { notifySweep } from "@/lib/email/tx-notify";
@@ -154,6 +156,7 @@ export async function runEvaSweepForUser(userId: string, force = false): Promise
             throw new Error(`Transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
         }
 
+        const priceUsd = await priceForSweep(() => getTokenPriceUsd(EVA_MINT));
         await db.$transaction([
             db.evaSweep.create({
                 data: {
@@ -164,6 +167,7 @@ export async function runEvaSweepForUser(userId: string, force = false): Promise
                     destination: destinationRaw.trim(),
                     txSignature: signature,
                     manual: force,
+                    priceUsd,
                 },
             }),
             db.evaSettings.update({
