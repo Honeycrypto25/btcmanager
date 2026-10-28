@@ -33,10 +33,34 @@ export interface ColdWalletSweep {
     txUrl: string | null;
 }
 
+/**
+ * One card per bot for the current month: completed cycles and the profit
+ * those cycles leave to be swept.
+ *
+ * - SOL / EVA / WETH / WBNB: a cycle completes when the lot's take-profit
+ *   sell fills (status FILLED, soldAt). The sell only recovers the slice
+ *   worth sellAmountUsd; the tokens left in the lot (xxxRemaining) are the
+ *   profit, which is what the monthly sweep sends to the cold wallet.
+ * - Polygon reverse-DCA (one card per token): a cycle completes when the
+ *   buy-back fills (status FILLED, filledAt); its profit is usdcProfit.
+ */
+export interface ColdWalletBotCycles {
+    key: string;
+    label: string;
+    chain: string;
+    profitAsset: ColdAsset;
+    cyclesThisMonth: number;
+    cyclesLastMonth: number;
+    profitTokens: number;
+    profitUsdNow: number | null;
+}
+
 export interface ColdWalletData {
     sweeps: ColdWalletSweep[];
     failedCount: number;
     currentPrices: Record<ColdAsset, number | null>;
+    cycles: ColdWalletBotCycles[];
+    monthStart: string;
 }
 
 async function requireUserId(): Promise<string> {
@@ -138,9 +162,61 @@ export async function getColdWalletData(): Promise<ColdWalletData> {
         })),
     ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-    // Current prices only for assets that were actually swept — avoids
+    // --- Current-month cycles per bot (UTC month boundaries) ---
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const sinceLast = { gte: lastMonthStart };
+    const filled = "FILLED" as const;
+
+    const [solSet, evaSet, evmSet, bnbSet, polySettings, solCyc, evaCyc, wethCyc, wbnbCyc, polyCyc] = await Promise.all([
+        db.solanaSettings.findUnique({ where: { userId }, select: { id: true } }),
+        db.evaSettings.findUnique({ where: { userId }, select: { id: true } }),
+        db.evmSettings.findUnique({ where: { userId }, select: { id: true } }),
+        db.bnbSettings.findUnique({ where: { userId }, select: { id: true } }),
+        db.polygonTokenSettings.findMany({ where: { userId }, select: { id: true, tokenSymbol: true }, orderBy: { createdAt: "asc" } }),
+        db.solanaLot.findMany({ where: { userId, status: filled, soldAt: sinceLast }, select: { soldAt: true, solRemaining: true } }),
+        db.evaLot.findMany({ where: { userId, status: filled, soldAt: sinceLast }, select: { soldAt: true, evaRemaining: true } }),
+        db.evmLot.findMany({ where: { userId, status: filled, soldAt: sinceLast }, select: { soldAt: true, wethRemaining: true } }),
+        db.bnbLot.findMany({ where: { userId, status: filled, soldAt: sinceLast }, select: { soldAt: true, bnbRemaining: true } }),
+        db.polygonTokenLot.findMany({ where: { userId, status: filled, filledAt: sinceLast }, select: { settingsId: true, filledAt: true, usdcProfit: true } }),
+    ]);
+
+    function tally<T>(rows: T[], at: (r: T) => Date | null, profit: (r: T) => number) {
+        let cyclesThisMonth = 0;
+        let cyclesLastMonth = 0;
+        let profitTokens = 0;
+        for (const r of rows) {
+            const d = at(r);
+            if (!d) continue;
+            if (d >= monthStart) {
+                cyclesThisMonth++;
+                profitTokens += profit(r);
+            } else {
+                cyclesLastMonth++;
+            }
+        }
+        return { cyclesThisMonth, cyclesLastMonth, profitTokens };
+    }
+
+    // A bot gets a card if it is configured or had cycles in either month.
+    const botCycles: Omit<ColdWalletBotCycles, "profitUsdNow">[] = [];
+    const solT = tally(solCyc, (r) => r.soldAt, (r) => Number(r.solRemaining));
+    if (solSet || solCyc.length) botCycles.push({ key: "sol", label: "SOL DCA", chain: "Solana", profitAsset: "SOL", ...solT });
+    const evaT = tally(evaCyc, (r) => r.soldAt, (r) => Number(r.evaRemaining));
+    if (evaSet || evaCyc.length) botCycles.push({ key: "eva", label: "EVA DCA", chain: "Solana", profitAsset: "EVA", ...evaT });
+    const wethT = tally(wethCyc, (r) => r.soldAt, (r) => Number(r.wethRemaining));
+    if (evmSet || wethCyc.length) botCycles.push({ key: "weth", label: "WETH DCA", chain: "Base", profitAsset: "WETH", ...wethT });
+    const wbnbT = tally(wbnbCyc, (r) => r.soldAt, (r) => Number(r.bnbRemaining));
+    if (bnbSet || wbnbCyc.length) botCycles.push({ key: "wbnb", label: "WBNB DCA", chain: "BNB Chain", profitAsset: "WBNB", ...wbnbT });
+    for (const ps of polySettings) {
+        const t = tally(polyCyc.filter((l) => l.settingsId === ps.id), (r) => r.filledAt, (r) => Number(r.usdcProfit));
+        botCycles.push({ key: `poly-${ps.id}`, label: `${ps.tokenSymbol} Reverse-DCA`, chain: "Polygon", profitAsset: "USDC", ...t });
+    }
+
+    // Current prices only for assets that were swept or have a bot — avoids
     // hitting Jupiter/1inch for nothing (e.g. on an instance with no bots).
-    const has = (a: ColdAsset) => sweeps.some((s) => s.asset === a);
+    const has = (a: ColdAsset) => sweeps.some((s) => s.asset === a) || botCycles.some((b) => b.profitAsset === a);
     const [pSol, pEva, pWeth, pWbnb] = await Promise.all([
         has("SOL") ? priceForSweep(getSolPriceUsd) : null,
         has("EVA") ? priceForSweep(() => getTokenPriceUsd(EVA_MINT)) : null,
@@ -148,9 +224,16 @@ export async function getColdWalletData(): Promise<ColdWalletData> {
         has("WBNB") ? priceForSweep(getBnbPriceUsd) : null,
     ]);
 
+    const currentPrices: Record<ColdAsset, number | null> = { SOL: pSol, EVA: pEva, WETH: pWeth, WBNB: pWbnb, USDC: 1 };
+
     return {
         sweeps,
         failedCount: failedCounts.reduce((a, b) => a + b, 0),
-        currentPrices: { SOL: pSol, EVA: pEva, WETH: pWeth, WBNB: pWbnb, USDC: 1 },
+        currentPrices,
+        cycles: botCycles.map((b) => {
+            const p = currentPrices[b.profitAsset];
+            return { ...b, profitUsdNow: p != null ? b.profitTokens * p : null };
+        }),
+        monthStart: monthStart.toISOString(),
     };
 }

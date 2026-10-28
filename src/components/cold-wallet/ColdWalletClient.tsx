@@ -5,7 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
-import type { ColdAsset, ColdWalletData, ColdWalletSweep } from "@/app/actions/cold-wallet";
+import type { ColdAsset, ColdWalletBotCycles, ColdWalletData, ColdWalletSweep } from "@/app/actions/cold-wallet";
 
 const ASSETS: { key: ColdAsset; chain: string; color: string; decimals: number }[] = [
     { key: "SOL", chain: "Solana", color: "#a970ff", decimals: 4 },
@@ -16,6 +16,7 @@ const ASSETS: { key: ColdAsset; chain: string; color: string; decimals: number }
 ];
 const ASSET_META = Object.fromEntries(ASSETS.map((a) => [a.key, a])) as Record<ColdAsset, (typeof ASSETS)[number]>;
 const MONTHS = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Noi", "Dec"];
+const MONTHS_FULL = ["Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie", "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"];
 
 type View = "month" | "year";
 type Basis = "at" | "now";
@@ -292,11 +293,14 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
             </div>
 
             {sweeps.length === 0 ? (
+                <>
                 <Card>
                     <p className="text-sm text-muted">
                         Nicio retragere în cold wallet încă. Când un bot face o retragere (automat lunar sau cu „Trimite acum”), apare aici.
                     </p>
                 </Card>
+                <CurrentMonthCycles cycles={data.cycles} monthStart={data.monthStart} />
+                </>
             ) : (
                 <>
                     {/* KPIs */}
@@ -324,6 +328,8 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                             note={totals.last ? `Ultima retragere: ${format(new Date(totals.last), "dd.MM.yyyy")}` : "—"}
                         />
                     </div>
+
+                    <CurrentMonthCycles cycles={data.cycles} monthStart={data.monthStart} />
 
                     {/* Chart */}
                     <Card className="space-y-4">
@@ -719,5 +725,81 @@ function ChartTooltip({ active, payload, average }: { active?: boolean; payload?
                 </p>
             )}
         </div>
+    );
+}
+
+function CurrentMonthCycles({ cycles, monthStart }: { cycles: ColdWalletBotCycles[]; monthStart: string }) {
+    if (cycles.length === 0) return null;
+    const start = new Date(monthStart);
+    const monthName = `${MONTHS_FULL[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
+    const totalUsd = cycles.reduce((t, c) => t + (c.profitUsdNow ?? 0), 0);
+    const totalCycles = cycles.reduce((t, c) => t + c.cyclesThisMonth, 0);
+    const anyMissingPrice = cycles.some((c) => c.profitTokens > 0 && c.profitUsdNow == null);
+
+    return (
+        <section aria-label="Luna în curs" className="space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="space-y-1">
+                    <h2 className="font-display text-base font-medium text-foreground">Luna în curs · {monthName}</h2>
+                    <p className="text-xs text-muted">
+                        Cicluri complete per bot și profitul pe care îl lasă de trimis în cold wallet la următoarea retragere.
+                    </p>
+                </div>
+                <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-right">
+                    <p className="text-[11px] uppercase tracking-wider text-faint">De trimis · {totalCycles} cicluri</p>
+                    <p className="font-mono text-lg font-medium text-primary-strong">≈ {usd(totalUsd)}</p>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {cycles.map((c) => (
+                    <BotCycleCard key={c.key} c={c} />
+                ))}
+            </div>
+            {anyMissingPrice && <p className="text-xs text-faint">Prețul curent n-a putut fi citit pentru unele active; totalul nu le include.</p>}
+        </section>
+    );
+}
+
+function BotCycleCard({ c }: { c: ColdWalletBotCycles }) {
+    const meta = ASSET_META[c.profitAsset];
+    let deltaText: string;
+    let deltaClass = "text-muted";
+    if (c.cyclesLastMonth === 0) {
+        deltaText = c.cyclesThisMonth > 0 ? "nou față de luna trecută" : "—";
+    } else {
+        const pct = ((c.cyclesThisMonth - c.cyclesLastMonth) / c.cyclesLastMonth) * 100;
+        deltaText = `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(0)}% vs luna trecută`;
+        deltaClass = pct >= 0 ? "text-emerald-300" : "text-red-300";
+    }
+
+    return (
+        <Card className="space-y-4 p-5">
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                    <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: meta.color }} />
+                    <span className="text-sm font-medium text-foreground">{c.label}</span>
+                    <span className="text-xs text-faint">{c.chain}</span>
+                </div>
+            </div>
+            <div className="flex items-end justify-between gap-3">
+                <div>
+                    <p className="text-[11px] uppercase tracking-wider text-faint">Cicluri complete</p>
+                    <p className="font-mono text-3xl font-medium text-foreground">{c.cyclesThisMonth}</p>
+                </div>
+                <div className="text-right">
+                    <p className={cn("text-xs font-medium", deltaClass)}>{deltaText}</p>
+                    <p className="text-xs text-faint">luna trecută: {c.cyclesLastMonth}</p>
+                </div>
+            </div>
+            <div className="border-t border-white/[0.06] pt-3">
+                <p className="text-[11px] uppercase tracking-wider text-faint">Profit de trimis</p>
+                <div className="flex items-baseline justify-between gap-3">
+                    <p className="font-mono text-sm text-foreground">{c.profitTokens > 0 ? fmtAmount(c.profitTokens, c.profitAsset) : "—"}</p>
+                    <p className="font-mono text-base font-medium text-primary-strong">
+                        {c.profitUsdNow != null ? `≈ ${usd(c.profitUsdNow)}` : "—"}
+                    </p>
+                </div>
+            </div>
+        </Card>
     );
 }
