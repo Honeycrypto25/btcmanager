@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, cn } from "@/components/ui/core";
 import {
     TrendingUp,
@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import PriceChart from "@/components/dashboard/PriceChart";
 import RoiEvolutionChart from "./RoiEvolutionChart";
+import { PeriodTiles, type PeriodRowWithVanguard } from "@/components/overview/OverviewClient";
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 interface RoiData {
     period: string; // "2024" or "2024-01"
@@ -54,6 +57,20 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
     const [view, setView] = useState<'yearly' | 'monthly'>('yearly');
     const [yearlyPage, setYearlyPage] = useState(1);
     const [monthlyPage, setMonthlyPage] = useState(1);
+    const [tileGranularity, setTileGranularity] = useState<'month' | 'year'>('month');
+    // BTC-only rows for the 12-tile view (PeriodTiles reads `total`).
+    const tileRows = useMemo<PeriodRowWithVanguard[]>(
+        () =>
+            (tileGranularity === 'year' ? yearlyData : monthlyData).map((d) => {
+                const label = tileGranularity === 'year'
+                    ? d.period
+                    : `${MONTHS_SHORT[parseInt(d.period.slice(5, 7), 10) - 1]} ${d.period.slice(0, 4)}`;
+                const f = { invested: d.totalInvested, value: d.currentValue, pnl: d.roiAmount, pnlPercent: d.roiPercentage };
+                const zero = { invested: 0, value: 0, pnl: 0, pnlPercent: 0 };
+                return { label, btc: f, t212: zero, total: f, vanguard: zero, fidelity: zero, combinedTotal: f };
+            }),
+        [tileGranularity, yearlyData, monthlyData]
+    );
     const itemsPerPage = 10;
 
     const formatCurrency = (val: number) =>
@@ -333,6 +350,40 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                             </button>
                         </div>
                     </div>
+                )}
+            </Card>
+
+            {/* Invested by month / year — 12 tiles per page, Bitcoin only */}
+            <Card>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-medium text-foreground">Investit pe {tileGranularity === 'year' ? 'ani' : 'luni'} &middot; Bitcoin</h3>
+                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                        {(['month', 'year'] as const).map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                onClick={() => setTileGranularity(g)}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                    tileGranularity === g ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {g === 'month' ? 'Luni' : 'Ani'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {tileRows.length === 0 ? (
+                    <p className="text-muted text-sm py-6 text-center">Nicio investiție înregistrată încă.</p>
+                ) : (
+                    <PeriodTiles
+                        key={tileGranularity}
+                        rows={tileRows}
+                        granularity={tileGranularity}
+                        useCombined={false}
+                        fmt={formatCurrency}
+                        pnlColor={(n) => (n >= 0 ? "text-accent" : "text-red-400")}
+                    />
                 )}
             </Card>
         </div>
