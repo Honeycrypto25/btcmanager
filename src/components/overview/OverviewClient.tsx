@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
-import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase, Landmark } from "lucide-react";
+import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase, Landmark, ChevronLeft, ChevronRight, LayoutGrid, List } from "lucide-react";
 import Link from 'next/link';
 import {
     ComposedChart,
@@ -1055,13 +1055,34 @@ function PeriodBreakdown({
     hasFidelity: boolean;
 }) {
     const [granularity, setGranularity] = useState<'week' | 'month' | 'year'>('month');
+    const [layout, setLayout] = useState<'list' | 'tiles'>('list');
     const rows = granularity === 'week' ? weeklyRows : granularity === 'year' ? yearlyRows : monthlyRows;
     const gridCols = "grid-cols-[minmax(0,1fr)_minmax(56px,auto)_minmax(56px,auto)_minmax(40px,auto)]";
+    const useCombined = hasVanguard || hasFidelity;
 
     return (
         <Card>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <h3 className="text-sm font-medium text-foreground">Invested by {granularity}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5" role="group" aria-label="Layout">
+                    {([['list', List, 'List'], ['tiles', LayoutGrid, 'Tiles']] as const).map(([key, Icon, label]) => (
+                        <button
+                            key={key}
+                            type="button"
+                            onClick={() => setLayout(key)}
+                            aria-pressed={layout === key}
+                            aria-label={label}
+                            title={label}
+                            className={cn(
+                                "flex items-center justify-center px-2.5 py-1.5 rounded-md transition-colors",
+                                layout === key ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            <Icon className="h-3.5 w-3.5" />
+                        </button>
+                    ))}
+                </div>
                 <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
                     {(['week', 'month', 'year'] as const).map((g) => (
                         <button
@@ -1076,9 +1097,19 @@ function PeriodBreakdown({
                         </button>
                     ))}
                 </div>
+                </div>
             </div>
             {rows.length === 0 ? (
                 <p className="text-muted text-sm py-6 text-center">No investments recorded yet.</p>
+            ) : layout === 'tiles' ? (
+                <PeriodTiles
+                    key={granularity}
+                    rows={rows}
+                    granularity={granularity}
+                    useCombined={useCombined}
+                    fmt={fmt}
+                    pnlColor={pnlColor}
+                />
             ) : (
                 <>
                     <div className={cn("grid gap-x-3 pb-1.5 border-b border-border", gridCols)}>
@@ -1128,6 +1159,173 @@ function PeriodBreakdown({
                 </>
             )}
         </Card>
+    );
+}
+
+const TILES_PER_PAGE = 12;
+
+type Tile = { key: string; label: string; sub: string; figures: AssetFigures | null };
+
+/** Continuous calendar of periods (empty months/years included), oldest
+ * first, from the earliest period with data up to the current one. Weeks
+ * have no reliable key in their label, so they use the rows as they are. */
+function buildTiles(rows: PeriodRowWithVanguard[], granularity: 'week' | 'month' | 'year', useCombined: boolean): Tile[] {
+    const figuresOf = (r: PeriodRowWithVanguard) => (useCombined ? r.combinedTotal : r.total);
+    const now = new Date();
+
+    if (granularity === 'year') {
+        const byYear = new Map(rows.map((r) => [parseInt(r.label, 10), r]));
+        const years = Array.from(byYear.keys()).filter(Number.isFinite);
+        if (years.length === 0) return [];
+        const end = Math.max(now.getFullYear(), ...years);
+        const start = Math.min(...years);
+        const out: Tile[] = [];
+        for (let y = start; y <= end; y++) {
+            const r = byYear.get(y);
+            out.push({ key: String(y), label: String(y), sub: '', figures: r ? figuresOf(r) : null });
+        }
+        return out;
+    }
+
+    if (granularity === 'month') {
+        const index = (y: number, m: number) => y * 12 + m;
+        const byIdx = new Map<number, PeriodRowWithVanguard>();
+        for (const r of rows) {
+            const [mon, yr] = r.label.split(' ');
+            const m = MONTH_NAMES_SHORT.indexOf(mon);
+            const y = parseInt(yr, 10);
+            if (m >= 0 && Number.isFinite(y)) byIdx.set(index(y, m), r);
+        }
+        const keys = Array.from(byIdx.keys());
+        if (keys.length === 0) return [];
+        const end = Math.max(index(now.getFullYear(), now.getMonth()), ...keys);
+        const start = Math.min(...keys);
+        const out: Tile[] = [];
+        for (let i = start; i <= end; i++) {
+            const y = Math.floor(i / 12);
+            const m = i % 12;
+            const r = byIdx.get(i);
+            out.push({ key: `${y}-${m}`, label: MONTH_NAMES_SHORT[m], sub: String(y), figures: r ? figuresOf(r) : null });
+        }
+        return out;
+    }
+
+    return [...rows].reverse().map((r) => ({ key: r.label, label: r.label, sub: 'week of', figures: figuresOf(r) }));
+}
+
+function PeriodTiles({
+    rows,
+    granularity,
+    useCombined,
+    fmt,
+    pnlColor,
+}: {
+    rows: PeriodRowWithVanguard[];
+    granularity: 'week' | 'month' | 'year';
+    useCombined: boolean;
+    fmt: (n: number) => string;
+    pnlColor: (n: number) => string;
+}) {
+    const tiles = useMemo(() => buildTiles(rows, granularity, useCombined), [rows, granularity, useCombined]);
+    // page 0 = the latest 12 periods; each step back shows the 12 before.
+    const [page, setPage] = useState(0);
+    const pages = Math.max(1, Math.ceil(tiles.length / TILES_PER_PAGE));
+    const end = tiles.length - page * TILES_PER_PAGE;
+    const visible = tiles.slice(Math.max(0, end - TILES_PER_PAGE), end);
+    const first = visible[0];
+    const last = visible[visible.length - 1];
+    const rangeLabel = first && last
+        ? `${first.label}${first.sub && granularity === 'month' ? ` ${first.sub}` : ''} – ${last.label}${last.sub && granularity === 'month' ? ` ${last.sub}` : ''}`
+        : '';
+    const unit = granularity === 'year' ? 'years' : granularity === 'week' ? 'weeks' : 'months';
+
+    const sum = visible.reduce(
+        (acc, t) => {
+            if (!t.figures) return acc;
+            return { invested: acc.invested + t.figures.invested, value: acc.value + t.figures.value };
+        },
+        { invested: 0, value: 0 }
+    );
+    const sumPct = sum.invested > 0 ? ((sum.value - sum.invested) / sum.invested) * 100 : 0;
+
+    return (
+        <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+                        disabled={page >= pages - 1}
+                        aria-label={`Previous 12 ${unit}`}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted transition-colors hover:text-foreground disabled:opacity-30"
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        aria-label={`Next 12 ${unit}`}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted transition-colors hover:text-foreground disabled:opacity-30"
+                    >
+                        <ChevronRight className="h-4 w-4" />
+                    </button>
+                    <span className="ml-2 text-xs text-muted">
+                        {page === 0 ? `Last 12 ${unit}` : rangeLabel}
+                        {page === 0 && rangeLabel ? <span className="text-faint"> · {rangeLabel}</span> : null}
+                    </span>
+                </div>
+                {sum.invested > 0 && (
+                    <span className="text-xs text-muted">
+                        <span className="font-num text-foreground">{fmt(sum.invested)}</span> →{' '}
+                        <span className="font-num text-foreground">{fmt(sum.value)}</span>{' '}
+                        <span className={cn("font-num", pnlColor(sumPct))}>
+                            {sumPct >= 0 ? '+' : ''}{sumPct.toFixed(1)}%
+                        </span>
+                    </span>
+                )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                {visible.map((t) => {
+                    const f = t.figures;
+                    const has = !!f && f.invested !== 0;
+                    const up = has && f!.pnlPercent >= 0;
+                    return (
+                        <div
+                            key={t.key}
+                            className={cn(
+                                "rounded-xl border p-3 transition-colors",
+                                !has
+                                    ? "border-border bg-white/[0.01]"
+                                    : up
+                                    ? "border-accent/25 bg-accent/[0.05]"
+                                    : "border-red-400/25 bg-red-400/[0.05]"
+                            )}
+                        >
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className={cn("text-xs font-medium", has ? "text-foreground" : "text-faint")}>{t.label}</span>
+                                {t.sub && <span className="text-[10px] text-faint">{t.sub}</span>}
+                            </div>
+                            <p className={cn("mt-2 font-num text-base font-medium leading-tight", has ? "text-foreground" : "text-faint")}>
+                                {has ? fmt(f!.invested) : '\u2014'}
+                            </p>
+                            <p className="text-[10px] uppercase tracking-wider text-faint">invested</p>
+                            <div className="mt-2 flex items-baseline justify-between gap-2 border-t border-white/[0.06] pt-2">
+                                <span className={cn("font-num text-xs", has ? "text-muted" : "text-faint")}>
+                                    {has ? fmt(f!.value) : '\u2014'}
+                                </span>
+                                <span className={cn("font-num text-xs font-medium", has ? pnlColor(f!.pnlPercent) : "text-faint")}>
+                                    {has ? `${f!.pnlPercent >= 0 ? '+' : ''}${f!.pnlPercent.toFixed(1)}%` : ''}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <p className="text-[10px] text-faint">
+                Each tile: amount invested in that {granularity}, its value today and the % gain/loss on that {granularity}&apos;s purchases.
+            </p>
+        </div>
     );
 }
 
