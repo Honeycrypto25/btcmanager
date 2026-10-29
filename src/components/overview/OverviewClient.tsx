@@ -1318,12 +1318,20 @@ function PeriodTiles({
                                     {has ? `${f!.pnlPercent >= 0 ? '+' : ''}${f!.pnlPercent.toFixed(1)}%` : ''}
                                 </span>
                             </div>
+                            {has && (
+                                <div className="mt-1 flex items-baseline justify-between gap-2">
+                                    <span className="text-[10px] uppercase tracking-wider text-faint">P&amp;L</span>
+                                    <span className={cn("font-num text-xs font-medium", pnlColor(f!.pnl))}>
+                                        {f!.pnl >= 0 ? '+' : '\u2212'}{fmt(Math.abs(f!.pnl))}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
             </div>
             <p className="text-[10px] text-faint">
-                Each tile: amount invested in that {granularity}, its value today and the % gain/loss on that {granularity}&apos;s purchases.
+                Each tile: amount invested in that {granularity}, its value today, the % and the gain/loss in money on that {granularity}&apos;s purchases.
             </p>
         </div>
     );
