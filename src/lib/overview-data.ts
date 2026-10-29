@@ -367,3 +367,60 @@ async function getWindowStats(start: Date, end: Date) {
         value: btcValue + t212Value,
     };
 }
+
+
+/** Trading 212 only, in the account's own currency (no FX): per-month and
+ * per-year cohorts of what was bought in that period vs. what it is worth
+ * today (same logic as the Overview tiles). Newest period first. */
+export async function getT212PeriodRows(): Promise<{ monthly: PeriodRow[]; yearly: PeriodRow[] }> {
+    const account = await db.t212Account.findFirst({ orderBy: { createdAt: "desc" } });
+    if (!account) return { monthly: [], yearly: [] };
+
+    const snapshot = await db.t212Snapshot.findFirst({
+        where: { accountId: account.id },
+        orderBy: { capturedAt: "desc" },
+    });
+    const perShare = new Map<string, number>();
+    for (const p of ((snapshot?.positions as any[]) ?? [])) {
+        if (p.quantity > 0) perShare.set(p.ticker, p.currentValue / p.quantity);
+    }
+
+    const orders = await db.t212Order.findMany({ where: { accountId: account.id } });
+    const monthly = new Map<string, { invested: number; value: number }>();
+    const yearly = new Map<number, { invested: number; value: number }>();
+    const add = <K,>(m: Map<K, { invested: number; value: number }>, k: K, invested: number, value: number) => {
+        const cur = m.get(k) ?? { invested: 0, value: 0 };
+        m.set(k, { invested: cur.invested + invested, value: cur.value + value });
+    };
+    for (const o of orders as any[]) {
+        const d = new Date(o.filledAt);
+        const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        let invested: number;
+        let value: number;
+        if (o.side === "BUY") {
+            const ps = perShare.get(o.ticker);
+            invested = o.total;
+            value = ps !== undefined ? o.quantity * ps : o.total;
+        } else {
+            invested = -o.total;
+            value = -o.total;
+        }
+        add(monthly, mk, invested, value);
+        add(yearly, d.getFullYear(), invested, value);
+    }
+
+    const zero = computeAsset(0, 0);
+    const row = (label: string, a: { invested: number; value: number }): PeriodRow => {
+        const t = computeAsset(a.invested, a.value);
+        return { label, btc: zero, t212: t, total: t };
+    };
+    const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return {
+        monthly: Array.from(monthly.entries())
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .map(([k, a]) => row(`${names[parseInt(k.split("-")[1], 10) - 1]} ${k.split("-")[0]}`, a)),
+        yearly: Array.from(yearly.entries())
+            .sort((a, b) => b[0] - a[0])
+            .map(([y, a]) => row(String(y), a)),
+    };
+}

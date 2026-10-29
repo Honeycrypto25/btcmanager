@@ -20,6 +20,7 @@ import {
 import { format, differenceInCalendarMonths, startOfWeek } from "date-fns";
 import { ArrowLeft, TrendingUp, TrendingDown, Calendar, PiggyBank, Percent } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
+import { PeriodTiles, type PeriodRowWithVanguard, type PeriodRow } from "@/components/overview/OverviewClient";
 
 interface SnapshotDTO {
     capturedAt: string;
@@ -92,11 +93,25 @@ export function T212StatsClient({
     account,
     snapshots,
     orders,
+    periodRows,
 }: {
     account: AccountDTO | null;
     snapshots: SnapshotDTO[];
     orders: OrderDTO[];
+    periodRows: { monthly: PeriodRow[]; yearly: PeriodRow[] };
 }) {
+    const [tileGranularity, setTileGranularity] = useState<"month" | "year">("month");
+    // T212-only rows: PeriodTiles reads `total`, so no Vanguard/Fidelity/BTC mixes in.
+    const tileRows = useMemo<PeriodRowWithVanguard[]>(
+        () =>
+            (tileGranularity === "year" ? periodRows.yearly : periodRows.monthly).map((r) => ({
+                ...r,
+                vanguard: r.t212,
+                fidelity: r.t212,
+                combinedTotal: r.t212,
+            })),
+        [periodRows, tileGranularity]
+    );
     const [period, setPeriod] = useState<PeriodKey>("all");
     const [granularity, setGranularity] = useState<Granularity>("day");
 
@@ -498,6 +513,40 @@ export function T212StatsClient({
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>
+            </Card>
+
+            {/* Invested by month / year — 12 tiles per page, Trading 212 only */}
+            <Card>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <h2 className="text-sm font-medium text-foreground">Investit pe {tileGranularity === "year" ? "ani" : "luni"} · Trading 212</h2>
+                    <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5">
+                        {(["month", "year"] as const).map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                onClick={() => setTileGranularity(g)}
+                                className={cn(
+                                    "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                    tileGranularity === g ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                                )}
+                            >
+                                {g === "month" ? "Luni" : "Ani"}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {tileRows.length === 0 ? (
+                    <p className="text-muted text-sm py-6 text-center">Nicio investiție înregistrată încă.</p>
+                ) : (
+                    <PeriodTiles
+                        key={tileGranularity}
+                        rows={tileRows}
+                        granularity={tileGranularity}
+                        useCombined={false}
+                        fmt={fmt}
+                        pnlColor={(n) => (n >= 0 ? "text-accent" : "text-red-400")}
+                    />
+                )}
             </Card>
         </div>
     );

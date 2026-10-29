@@ -4,6 +4,7 @@ import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import { T212StatsClient } from "@/components/t212/T212StatsClient";
+import { getT212PeriodRows } from "@/lib/overview-data";
 
 export default async function T212StatsPage() {
     await requireSectionAccess("t212");
@@ -13,12 +14,12 @@ export default async function T212StatsPage() {
     if (!account) {
         return (
             <DashboardLayout>
-                <T212StatsClient account={null} snapshots={[]} orders={[]} />
+                <T212StatsClient account={null} snapshots={[]} orders={[]} periodRows={{ monthly: [], yearly: [] }} />
             </DashboardLayout>
         );
     }
 
-    const [snapshots, orders] = await Promise.all([
+    const [snapshots, orders, periodRows] = await Promise.all([
         db.t212Snapshot.findMany({
             where: { accountId: account.id },
             orderBy: { capturedAt: "asc" },
@@ -29,6 +30,7 @@ export default async function T212StatsPage() {
             orderBy: { filledAt: "asc" },
             select: { filledAt: true, side: true, total: true, realizedProfit: true, ticker: true, name: true },
         }),
+        getT212PeriodRows(),
     ]);
 
     return (
@@ -37,6 +39,7 @@ export default async function T212StatsPage() {
                 account={{ currency: account.currency, environment: account.environment }}
                 snapshots={JSON.parse(JSON.stringify(snapshots))}
                 orders={JSON.parse(JSON.stringify(orders))}
+                periodRows={periodRows}
             />
         </DashboardLayout>
     );

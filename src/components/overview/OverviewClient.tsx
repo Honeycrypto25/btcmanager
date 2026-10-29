@@ -1213,7 +1213,7 @@ function buildTiles(rows: PeriodRowWithVanguard[], granularity: 'week' | 'month'
     return [...rows].reverse().map((r) => ({ key: r.label, label: r.label, sub: 'week of', figures: figuresOf(r) }));
 }
 
-function PeriodTiles({
+export function PeriodTiles({
     rows,
     granularity,
     useCombined,
