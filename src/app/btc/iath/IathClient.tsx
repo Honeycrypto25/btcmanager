@@ -4,7 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Card, cn } from "@/components/ui/core";
 import { Target } from "lucide-react";
 import { format } from "date-fns";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts";
 import AthValueChart from "./AthValueChart";
 
 export interface IathPeriod {
@@ -43,6 +43,17 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
 
     // Chart: the latest 12 periods, oldest -> newest.
     const chartRows = useMemo(() => periods.slice(-12), [periods]);
+
+    // Average per month / year (whichever is selected) over ALL periods with data.
+    const averages = useMemo(() => {
+        const n = periods.length;
+        if (n === 0) return null;
+        return {
+            invested: periods.reduce((s, p) => s + p.invested, 0) / n,
+            atAth: periods.reduce((s, p) => s + p.valueAtAth, 0) / n,
+            count: n,
+        };
+    }, [periods]);
 
     if (!ath || totals.btc <= 0) {
         return (
@@ -156,12 +167,38 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                                 formatter={(v) => usd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 11 }} />
+                            {averages && (
+                                <ReferenceLine
+                                    y={averages.invested}
+                                    stroke="#c9c6ba"
+                                    strokeDasharray="6 4"
+                                    strokeWidth={1.5}
+                                    ifOverflow="extendDomain"
+                                    label={{ value: `Medie investit ${usd(averages.invested)}`, position: "insideTopLeft", fill: "#c9c6ba", fontSize: 10 }}
+                                />
+                            )}
+                            {averages && (
+                                <ReferenceLine
+                                    y={averages.atAth}
+                                    stroke="#f59e0b"
+                                    strokeDasharray="6 4"
+                                    strokeWidth={1.5}
+                                    ifOverflow="extendDomain"
+                                    label={{ value: `Medie la ATH ${usd(averages.atAth)}`, position: "insideTopLeft", fill: "#f59e0b", fontSize: 10 }}
+                                />
+                            )}
                             {BARS.map((b) => (
                                 <Bar key={b.key} dataKey={b.key} name={b.label} fill={b.color} radius={[3, 3, 0, 0]} isAnimationActive={false} />
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
+                {averages && (
+                    <p className="text-[10px] text-faint mb-1">
+                        Liniile punctate = media pe {granularity === "year" ? "an" : "lună"} (din toate cele {averages.count}{" "}
+                        {granularity === "year" ? "ani" : "luni"} cu investiții): investit {usd(averages.invested)}, la ATH {usd(averages.atAth)}.
+                    </p>
+                )}
                 {periods.length > chartRows.length && (
                     <p className="text-[10px] text-faint mb-4">Graficul arată ultimele 12 perioade; lista de mai jos le include pe toate.</p>
                 )}
