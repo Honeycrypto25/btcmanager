@@ -99,7 +99,32 @@ export async function executeSwap(wallet: Wallet, params: {
         slippage: String(params.slippageBps / 100), // 1inch takes slippage as a percent, e.g. 0.5 for 0.5%
         disableEstimate: "true",
     });
-    const quote = await oneinchFetch<SwapResponse>(`${ONEINCH_SWAP_API_BASE}/${BNB_CHAIN_ID}/swap?${qs.toString()}`);
+    // The quote is requested with disableEstimate, so 1inch doesn't simulate it:
+    // a route that no longer works would be mined as a reverted tx and burn
+    // gas. Simulate it locally first (estimateGas throws on revert) and, if it
+    // fails, retry with a fresh quote/route before giving up. Nothing is sent
+    // — and no gas is spent — unless the simulation passes.
+    const MAX_ATTEMPTS = 3;
+    let quote: SwapResponse | null = null;
+    let lastReason = "";
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const candidate = await oneinchFetch<SwapResponse>(`${ONEINCH_SWAP_API_BASE}/${BNB_CHAIN_ID}/swap?${qs.toString()}`);
+        try {
+            await wallet.estimateGas({
+                to: candidate.tx.to,
+                data: candidate.tx.data,
+                value: BigInt(candidate.tx.value),
+            });
+            quote = candidate;
+            break;
+        } catch (err) {
+            lastReason = err instanceof Error ? err.message.slice(0, 200) : String(err);
+            if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500));
+        }
+    }
+    if (!quote) {
+        throw new Error(`Swap simulation failed ${MAX_ATTEMPTS} times, nothing was sent (no gas spent): ${lastReason}`);
+    }
 
     const sent = await wallet.sendTransaction({
         to: quote.tx.to,
