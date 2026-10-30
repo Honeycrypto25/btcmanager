@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import { getCurrentBtcPrice } from "@/lib/btc";
 import { getBtcAth } from "@/lib/btc-ath";
+import { getExchangeRate } from "@/lib/fx";
 import IathClient, { type IathPeriod } from "./IathClient";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -31,6 +32,7 @@ export default async function IathPage() {
     const transactions = await db.bitcoinTransaction.findMany({ orderBy: { timestamp: "asc" } });
     const currentPrice = await getCurrentBtcPrice();
     const ath = await getBtcAth(currentPrice);
+    const usdToGbp = await getExchangeRate("USD", "GBP");
 
     const monthly = new Map<string, Bucket>();
     const yearly = new Map<string, Bucket>();
@@ -66,6 +68,7 @@ export default async function IathPage() {
                 monthly={toPeriods(monthly, (k) => `${MONTHS[parseInt(k.slice(5, 7), 10) - 1]} ${k.slice(0, 4)}`, currentPrice, athPrice)}
                 yearly={toPeriods(yearly, (k) => k, currentPrice, athPrice)}
                 transactions={serializedTransactions}
+                usdToGbp={usdToGbp}
             />
         </DashboardLayout>
     );

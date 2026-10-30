@@ -16,6 +16,9 @@ interface Props {
     transactions: Transaction[];
     athPrice: number;
     athDate: string | null;
+    /** Display currency and the USD -> currency rate (1 for USD). */
+    currency: "USD" | "GBP";
+    rate: number;
 }
 
 interface Row {
@@ -25,8 +28,8 @@ interface Row {
     atAth: number;
 }
 
-const usd = (v: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+const money = (v: number, currency: "USD" | "GBP") =>
+    new Intl.NumberFormat(currency === "GBP" ? "en-GB" : "en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
 
 const SERIES = [
     { key: "invested", label: "Investit", color: "#8c8a80" },
@@ -34,7 +37,7 @@ const SERIES = [
     { key: "atAth", label: "Dacă BTC ar fi la ATH", color: "#f59e0b" },
 ] as const;
 
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: { payload: Row }[] }) {
+function ChartTooltip({ active, payload, currency }: { active?: boolean; payload?: { payload: Row }[]; currency: "USD" | "GBP" }) {
     if (!active || !payload || !payload.length) return null;
     const row = payload[0].payload;
     return (
@@ -46,7 +49,7 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
                         <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />
                         {s.label}
                     </span>
-                    <span className="text-xs font-num font-medium text-foreground">{usd(row[s.key])}</span>
+                    <span className="text-xs font-num font-medium text-foreground">{money(row[s.key], currency)}</span>
                 </div>
             ))}
         </div>
@@ -59,7 +62,7 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
  * be worth at the all-time-high price. The gap between the amber and green
  * lines is the room left to the last ATH.
  */
-export default function AthValueChart({ transactions, athPrice, athDate }: Props) {
+export default function AthValueChart({ transactions, athPrice, athDate, currency, rate }: Props) {
     const [prices, setPrices] = useState<{ date: number; price: number }[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -110,9 +113,9 @@ export default function AthValueChart({ transactions, athPrice, athDate }: Props
                     btc += t.amount;
                     invested += t.amount * t.priceAtTime;
                 }
-                return { date, invested, value: btc * price, atAth: btc * athPrice };
+                return { date, invested: invested * rate, value: btc * price * rate, atAth: btc * athPrice * rate };
             });
-    }, [prices, sorted, earliest, athPrice]);
+    }, [prices, sorted, earliest, athPrice, rate]);
 
     const latest = data.length > 0 ? data[data.length - 1] : null;
 
@@ -124,7 +127,7 @@ export default function AthValueChart({ transactions, athPrice, athDate }: Props
                 <div>
                     <h3 className="text-sm font-medium text-foreground">Valoarea investiției la ultimul ATH</h3>
                     <p className="text-xs text-faint mt-0.5">
-                        BTC-ul deținut în fiecare zi, evaluat la prețul ATH ({usd(athPrice)}
+                        BTC-ul deținut în fiecare zi, evaluat la prețul ATH ({money(athPrice * rate, currency)}
                         {athDate ? `, ${format(new Date(athDate), "d MMM yyyy")}` : ""}) față de prețul real al zilei
                     </p>
                 </div>
@@ -133,7 +136,7 @@ export default function AthValueChart({ transactions, athPrice, athDate }: Props
                         <span key={s.key} className="flex items-center gap-1.5 text-xs text-muted">
                             <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />
                             {s.label}
-                            {latest && <span className="font-num font-medium text-foreground">{usd(latest[s.key])}</span>}
+                            {latest && <span className="font-num font-medium text-foreground">{money(latest[s.key], currency)}</span>}
                         </span>
                     ))}
                 </div>
@@ -162,12 +165,12 @@ export default function AthValueChart({ transactions, athPrice, athDate }: Props
                             <YAxis
                                 stroke="rgba(255,255,255,0.08)"
                                 tick={{ fontSize: 10, fill: "#565550" }}
-                                tickFormatter={(v) => `$${Number(v).toLocaleString()}`}
+                                tickFormatter={(v) => `${currency === "GBP" ? "£" : "$"}${Number(v).toLocaleString()}`}
                                 width={64}
                                 tickLine={false}
                                 axisLine={false}
                             />
-                            <Tooltip content={<ChartTooltip />} cursor={{ stroke: "rgba(255,255,255,0.12)" }} />
+                            <Tooltip content={<ChartTooltip currency={currency} />} cursor={{ stroke: "rgba(255,255,255,0.12)" }} />
                             <Area type="monotone" dataKey="atAth" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 4" fill="#f59e0b" fillOpacity={0.08} dot={false} isAnimationActive={false} />
                             <Line type="monotone" dataKey="value" stroke="#22c55e" strokeWidth={2} dot={false} isAnimationActive={false} />
                             <Line type="stepAfter" dataKey="invested" stroke="#8c8a80" strokeWidth={1.5} dot={false} isAnimationActive={false} />

@@ -23,10 +23,12 @@ interface Props {
     monthly: IathPeriod[]; // oldest first
     yearly: IathPeriod[];
     transactions: { amount: number; priceAtTime: number; timestamp: string }[];
+    usdToGbp: number;
 }
 
-const usd = (v: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+type Currency = "USD" | "GBP";
+const money = (v: number, currency: Currency) =>
+    new Intl.NumberFormat(currency === "GBP" ? "en-GB" : "en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
 const btcFmt = (v: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 8, maximumFractionDigits: 8 }).format(v);
 const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 
@@ -36,9 +38,17 @@ const BARS = [
     { key: "valueAtAth", label: "La ATH", color: "#f59e0b" },
 ] as const;
 
-export default function IathClient({ ath, currentPrice, totals, monthly, yearly, transactions }: Props) {
+export default function IathClient({ ath, currentPrice, totals, monthly, yearly, transactions, usdToGbp }: Props) {
+    const [currency, setCurrency] = useState<Currency>("USD");
+    const rate = currency === "GBP" ? usdToGbp : 1;
+    const usd = (v: number) => money(v * rate, currency); // v in USD, shown in the selected currency
     const [granularity, setGranularity] = useState<"month" | "year">("month");
-    const periods = granularity === "year" ? yearly : monthly;
+    const basePeriods = granularity === "year" ? yearly : monthly;
+    // Period figures converted to the display currency (ratios are unaffected).
+    const periods = useMemo(
+        () => basePeriods.map((p) => ({ ...p, invested: p.invested * rate, valueNow: p.valueNow * rate, valueAtAth: p.valueAtAth * rate })),
+        [basePeriods, rate]
+    );
     const valueNow = totals.btc * currentPrice;
 
     // Chart: the latest 12 periods, oldest -> newest.
@@ -72,11 +82,29 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
 
     return (
         <div className="space-y-8">
-            <div>
-                <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
-                    <span className="gradient-text">iATH</span> · Investment ATH
-                </h1>
-                <p className="text-muted text-sm">Cât ar valora investițiile tale în BTC la prețul ultimului ATH.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
+                        <span className="gradient-text">iATH</span> · Investment ATH
+                    </h1>
+                    <p className="text-muted text-sm">Cât ar valora investițiile tale în BTC la prețul ultimului ATH.</p>
+                </div>
+                <div className="flex bg-white/[0.03] border border-border rounded-lg p-0.5" role="group" aria-label="Currency">
+                    {(["USD", "GBP"] as const).map((c) => (
+                        <button
+                            key={c}
+                            type="button"
+                            onClick={() => setCurrency(c)}
+                            aria-pressed={currency === c}
+                            className={cn(
+                                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                currency === c ? "bg-primary text-black" : "text-muted hover:text-foreground"
+                            )}
+                        >
+                            {c === "USD" ? "$" : "£"}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Total */}
@@ -117,7 +145,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
             </Card>
 
             {/* Time series */}
-            <AthValueChart transactions={transactions} athPrice={ath.price} athDate={ath.date} />
+            <AthValueChart transactions={transactions} athPrice={ath.price} athDate={ath.date} currency={currency} rate={rate} />
 
             {/* Per month / year */}
             <Card className="p-6">
@@ -156,7 +184,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                             <YAxis
                                 tick={{ fontSize: 10, fill: "#565550" }}
                                 stroke="rgba(255,255,255,0.08)"
-                                tickFormatter={(v) => `$${Number(v).toLocaleString()}`}
+                                tickFormatter={(v) => `${currency === "GBP" ? "£" : "$"}${Number(v).toLocaleString()}`}
                                 width={64}
                                 tickLine={false}
                                 axisLine={false}
@@ -164,7 +192,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                             <Tooltip
                                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => usd(Number(v))}
+                                formatter={(v) => money(Number(v), currency)}
                             />
                             <Legend wrapperStyle={{ fontSize: 11 }} />
                             {averages && (
@@ -174,7 +202,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                                     strokeDasharray="6 4"
                                     strokeWidth={1.5}
                                     ifOverflow="extendDomain"
-                                    label={{ value: `Medie investit ${usd(averages.invested)}`, position: "insideTopLeft", fill: "#c9c6ba", fontSize: 10 }}
+                                    label={{ value: `Medie investit ${money(averages.invested, currency)}`, position: "insideTopLeft", fill: "#c9c6ba", fontSize: 10 }}
                                 />
                             )}
                             {averages && (
@@ -184,7 +212,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                                     strokeDasharray="6 4"
                                     strokeWidth={1.5}
                                     ifOverflow="extendDomain"
-                                    label={{ value: `Medie la ATH ${usd(averages.atAth)}`, position: "insideTopLeft", fill: "#f59e0b", fontSize: 10 }}
+                                    label={{ value: `Medie la ATH ${money(averages.atAth, currency)}`, position: "insideTopLeft", fill: "#f59e0b", fontSize: 10 }}
                                 />
                             )}
                             {BARS.map((b) => (
@@ -196,7 +224,7 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                 {averages && (
                     <p className="text-[10px] text-faint mb-1">
                         Liniile punctate = media pe {granularity === "year" ? "an" : "lună"} (din toate cele {averages.count}{" "}
-                        {granularity === "year" ? "ani" : "luni"} cu investiții): investit {usd(averages.invested)}, la ATH {usd(averages.atAth)}.
+                        {granularity === "year" ? "ani" : "luni"} cu investiții): investit {money(averages.invested, currency)}, la ATH {money(averages.atAth, currency)}.
                     </p>
                 )}
                 {periods.length > chartRows.length && (
@@ -218,9 +246,9 @@ export default function IathClient({ ath, currentPrice, totals, monthly, yearly,
                                 <span className="text-sm font-medium text-foreground">{p.label}</span>
                                 <span className="ml-2 text-[10px] text-faint font-mono">{btcFmt(p.btc)} BTC</span>
                             </div>
-                            <span className="text-sm font-num text-foreground text-right">{usd(p.invested)}</span>
-                            <span className={cn("text-sm font-num text-right", p.valueNow >= p.invested ? "text-accent" : "text-red-400")}>{usd(p.valueNow)}</span>
-                            <span className="text-sm font-num font-medium text-amber-400 text-right">{usd(p.valueAtAth)}</span>
+                            <span className="text-sm font-num text-foreground text-right">{money(p.invested, currency)}</span>
+                            <span className={cn("text-sm font-num text-right", p.valueNow >= p.invested ? "text-accent" : "text-red-400")}>{money(p.valueNow, currency)}</span>
+                            <span className="text-sm font-num font-medium text-amber-400 text-right">{money(p.valueAtAth, currency)}</span>
                             <span className="text-xs font-num text-muted text-right">
                                 {p.invested > 0 ? `${(p.valueAtAth / p.invested).toFixed(2)}×` : "—"}
                             </span>
