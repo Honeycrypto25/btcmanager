@@ -153,6 +153,16 @@ export async function runBnbDcaNow() {
     return result;
 }
 
+/** Manual "buy now": skips the interval check (e.g. the price dipped). Does not move the regular schedule. */
+export async function runBnbDcaForceNow() {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const result = await runBnbDcaForUser(userId, { force: true });
+    revalidatePath("/bnb");
+    revalidatePath("/bnb/stats");
+    return result;
+}
+
 /** Manual "check orders now" — reconciles pending sell orders against 1inch on demand. */
 export async function reconcileBnbOrdersNow() {
     await requireAdmin();

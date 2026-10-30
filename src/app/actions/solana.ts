@@ -155,6 +155,16 @@ export async function runSolanaDcaNow() {
     return result;
 }
 
+/** Manual "buy now": skips the interval check (e.g. the price dipped and you want an extra buy). Does not move the regular schedule. */
+export async function runSolanaDcaForceNow() {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const result = await runSolanaDcaForUser(userId, { force: true });
+    revalidatePath("/solana");
+    revalidatePath("/solana/stats");
+    return result;
+}
+
 /** Manual "check orders now" — reconciles pending sell orders against Jupiter on demand, without buying or waiting for the next scheduled cron pass. */
 export async function reconcileSolanaOrdersNow() {
     await requireAdmin();

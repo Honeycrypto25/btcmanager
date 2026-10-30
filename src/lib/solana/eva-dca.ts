@@ -395,7 +395,9 @@ async function retryPendingSellOrders(
  * different mint (EVA_MINT) and much wider default slippage (see
  * EvaSettings.slippageBps comment in the schema).
  */
-export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
+/** `opts.force` (manual "buy now") skips the interval check; a forced buy is an EXTRA purchase and leaves `lastRunAt` alone so the regular schedule isn't pushed back. */
+export async function runEvaDcaForUser(userId: string, opts: { force?: boolean } = {}): Promise<DcaRunResult> {
+    const force = opts.force === true;
     const settings = await db.evaSettings.findUnique({ where: { userId } });
     if (!settings || !settings.enabled) return { userId, action: "skipped", reason: "disabled" };
 
@@ -420,7 +422,7 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
-        if (dueAt && dueAt.getTime() > Date.now()) {
+        if (!force && dueAt && dueAt.getTime() > Date.now()) {
             return { userId, action: "skipped", reason: `next buy due at ${dueAt.toISOString()}` };
         }
 
@@ -527,7 +529,9 @@ export async function runEvaDcaForUser(userId: string): Promise<DcaRunResult> {
 
         await db.evaSettings.update({
             where: { userId },
-            data: { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
+            data: force
+                ? { lastRunStatus: "ok", lastRunError: null }
+                : { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
         });
 
         return { userId, action: "bought", lotId: lot.id };

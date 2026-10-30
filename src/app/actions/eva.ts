@@ -161,6 +161,16 @@ export async function runEvaDcaNow() {
     return result;
 }
 
+/** Manual "buy now": skips the interval check (e.g. the price dipped). Does not move the regular schedule. */
+export async function runEvaDcaForceNow() {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const result = await runEvaDcaForUser(userId, { force: true });
+    revalidatePath("/solana/eva");
+    revalidatePath("/solana/eva/stats");
+    return result;
+}
+
 /** Manual "check orders now" — reconciles pending sell orders against Jupiter on demand, without buying or waiting for the next scheduled cron pass. */
 export async function reconcileEvaOrdersNow() {
     await requireAdmin();

@@ -8,6 +8,7 @@ import {
     addPolygonToken,
     updatePolygonTokenSettings,
     runPolygonDcaNow,
+    runPolygonDcaForceNow,
     reconcilePolygonOrdersNow,
     updatePolygonSweepSettings,
     runPolygonSweepNow,
@@ -165,6 +166,16 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
                             else window.location.reload();
                         });
                     }}
+                    onForceNow={() => {
+                        if (!window.confirm(`Vinzi ACUM ${settings.tokenSymbol}, ignorând intervalul? Se vând token-uri reale din portofelul botului. Programul normal nu se schimbă.`)) return;
+                        setRunningId(settings.id);
+                        startTransition(async () => {
+                            const result = await runPolygonDcaForceNow(settings.id);
+                            setRunningId(null);
+                            if (result.action === "error") alert(`Eroare: ${result.reason}`);
+                            else window.location.reload();
+                        });
+                    }}
                     onCheckNow={() => {
                         setRunningId(settings.id);
                         startTransition(async () => {
@@ -288,6 +299,7 @@ function TokenCard({
     onSave,
     onRunNow,
     onCheckNow,
+    onForceNow,
 }: {
     settings: TokenSettingsDTO;
     isAdmin: boolean;
@@ -295,6 +307,7 @@ function TokenCard({
     onSave: (input: PolygonTokenSettingsInput) => void;
     onRunNow: () => void;
     onCheckNow: () => void;
+    onForceNow: () => void;
 }) {
     const [editing, setEditing] = useState(false);
     const [form, setForm] = useState<PolygonTokenSettingsInput>({
@@ -397,6 +410,9 @@ function TokenCard({
                         <Button variant="outline" size="sm" onClick={onRunNow} disabled={pending}>
                             {pending ? <RefreshCw className="w-4 h-4 animate-spin mr-1.5" /> : <Play className="w-4 h-4 mr-1.5" />}
                             Rulează acum
+                        </Button>
+                        <Button variant="primary" size="sm" onClick={onForceNow} disabled={pending || !settings.enabled}>
+                            <Play className="w-4 h-4 mr-1.5" /> Vinde acum (ignoră intervalul)
                         </Button>
                         <Button variant="outline" size="sm" onClick={onCheckNow} disabled={pending}>
                             <ArrowRight className="w-4 h-4 mr-1.5" /> Verifică ordinele

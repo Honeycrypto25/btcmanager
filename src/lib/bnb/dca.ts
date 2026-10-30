@@ -200,7 +200,9 @@ async function retryPendingSellOrders(
  * Safe to call more often than the configured interval; it no-ops until
  * it's actually due. Mirrors runSolanaDcaForUser exactly.
  */
-export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult> {
+/** `opts.force` (manual "buy now") skips the interval check; a forced buy is an EXTRA purchase and leaves `lastRunAt` alone so the regular schedule isn't pushed back. */
+export async function runBnbDcaForUser(userId: string, opts: { force?: boolean } = {}): Promise<BnbDcaRunResult> {
+    const force = opts.force === true;
     const settings = await db.bnbSettings.findUnique({ where: { userId } });
     if (!settings || !settings.enabled) return { userId, action: "skipped", reason: "disabled" };
 
@@ -224,7 +226,7 @@ export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult>
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
-        if (dueAt && dueAt.getTime() > Date.now()) {
+        if (!force && dueAt && dueAt.getTime() > Date.now()) {
             return { userId, action: "skipped", reason: `next buy due at ${dueAt.toISOString()}` };
         }
 
@@ -307,7 +309,9 @@ export async function runBnbDcaForUser(userId: string): Promise<BnbDcaRunResult>
 
         await db.bnbSettings.update({
             where: { userId },
-            data: { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
+            data: force
+                ? { lastRunStatus: "ok", lastRunError: null }
+                : { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
         });
 
         return { userId, action: "bought", lotId: lot.id };

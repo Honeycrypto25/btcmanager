@@ -161,6 +161,15 @@ export async function runPolygonDcaNow(settingsId: string) {
     return result;
 }
 
+/** Manual "sell now": skips the interval check. Does not move the regular schedule. */
+export async function runPolygonDcaForceNow(settingsId: string) {
+    await requireAdmin();
+    const result = await runPolygonReverseDcaForSettings(settingsId, { force: true });
+    revalidatePath("/polygon");
+    revalidatePath("/polygon/stats");
+    return result;
+}
+
 export async function reconcilePolygonOrdersNow(settingsId: string) {
     await requireAdmin();
     const result = await reconcilePolygonOrdersForSettings(settingsId);

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Sparkles, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { upsertEvaSettings, runEvaDcaNow, runEvaSweepNow, type EvaSettingsInput } from "@/app/actions/eva";
+import { upsertEvaSettings, runEvaDcaNow, runEvaDcaForceNow, runEvaSweepNow, type EvaSettingsInput } from "@/app/actions/eva";
 import { formatUsd, formatPrice, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
@@ -110,6 +110,24 @@ export function EvaClient({
         });
     }
 
+    function handleBuyNow() {
+        const amount = settings ? `$${settings.buyAmountUsd}` : "suma setată";
+        if (!window.confirm(`Cumperi ACUM ${amount} de EVA, ignorând intervalul? Se folosesc bani reali din portofelul botului. Programul normal al botului nu se schimbă.`)) return;
+        setRunMessage(null);
+        setError(null);
+        startRunning(async () => {
+            try {
+                const result = await runEvaDcaForceNow();
+                if (result.action === "bought") setRunMessage("Achiziție executată — pagina se va reîmprospăta.");
+                else if (result.action === "skipped") setRunMessage(`Sărit: ${result.reason}`);
+                else setError(result.reason ?? "Eroare necunoscută.");
+                if (result.action === "bought") window.location.reload();
+            } catch (e) {
+                setError(e instanceof Error ? e.message : "Eroare la cumpărare.");
+            }
+        });
+    }
+
     function handleRunNow() {
         setRunMessage(null);
         setError(null);
@@ -191,6 +209,11 @@ export function EvaClient({
                     {isAdmin && (
                         <Button onClick={handleRunNow} disabled={running || !settings} variant="secondary" size="sm">
                             <Play className="h-4 w-4" /> {running ? "Se rulează..." : "Rulează acum, ca să verific că totul e în regulă"}
+                        </Button>
+                    )}
+                    {isAdmin && (
+                        <Button onClick={handleBuyNow} disabled={running || !settings || !settings.enabled} variant="primary" size="sm">
+                            <Sparkles className="h-4 w-4" /> Cumpără acum (ignoră intervalul)
                         </Button>
                     )}
                     {runMessage && <span className="text-sm text-muted">{runMessage}</span>}

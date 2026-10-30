@@ -179,7 +179,9 @@ async function retryPendingBuybackOrders(settings: PolygonTokenSettings, wallet:
  * eligible for the monthly sweep. Mirrors runEvmDcaForUser's interval gate
  * exactly, just selling instead of buying.
  */
-export async function runPolygonReverseDcaForSettings(settingsId: string): Promise<PolygonDcaRunResult> {
+export async function runPolygonReverseDcaForSettings(settingsId: string, opts: { force?: boolean } = {}): Promise<PolygonDcaRunResult> {
+    // Manual "sell now": skips the interval check; an EXTRA cycle that leaves lastRunAt alone.
+    const force = opts.force === true;
     const settings = await db.polygonTokenSettings.findUnique({ where: { id: settingsId } });
     if (!settings) return { settingsId, tokenSymbol: "?", action: "skipped", reason: "not found" };
     if (!settings.enabled) return { settingsId, tokenSymbol: settings.tokenSymbol, action: "skipped", reason: "disabled" };
@@ -203,7 +205,7 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
-        if (dueAt && dueAt.getTime() > Date.now()) {
+        if (!force && dueAt && dueAt.getTime() > Date.now()) {
             return { settingsId, tokenSymbol: settings.tokenSymbol, action: "skipped", reason: `next sell due at ${dueAt.toISOString()}` };
         }
 
@@ -337,7 +339,9 @@ export async function runPolygonReverseDcaForSettings(settingsId: string): Promi
 
         await db.polygonTokenSettings.update({
             where: { id: settings.id },
-            data: { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
+            data: force
+                ? { lastRunStatus: "ok", lastRunError: null }
+                : { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
         });
 
         return { settingsId, tokenSymbol: settings.tokenSymbol, action: "sold", lotId: lot.id };

@@ -215,8 +215,13 @@ async function retryPendingSellOrders(
  * `buyAmountUsd` of SOL and places a take-profit trigger sell order for
  * `sellAmountUsd` of it at `+takeProfitPercent`. Safe to call more often
  * than the configured interval; it no-ops until it's actually due.
+ *
+ * `opts.force` (manual "buy now" only) skips the interval check and buys
+ * immediately. A forced buy is an EXTRA purchase: it deliberately leaves
+ * `lastRunAt` alone so the regular schedule is not pushed back.
  */
-export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult> {
+export async function runSolanaDcaForUser(userId: string, opts: { force?: boolean } = {}): Promise<DcaRunResult> {
+    const force = opts.force === true;
     const settings = await db.solanaSettings.findUnique({ where: { userId } });
     if (!settings || !settings.enabled) return { userId, action: "skipped", reason: "disabled" };
 
@@ -240,7 +245,7 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
         const dueAt = settings.lastRunAt
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
-        if (dueAt && dueAt.getTime() > Date.now()) {
+        if (!force && dueAt && dueAt.getTime() > Date.now()) {
             return { userId, action: "skipped", reason: `next buy due at ${dueAt.toISOString()}` };
         }
 
@@ -326,7 +331,9 @@ export async function runSolanaDcaForUser(userId: string): Promise<DcaRunResult>
 
         await db.solanaSettings.update({
             where: { userId },
-            data: { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
+            data: force
+                ? { lastRunStatus: "ok", lastRunError: null }
+                : { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
         });
 
         return { userId, action: "bought", lotId: lot.id };
