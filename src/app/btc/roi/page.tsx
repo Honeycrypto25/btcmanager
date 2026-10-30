@@ -8,6 +8,8 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import RoiClient from "./RoiClient";
 import { getExchangeRate } from "@/lib/fx";
+import { getBitcoinAthMeta } from "@/lib/btc";
+import { getBtcDailyPrices } from "@/lib/btc-price-history";
 
 // Helper to get formatted period strings
 const getMonthStr = (date: Date) => date.toISOString().slice(0, 7); // YYYY-MM
@@ -44,6 +46,33 @@ export default async function RoiPage() {
     // simplification used elsewhere in the app (getExchangeRate falls back
     // to 1:1 on failure, and uses the current rate even for past dates).
     const usdToGbp = await getExchangeRate("USD", "GBP");
+
+    // Last all-time high: CoinGecko first; if it doesn't answer, the highest
+    // daily close in our own cached price history (covers ~5 years).
+    let athPrice = 0;
+    let athDate: string | null = null;
+    const athMeta = await getBitcoinAthMeta();
+    if (athMeta) {
+        athPrice = athMeta.ath;
+        athDate = athMeta.athDate;
+    } else {
+        try {
+            const { prices } = await getBtcDailyPrices(2000);
+            for (const p of prices) {
+                if (p.price > athPrice) {
+                    athPrice = p.price;
+                    athDate = new Date(p.time).toISOString();
+                }
+            }
+        } catch (e) {
+            console.error("ATH fallback failed", e);
+        }
+    }
+    // A live price above the stored ATH means a new ATH was just set.
+    if (currentPrice > athPrice) {
+        athPrice = currentPrice;
+        athDate = new Date().toISOString();
+    }
 
     // 3. Process Data
     const monthlyMap = new Map<string, { invested: number, btc: number }>();
@@ -136,6 +165,7 @@ export default async function RoiPage() {
                 currentPrice={currentPrice}
                 transactions={serializedTransactions}
                 usdToGbp={usdToGbp}
+                ath={athPrice > 0 ? { price: athPrice, date: athDate } : null}
                 overall={{
                     totalInvested,
                     totalBtc,
