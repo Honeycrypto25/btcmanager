@@ -22,6 +22,7 @@ import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, 
 import { reconcileEvmOrdersNow } from "@/app/actions/evm";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+import type { LimitBuyDTO } from "./EvmLimitBuyCard";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -47,12 +48,14 @@ export function EvmStatsClient({
     wethPriceUsd,
     sweeps,
     fuelStatus,
+    limitBuys,
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
     wethPriceUsd: number | null;
     sweeps: SweepDTO[];
     fuelStatus: FuelStatus | { error: string };
+    limitBuys: LimitBuyDTO[];
 }) {
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -71,6 +74,7 @@ export function EvmStatsClient({
             const parts = [`${result.checked} verificate`];
             if (result.filled > 0) parts.push(`${result.filled} vândute`);
             if (result.cancelled > 0) parts.push(`${result.cancelled} anulate`);
+            if (result.limitBuysFilled) parts.push(`${result.limitBuysFilled} ordine limit de cumpărare executate (ordinul de vânzare e pus)`);
             setCheckMessage(result.checked === 0 ? "Niciun ordin activ de verificat." : parts.join(", "));
         } catch (err) {
             setCheckError(err instanceof Error ? err.message : "Verificarea a eșuat.");
@@ -229,6 +233,11 @@ export function EvmStatsClient({
         }));
     }, [sweeps]);
 
+    // Limit BUY orders: shown regardless of the lot filters (they are not lots
+    // yet). Once one fills, its lot is flagged in the cycles table via lotId.
+    const openLimitBuys = useMemo(() => limitBuys.filter((o) => o.status === "OPEN"), [limitBuys]);
+    const limitBuyLotIds = useMemo(() => new Set(limitBuys.map((o) => o.lotId).filter((id): id is string => !!id)), [limitBuys]);
+
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
 
@@ -375,9 +384,14 @@ export function EvmStatsClient({
             </Card>
 
             {/* Charts */}
-            {openLotsChartData.length > 0 && (
+            {(openLotsChartData.length > 0 || openLimitBuys.length > 0) && (
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
+                    {openLimitBuys.length > 0 && (
+                        <p className="mb-3 text-xs text-amber-400">
+                            Liniile galbene punctate = ordine limit de cumpărare active (nivelul la care se cumpără).
+                        </p>
+                    )}
                     <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={openLotsChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -396,6 +410,17 @@ export function EvmStatsClient({
                                     label={{ value: `Preț curent: ${formatUsd(wethPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
                                 />
                             )}
+                            {openLimitBuys.map((o) => (
+                                <ReferenceLine
+                                    key={o.id}
+                                    y={Number(o.limitPriceUsd)}
+                                    stroke="#f59e0b"
+                                    strokeDasharray="6 4"
+                                    strokeWidth={1.5}
+                                    ifOverflow="extendDomain"
+                                    label={{ value: `Limit buy ${formatUsd(Number(o.limitPriceUsd))} · ${formatUsd(Number(o.amountUsd))}`, position: "insideBottomLeft", fill: "#f59e0b", fontSize: 11 }}
+                                />
+                            ))}
                             <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
                             <Line type="monotone" dataKey="targetPrice" name="Preț țintă" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                         </ComposedChart>
@@ -497,6 +522,56 @@ export function EvmStatsClient({
                 </Card>
             )}
 
+            {limitBuys.length > 0 && (
+                <Card className="space-y-3 border-amber-400/25">
+                    <div>
+                        <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">Limit buy</span>
+                            Ordine limit de cumpărare ({limitBuys.length})
+                        </h2>
+                        <p className="mt-1 text-xs text-faint">
+                            Cumpărări care se execută singure când prețul coboară la nivelul ales. Nu depind de filtrele de mai sus. După execuție apar ca ciclu în tabelul de mai jos, marcat „LIMIT”.
+                        </p>
+                    </div>
+                    <div className="space-y-2">
+                        {limitBuys.map((o) => {
+                            const limit = Number(o.limitPriceUsd);
+                            const toGo = wethPriceUsd && o.status === "OPEN" ? (limit / wethPriceUsd - 1) * 100 : null;
+                            const badge =
+                                o.status === "OPEN"
+                                    ? { text: "Activ", cls: "border-amber-400/40 bg-amber-400/10 text-amber-400" }
+                                    : o.status === "FILLED"
+                                    ? { text: "Executat", cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300" }
+                                    : { text: "Anulat / expirat", cls: "border-white/10 bg-white/[0.03] text-faint" };
+                            return (
+                                <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/15 bg-amber-400/[0.03] px-3 py-2">
+                                    <div className="space-y-0.5">
+                                        <p className="text-sm text-foreground">
+                                            {formatUsd(Number(o.amountUsd))} la {formatUsd(limit)}{" "}
+                                            <span className="text-xs text-faint">(≈ {Number(o.wethPlanned).toFixed(5)} WETH)</span>
+                                        </p>
+                                        <p className="text-[11px] text-faint">
+                                            creat {format(new Date(o.createdAt), "d MMM, HH:mm")}
+                                            {o.status === "OPEN" ? ` · expiră ${format(new Date(o.expiresAt), "d MMM yyyy")}` : ""}
+                                            {o.filledAt ? ` · executat ${format(new Date(o.filledAt), "d MMM, HH:mm")}` : ""}
+                                            {o.notes ? ` · ${o.notes}` : ""}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        {toGo !== null && (
+                                            <span className="text-xs text-muted">
+                                                încă <span className="font-num text-foreground">{Math.abs(toGo).toFixed(1)}%</span> de scădere
+                                            </span>
+                                        )}
+                                        <span className={cn("rounded-full border px-2 py-0.5 text-xs", badge.cls)}>{badge.text}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </Card>
+            )}
+
             <Card className="overflow-x-auto">
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-sm font-medium text-foreground">Cicluri DCA ({lots.length})</h2>
@@ -514,7 +589,7 @@ export function EvmStatsClient({
                 <p className="mb-4 text-xs text-faint">
                     Fiecare rând e un ciclu complet — cumpărare (mereu confirmată pe blockchain) și, alături, statusul vânzării ({pendingLots.length} în așteptare, {finalLots.length} finalizate).
                 </p>
-                <CyclesTable lots={lots} currentPriceUsd={wethPriceUsd} />
+                <CyclesTable lots={lots} currentPriceUsd={wethPriceUsd} limitBuyLotIds={limitBuyLotIds} />
             </Card>
 
             <Card className="overflow-x-auto">
@@ -574,7 +649,7 @@ function BasescanLink({ hash, label }: { hash: string; label: string }) {
     );
 }
 
-function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; currentPriceUsd: number | null }) {
+function CyclesTable({ lots: tableLots, currentPriceUsd, limitBuyLotIds }: { lots: LotDTO[]; currentPriceUsd: number | null; limitBuyLotIds: Set<string> }) {
     const [page, setPage] = useState(1);
     const lotFilter = useLotStatusFilter(tableLots, PENDING_STATUSES);
     const lots = lotFilter.filtered;
@@ -645,7 +720,14 @@ function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; cur
                             isOpen && currentPriceUsd ? ((currentPriceUsd - Number(lot.buyPriceUsd)) / Number(lot.buyPriceUsd)) * 100 : null;
                         return (
                             <tr key={lot.id} className="border-t border-white/[0.06]">
-                                <td className="py-2 pr-4 text-muted">{format(new Date(lot.boughtAt), "d MMM, HH:mm")}</td>
+                                <td className="py-2 pr-4 text-muted">
+                                    {format(new Date(lot.boughtAt), "d MMM, HH:mm")}
+                                    {limitBuyLotIds.has(lot.id) && (
+                                        <span className="ml-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400" title="Cumpărat printr-un ordin limit">
+                                            Limit
+                                        </span>
+                                    )}
+                                </td>
                                 <td className="py-2 pr-4">
                                     <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs", meta.className)}>
                                         <Icon className="h-3 w-3" /> {meta.label}

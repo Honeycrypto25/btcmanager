@@ -143,7 +143,12 @@ export async function reconcileEvmOrdersForUser(userId: string): Promise<Reconci
             await retryPendingSellOrders(userId, settings, wallet);
         }
     }
-    return { ...result, limitBuysFilled: buys.filled };
+    return {
+        checked: result.checked + buys.checked,
+        filled: result.filled,
+        cancelled: result.cancelled + buys.cancelled,
+        limitBuysFilled: buys.filled,
+    };
 }
 
 /**

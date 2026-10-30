@@ -18,6 +18,7 @@ export interface LimitBuyDTO {
     createdAt: string;
     filledAt: string | null;
     cancelledAt: string | null;
+    lotId: string | null;
     notes: string | null;
 }
 
