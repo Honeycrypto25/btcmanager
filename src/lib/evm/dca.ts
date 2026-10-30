@@ -1,8 +1,9 @@
 import "server-only";
 import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
-import { loadConnectedBotWallet } from "./wallet";
+import { loadConnectedBotWallet, getUsdcBalance } from "./wallet";
 import { runEvmSweepForUser } from "./sweep";
+import { reconcileEvmLimitBuys, getReservedUsdc } from "./limit-buy";
 import {
     createTakeProfitSellOrder,
     executeSwap,
@@ -27,6 +28,8 @@ interface ReconcileResult {
     checked: number;
     filled: number;
     cancelled: number;
+    /** Limit BUY orders that filled during this check (each becomes a lot + a sell order). */
+    limitBuysFilled?: number;
 }
 
 /**
@@ -123,11 +126,24 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
     return result;
 }
 
-/** Manual "check now" — reconciles this user's open sell orders against 1inch without touching the buy side. */
+/**
+ * Manual "check now" — reconciles this user's open sell orders AND open
+ * limit buys against 1inch without touching the interval-gated buy. A limit
+ * buy that just filled becomes a lot, and its take-profit sell order is
+ * placed right away (same code path as the daily run).
+ */
 export async function reconcileEvmOrdersForUser(userId: string): Promise<ReconcileResult> {
     const settings = await db.evmSettings.findUnique({ where: { userId } });
     if (!settings) return { checked: 0, filled: 0, cancelled: 0 };
-    return reconcileOpenLots(userId, settings.walletAddress);
+    const result = await reconcileOpenLots(userId, settings.walletAddress);
+    const buys = await reconcileEvmLimitBuys(userId, settings.walletAddress);
+    if (buys.filled > 0) {
+        const wallet = loadConnectedBotWallet();
+        if ((await wallet.getAddress()).toLowerCase() === settings.walletAddress.toLowerCase()) {
+            await retryPendingSellOrders(userId, settings, wallet);
+        }
+    }
+    return { ...result, limitBuysFilled: buys.filled };
 }
 
 /**
@@ -208,6 +224,9 @@ export async function runEvmDcaForUser(userId: string, opts: { force?: boolean }
 
     try {
         await reconcileOpenLots(userId, settings.walletAddress);
+        // Limit buys that filled become lots here, so the retryPendingSellOrders
+        // pass below places their take-profit orders in this same run.
+        await reconcileEvmLimitBuys(userId, settings.walletAddress);
 
         // Wallet is needed both for retrying any stuck sell order and for a
         // fresh buy, so load it up front — independent of whether a new buy
@@ -233,6 +252,21 @@ export async function runEvmDcaForUser(userId: string, opts: { force?: boolean }
         const sellAmountUsd = Number(settings.sellAmountUsd);
         if (sellAmountUsd < MIN_LIMIT_ORDER_USD) {
             throw new Error(`sellAmountUsd must be at least $${MIN_LIMIT_ORDER_USD}`);
+        }
+
+        // USDC put up by open limit buys is spoken for: 1inch orders don't
+        // escrow, so without this check an automatic buy could spend it and
+        // leave the limit order unable to fill.
+        const reservedUsdc = await getReservedUsdc(userId);
+        if (reservedUsdc > 0) {
+            const usdcBalance = await getUsdcBalance(settings.walletAddress);
+            if (usdcBalance - reservedUsdc < Number(settings.buyAmountUsd)) {
+                return {
+                    userId,
+                    action: "skipped",
+                    reason: `USDC liber insuficient: $${usdcBalance.toFixed(2)} în portofel, $${reservedUsdc.toFixed(2)} rezervați pentru ordine limit de cumpărare`,
+                };
+            }
         }
 
         // 1) Buy: USDC -> WETH

@@ -60,6 +60,7 @@ model User {
   evaSweeps            EvaSweep[]
   evmSettings          EvmSettings?
   evmLots              EvmLot[]
+  evmBuyOrders         EvmBuyOrder[]
   evmSweeps            EvmSweep[]
   bnbSettings          BnbSettings?
   bnbLots              BnbLot[]
@@ -1322,6 +1323,40 @@ enum EvmLotStatus {
 // P&L and fees can be computed per lot, independent of internal 1inch/
 // on-chain ids. Mirrors SolanaLot field-for-field where the concepts
 // carry over directly.
+enum EvmBuyOrderStatus {
+  OPEN // limit buy live on 1inch, waiting for the price to drop to the limit
+  FILLED // executed — an EvmLot was created from it
+  CANCELLED // cancelled by the user, or expired / invalidated
+}
+
+// A resting 1inch limit order to BUY WETH with USDC at a lower price. The
+// USDC stays in the wallet (1inch orders don't escrow), so it is "reserved"
+// here: automatic buys must leave it alone. When the order fills, the
+// reconcile pass turns it into a normal EvmLot (PENDING_SELL_ORDER) and the
+// existing take-profit flow places the sell order.
+model EvmBuyOrder {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status EvmBuyOrderStatus @default(OPEN)
+
+  amountUsd      Decimal @db.Decimal(12, 4) // USDC put up
+  limitPriceUsd  Decimal @db.Decimal(14, 4) // buy when WETH is at/below this
+  wethPlanned    Decimal @db.Decimal(30, 18) // WETH to receive when filled (amountUsd / limitPriceUsd)
+  oneInchOrderHash String
+  expiresAt      DateTime
+
+  createdAt     DateTime  @default(now())
+  filledAt      DateTime?
+  cancelledAt   DateTime?
+  lastCheckedAt DateTime?
+  lotId         String? // EvmLot created when this order filled
+  notes         String?   @db.Text
+
+  @@index([userId, status])
+}
+
 model EvmLot {
   id     String @id @default(cuid())
   userId String

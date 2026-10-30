@@ -9,6 +9,7 @@ import { runEvmDcaForUser, reconcileEvmOrdersForUser } from "@/lib/evm/dca";
 import { runEvmSweepForUser } from "@/lib/evm/sweep";
 import { loadBotWallet, getUsdcBalance } from "@/lib/evm/wallet";
 import { MIN_LIMIT_ORDER_USD } from "@/lib/evm/constants";
+import { createEvmLimitBuy, cancelEvmLimitBuy } from "@/lib/evm/limit-buy";
 
 async function requireUserId(): Promise<string> {
     const session = await getServerSession(authOptions);
@@ -161,6 +162,28 @@ export async function runEvmDcaForceNow() {
     revalidatePath("/base");
     revalidatePath("/base/stats");
     return result;
+}
+
+/**
+ * Places a resting limit order that BUYS WETH with USDC at a lower price.
+ * The USDC stays in the wallet but is reserved (automatic buys won't touch
+ * it); when the order fills, the next check turns it into a lot and places
+ * the usual take-profit sell order.
+ */
+export async function createEvmLimitBuyNow(input: { amountUsd: number; limitPriceUsd: number; expirationDays: number }) {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const order = await createEvmLimitBuy(userId, input);
+    revalidatePath("/base");
+    return { id: order.id };
+}
+
+/** Cancels one open limit buy on-chain (costs a little gas) and frees its reserved USDC. */
+export async function cancelEvmLimitBuyNow(id: string) {
+    await requireAdmin();
+    const userId = await requireUserId();
+    await cancelEvmLimitBuy(userId, id);
+    revalidatePath("/base");
 }
 
 /** Manual "check orders now" — reconciles pending sell orders against 1inch on demand. */

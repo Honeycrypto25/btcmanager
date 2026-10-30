@@ -176,6 +176,63 @@ export async function createTakeProfitSellOrder(wallet: Wallet, params: {
     return { orderHash: order.getOrderHash(BASE_CHAIN_ID) };
 }
 
+/**
+ * Signs (gasless, off-chain) and submits a fill-or-kill limit order BUYING
+ * WETH: the wallet puts up `makingAmountRaw` USDC and wants at least
+ * `takingAmountRaw` WETH once a resolver takes it. Mirror of
+ * createTakeProfitSellOrder with the two assets swapped.
+ */
+export async function createLimitBuyOrder(wallet: Wallet, params: {
+    makingAmountRaw: bigint; // USDC raw
+    takingAmountRaw: bigint; // WETH raw
+    expirationSeconds: number;
+}): Promise<{ orderHash: string }> {
+    const maker = await wallet.getAddress();
+    await ensureAllowance(wallet, USDC_ADDRESS, getLimitOrderContract(BASE_CHAIN_ID), params.makingAmountRaw);
+
+    const expiration = BigInt(Math.floor(Date.now() / 1000) + params.expirationSeconds);
+    const makerTraits = MakerTraits.default()
+        .withExpiration(expiration)
+        .withNonce(randBigInt(UINT_40_MAX))
+        .disablePartialFills()
+        .disableMultipleFills();
+
+    const client = sdk();
+    const order = await client.createOrder(
+        {
+            makerAsset: new OneInchAddress(USDC_ADDRESS),
+            takerAsset: new OneInchAddress(WETH_ADDRESS),
+            makingAmount: params.makingAmountRaw,
+            takingAmount: params.takingAmountRaw,
+            maker: new OneInchAddress(maker),
+        },
+        makerTraits
+    );
+
+    const typedData = order.getTypedData(BASE_CHAIN_ID);
+    const signature = await wallet.signTypedData(typedData.domain, { Order: typedData.types.Order }, typedData.message);
+
+    await client.submitOrder(order, signature);
+    return { orderHash: order.getOrderHash(BASE_CHAIN_ID) };
+}
+
+/**
+ * Cancels a resting limit order on-chain (costs a little gas on Base): a
+ * 1inch order can only be invalidated by calling the Limit Order Protocol
+ * contract's cancelOrder directly. Same approach as the Polygon bot.
+ */
+export async function cancelLimitOrder(wallet: Wallet, orderHash: string): Promise<{ txHash: string }> {
+    const order = await getOrderByHash(orderHash);
+    if (!order) throw new Error("Ordinul nu mai există în orderbook-ul 1inch (probabil s-a executat sau a expirat deja).");
+    const contract = new Contract(getLimitOrderContract(BASE_CHAIN_ID), ["function cancelOrder(uint256 makerTraits, bytes32 orderHash) external"], wallet);
+    const tx = await contract.cancelOrder(BigInt(order.data.makerTraits), orderHash);
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+        throw new Error(`Anularea ordinului a eșuat on-chain (${tx.hash})`);
+    }
+    return { txHash: tx.hash };
+}
+
 function api(): Api {
     return new Api({ authKey: apiKey(), networkId: BASE_CHAIN_ID, httpConnector: new FetchProviderConnector() });
 }

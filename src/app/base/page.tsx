@@ -8,15 +8,18 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getBotWalletAddress, getEvmSettings, getSweepDestinationInfo } from "@/app/actions/evm";
 import { EvmClient } from "@/components/evm/EvmClient";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
+import { listEvmLimitBuys } from "@/lib/evm/limit-buy";
 
 export default async function BasePage() {
     const session = await requireSectionAccess("base");
 
-    const [settings, wethPriceUsd, botWallet, sweepDestination] = await Promise.all([
+    const userId = (session.user as { id?: string } | undefined)?.id;
+    const [settings, wethPriceUsd, botWallet, sweepDestination, limitBuys] = await Promise.all([
         getEvmSettings(),
         getWethPriceUsd().catch(() => null),
         getBotWalletAddress(),
         getSweepDestinationInfo(),
+        userId ? listEvmLimitBuys(userId) : Promise.resolve([]),
     ]);
 
     return (
@@ -26,6 +29,7 @@ export default async function BasePage() {
                 wethPriceUsd={wethPriceUsd}
                 botWallet={botWallet}
                 sweepDestination={sweepDestination}
+                limitBuys={JSON.parse(JSON.stringify(limitBuys))}
             />
         </DashboardLayout>
     );

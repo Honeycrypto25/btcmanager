@@ -8,6 +8,7 @@ import { Card, Button, cn } from "@/components/ui/core";
 import { upsertEvmSettings, runEvmDcaNow, runEvmDcaForceNow, runEvmSweepNow, type EvmSettingsInput } from "@/app/actions/evm";
 import { formatUsd, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { EvmLimitBuyCard, type LimitBuyDTO } from "./EvmLimitBuyCard";
 
 /** Vercel Cron for /api/cron/base-dca runs daily at 09:10 UTC (see vercel.json) — this just mirrors that schedule for display. */
 function nextCronRunUtc(): Date {
@@ -22,11 +23,13 @@ export function EvmClient({
     wethPriceUsd,
     botWallet,
     sweepDestination,
+    limitBuys,
 }: {
     initialSettings: SettingsDTO | null;
     wethPriceUsd: number | null;
     botWallet: { address: string } | { error: string };
     sweepDestination: { address: string } | { error: string };
+    limitBuys: LimitBuyDTO[];
 }) {
     const isAdmin = useIsAdmin();
     const [settings, setSettings] = useState<SettingsDTO | null>(initialSettings);
@@ -207,6 +210,15 @@ export function EvmClient({
                     {!settings && isAdmin && <span className="text-xs text-faint">Salvează întâi setările mai jos.</span>}
                 </div>
             </Card>
+
+            {isAdmin && settings && (
+                <EvmLimitBuyCard
+                    orders={limitBuys}
+                    wethPriceUsd={wethPriceUsd}
+                    takeProfitPercent={Number(settings.takeProfitPercent)}
+                    defaultAmountUsd={Number(settings.buyAmountUsd)}
+                />
+            )}
 
             {/* Settings */}
             <Card className="space-y-4">
