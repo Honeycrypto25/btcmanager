@@ -60,6 +60,7 @@ const navEntries: NavEntry[] = [
             { name: 'Wallets', href: '/btc/wallets', icon: Wallet },
             { name: 'History', href: '/btc/history', icon: History },
             { name: 'ROI', href: '/btc/roi', icon: TrendingUp },
+            { name: 'iATH', href: '/btc/iath', icon: Target },
             { name: 'Analytics', href: '/btc/analytics', icon: LineChart },
             { name: 'Cycles', href: '/btc/cycle', icon: TrendingDown },
         ],

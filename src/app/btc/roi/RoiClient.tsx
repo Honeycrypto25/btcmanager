@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import PriceChart from "@/components/dashboard/PriceChart";
 import RoiEvolutionChart from "./RoiEvolutionChart";
-import AthValueChart from "./AthValueChart";
 import { PeriodTiles, type PeriodRowWithVanguard } from "@/components/overview/OverviewClient";
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -39,7 +38,6 @@ interface RoiClientProps {
     currentPrice: number;
     transactions: any[];
     usdToGbp: number;
-    ath: { price: number; date: string | null } | null;
     overall: {
         totalInvested: number;
         totalBtc: number;
@@ -55,7 +53,7 @@ interface RoiClientProps {
     };
 }
 
-export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, usdToGbp, ath, overall, extraStats }: RoiClientProps) {
+export default function RoiClient({ yearlyData, monthlyData, currentPrice, transactions, usdToGbp, overall, extraStats }: RoiClientProps) {
     const [view, setView] = useState<'yearly' | 'monthly'>('yearly');
     const [yearlyPage, setYearlyPage] = useState(1);
     const [monthlyPage, setMonthlyPage] = useState(1);
@@ -233,48 +231,6 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
             <PriceChart transactions={transactions} />
 
             <RoiEvolutionChart transactions={transactions} usdToGbp={usdToGbp} />
-
-            {ath && overall.totalBtc > 0 && (
-                <>
-                    {/* What today's BTC would be worth at the last all-time high */}
-                    <Card className="p-6 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <TrendingUp className="w-24 h-24 text-orange-500" />
-                        </div>
-                        <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Portofoliu la ultimul ATH</p>
-                        <p className="text-3xl font-medium text-foreground">{formatCurrency(overall.totalBtc * ath.price)}</p>
-                        <p className="text-xs text-muted mt-1 font-mono">
-                            {formatBtc(overall.totalBtc)} BTC × {formatCurrency(ath.price)}
-                            {ath.date ? ` · ATH ${new Date(ath.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ""}
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs">
-                            <span className="text-muted">
-                                Față de acum:{" "}
-                                <span className="font-num font-medium text-green-500">
-                                    +{formatCurrency(overall.totalBtc * ath.price - overall.currentValue)}
-                                </span>{" "}
-                                <span className="font-num text-faint">
-                                    ({overall.currentValue > 0 ? formatPercent(((overall.totalBtc * ath.price) / overall.currentValue - 1) * 100) : "—"})
-                                </span>
-                            </span>
-                            <span className="text-muted">
-                                Față de investit:{" "}
-                                <span className="font-num font-medium text-foreground">
-                                    {overall.totalInvested > 0 ? formatPercent(((overall.totalBtc * ath.price) / overall.totalInvested - 1) * 100) : "—"}
-                                </span>
-                            </span>
-                            <span className="text-muted">
-                                Preț actual vs ATH:{" "}
-                                <span className="font-num font-medium text-foreground">
-                                    {formatPercent((currentPrice / ath.price - 1) * 100)}
-                                </span>
-                            </span>
-                        </div>
-                    </Card>
-
-                    <AthValueChart transactions={transactions} athPrice={ath.price} athDate={ath.date} />
-                </>
-            )}
 
             {/* Data Table */}
             <Card className="overflow-hidden p-0 border-border">
