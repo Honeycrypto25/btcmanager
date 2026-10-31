@@ -17,6 +17,17 @@ import {
 } from "lucide-react";
 import axios from 'axios';
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useRouter } from "next/navigation";
+
+export interface WalletStats {
+    invested: number;
+    btc: number;
+    valueNow: number;
+    valueAtAth: number;
+}
+
+const usd = (v: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 
 interface Wallet {
     id: string;
@@ -26,8 +37,9 @@ interface Wallet {
     createdAt: string;
 }
 
-export default function WalletsPageClient() {
+export default function WalletsPageClient({ stats, athPrice }: { stats: Record<string, WalletStats>; athPrice: number }) {
     const isAdmin = useIsAdmin();
+    const router = useRouter();
     const [wallets, setWallets] = useState<Wallet[]>([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
@@ -88,6 +100,7 @@ export default function WalletsPageClient() {
         try {
             await axios.put(`/api/wallets?id=${id}`);
             await fetchWallets();
+            router.refresh();
         } catch (err) {
             console.error("Sync failed", err);
             alert("Failed to sync wallet. Please try again.");
@@ -101,6 +114,7 @@ export default function WalletsPageClient() {
         try {
             await axios.put('/api/wallets'); // No ID means sync all
             await fetchWallets();
+            router.refresh();
         } catch (err) {
             console.error("Sync all failed", err);
             alert("Failed to sync all wallets.");
@@ -122,7 +136,7 @@ export default function WalletsPageClient() {
                         Address <span className="gradient-text">Management</span>
                     </h1>
                     <p className="text-muted text-sm">
-                        Track and monitor Bitcoin addresses for DCA analysis.
+                        Track and monitor Bitcoin addresses for DCA analysis.{athPrice > 0 && <> Valori în USD · ATH BTC: {usd(athPrice)}</>}
                     </p>
                 </div>
                 {isAdmin && (
@@ -199,7 +213,35 @@ export default function WalletsPageClient() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end">
+                            <div className="flex flex-wrap items-center gap-x-8 gap-y-4 w-full md:w-auto justify-between md:justify-end">
+                                {(() => {
+                                    const st = stats[wallet.id];
+                                    if (!st) return null;
+                                    const roi = st.invested > 0 ? ((st.valueNow - st.invested) / st.invested) * 100 : 0;
+                                    const roiAth = st.invested > 0 ? ((st.valueAtAth - st.invested) / st.invested) * 100 : 0;
+                                    return (
+                                        <>
+                                            <div className="text-right">
+                                                <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">Investit</p>
+                                                <p className="text-xl font-medium text-foreground">{usd(st.invested)}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">Valoare curentă</p>
+                                                <p className="text-xl font-medium text-foreground">{usd(st.valueNow)}</p>
+                                                <p className={cn("text-xs font-medium", roi >= 0 ? "text-emerald-500" : "text-red-500")}>
+                                                    {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">La ultimul ATH</p>
+                                                <p className="text-xl font-medium text-foreground">{usd(st.valueAtAth)}</p>
+                                                <p className={cn("text-xs font-medium", roiAth >= 0 ? "text-emerald-500" : "text-red-500")}>
+                                                    {roiAth >= 0 ? "+" : ""}{roiAth.toFixed(1)}%
+                                                </p>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                                 <div className="text-right">
                                     <p className="text-[10px] text-muted uppercase text-xs font-medium tracking-wider mb-1">Total Tx Count</p>
                                     <p className="text-xl font-medium text-foreground">{wallet._count?.transactions || 0}</p>

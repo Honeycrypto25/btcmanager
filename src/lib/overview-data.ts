@@ -424,3 +424,112 @@ export async function getT212PeriodRows(): Promise<{ monthly: PeriodRow[]; yearl
             .map(([y, a]) => row(String(y), a)),
     };
 }
+
+export interface ComparisonSeries {
+    id: string;
+    name: string;
+    kind: "btc" | "t212" | "vanguard" | "fidelity";
+    /** Cohorts per calendar month (USD): what went in that month, and what it is worth today. */
+    months: { key: string; invested: number; value: number }[];
+}
+
+/**
+ * One series per investment "bucket" — Bitcoin, Trading 212, and every
+ * Vanguard / Fidelity account on its own — each with per-month cohorts, so
+ * the Overview can put the same month (or year) of different years side by
+ * side. Same cohort logic as the Overview tiles; all figures in USD.
+ */
+export async function getComparisonSeries(): Promise<ComparisonSeries[]> {
+    const out: ComparisonSeries[] = [];
+    const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const bucket = () => new Map<string, { invested: number; value: number }>();
+    const addTo = (m: Map<string, { invested: number; value: number }>, k: string, invested: number, value: number) => {
+        const cur = m.get(k) ?? { invested: 0, value: 0 };
+        m.set(k, { invested: cur.invested + invested, value: cur.value + value });
+    };
+    const toMonths = (m: Map<string, { invested: number; value: number }>) =>
+        Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => ({ key, ...v }));
+
+    // --- Bitcoin ---
+    try {
+        const price = await getCurrentBtcPrice();
+        const txs = await db.bitcoinTransaction.findMany({ select: { amount: true, priceAtTime: true, timestamp: true } });
+        const m = bucket();
+        for (const t of txs) addTo(m, monthKey(new Date(t.timestamp)), t.amount * t.priceAtTime, t.amount * price);
+        if (m.size) out.push({ id: "btc", name: "Bitcoin", kind: "btc", months: toMonths(m) });
+    } catch (e) {
+        console.error("[comparison] BTC failed", e);
+    }
+
+    // --- Trading 212 ---
+    try {
+        const account = await db.t212Account.findFirst({ orderBy: { createdAt: "desc" } });
+        if (account) {
+            const snapshot = await db.t212Snapshot.findFirst({ where: { accountId: account.id }, orderBy: { capturedAt: "desc" } });
+            const fx = snapshot ? await getExchangeRate(snapshot.currency, "USD") : 1;
+            const perShare = new Map<string, number>();
+            for (const p of ((snapshot?.positions as any[]) ?? [])) {
+                if (p.quantity > 0) perShare.set(p.ticker, p.currentValue / p.quantity);
+            }
+            const orders = await db.t212Order.findMany({ where: { accountId: account.id } });
+            const m = bucket();
+            for (const o of orders as any[]) {
+                const k = monthKey(new Date(o.filledAt));
+                if (o.side === "BUY") {
+                    const ps = perShare.get(o.ticker);
+                    addTo(m, k, o.total * fx, (ps !== undefined ? o.quantity * ps : o.total) * fx);
+                } else {
+                    addTo(m, k, -o.total * fx, -o.total * fx);
+                }
+            }
+            if (m.size) out.push({ id: "t212", name: "Trading 212", kind: "t212", months: toMonths(m) });
+        }
+    } catch (e) {
+        console.error("[comparison] T212 failed", e);
+    }
+
+    // --- Vanguard / Fidelity, one series per account ---
+    try {
+        const accounts = await db.vanguardAccount.findMany({ include: { holdings: { include: { contributions: true } } } });
+        const fxCache = new Map<string, number>();
+        for (const account of accounts as any[]) {
+            const currency = account.currency || "GBP";
+            if (!fxCache.has(currency)) fxCache.set(currency, currency === "USD" ? 1 : await getExchangeRate(currency, "USD"));
+            const fx = fxCache.get(currency)!;
+            const m = bucket();
+            for (const h of account.holdings) {
+                const totalUnits = Number(h.units ?? 0);
+                const ppu = totalUnits > 0 ? Number(h.currentValue) / totalUnits : 0;
+                let loggedUnits = 0;
+                let loggedCost = 0;
+                let earliest: Date | null = null;
+                for (const c of h.contributions) {
+                    const units = Number(c.units);
+                    const amount = Number(c.amount);
+                    loggedUnits += units;
+                    loggedCost += amount;
+                    if (!earliest || c.date < earliest) earliest = c.date;
+                    addTo(m, monthKey(new Date(c.date)), amount * fx, units * ppu * fx);
+                }
+                const residualCost = Number(h.costBasis) - loggedCost;
+                const residualUnits = totalUnits - loggedUnits;
+                if (Math.abs(residualCost) > 0.01 || Math.abs(residualUnits) > 0.0001) {
+                    addTo(m, monthKey(new Date(earliest ?? h.createdAt)), residualCost * fx, residualUnits * ppu * fx);
+                }
+            }
+            if (m.size) {
+                const isFidelity = account.provider === "fidelity";
+                out.push({
+                    id: `acc-${account.id}`,
+                    name: `${isFidelity ? "Fidelity" : "Vanguard"} · ${account.name}`,
+                    kind: isFidelity ? "fidelity" : "vanguard",
+                    months: toMonths(m),
+                });
+            }
+        }
+    } catch (e) {
+        console.error("[comparison] Vanguard/Fidelity failed", e);
+    }
+
+    return out;
+}

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import PriceChart from "@/components/dashboard/PriceChart";
 import RoiEvolutionChart from "./RoiEvolutionChart";
+import PeriodCompare from "./PeriodCompare";
 import { PeriodTiles, type PeriodRowWithVanguard } from "@/components/overview/OverviewClient";
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -352,6 +353,9 @@ export default function RoiClient({ yearlyData, monthlyData, currentPrice, trans
                     </div>
                 )}
             </Card>
+
+            {/* Same month / year side by side, with per-wallet breakdown */}
+            <PeriodCompare transactions={transactions} currentPrice={currentPrice} />
 
             {/* Invested by month / year — 12 tiles per page, Bitcoin only */}
             <Card>

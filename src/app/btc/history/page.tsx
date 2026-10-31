@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import { getCurrentBtcPrice } from "@/lib/btc";
+import { getBtcAth } from "@/lib/btc-ath";
 import HistoryClient from "./HistoryClient";
 
 export default async function HistoryPage() {
@@ -13,6 +14,7 @@ export default async function HistoryPage() {
 
     // Fetch current BTC price
     const currentPrice = await getCurrentBtcPrice();
+    const ath = await getBtcAth(currentPrice);
 
     // Fetch all transactions with wallet info
     const transactions = await db.bitcoinTransaction.findMany({
@@ -32,6 +34,7 @@ export default async function HistoryPage() {
             <HistoryClient
                 initialTransactions={serializedTransactions}
                 currentBtcPrice={currentPrice}
+                athPrice={ath?.price ?? 0}
             />
         </DashboardLayout>
     );

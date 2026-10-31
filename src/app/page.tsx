@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { getOverviewData } from "@/lib/overview-data";
+import { getOverviewData, getComparisonSeries, type ComparisonSeries } from "@/lib/overview-data";
 import { getBotProfits, getBotCycleEvents, type BotProfit, type BotCycleEvent } from "@/lib/bot-profit";
 import { OverviewClient, type VanguardOverviewSnapshot, type AssetFigures } from "@/components/overview/OverviewClient";
 import { getSelfEmployedSummary } from "@/app/actions/self-employed";
@@ -127,6 +127,13 @@ export default async function OverviewPage() {
         fidelitySeries = [];
     }
 
+    let comparison: ComparisonSeries[] = [];
+    try {
+        comparison = await getComparisonSeries();
+    } catch {
+        comparison = [];
+    }
+
     // Realized bot profit over the last 30 days — isolated like the blocks above so a bot-table read failure can't take the page down.
     let botProfits: BotProfit[] = [];
     let botCycles: BotCycleEvent[] = [];
@@ -143,6 +150,7 @@ export default async function OverviewPage() {
             <OverviewClient
                 botProfits={botProfits}
                 botCycles={botCycles}
+                comparison={comparison}
                 data={data}
                 usdToGbp={usdToGbp}
                 selfEmployed={selfEmployed}

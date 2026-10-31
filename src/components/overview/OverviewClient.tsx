@@ -1,5 +1,7 @@
 "use client";
 
+import { ComparisonCard } from "./ComparisonCard";
+import type { ComparisonSeries } from "@/lib/overview-data";
 import React, { useState, useMemo } from 'react';
 import { Card, cn } from "@/components/ui/core";
 import { TrendingUp, TrendingDown, Bitcoin, BarChart3, ArrowRight, Briefcase, Landmark, ChevronLeft, ChevronRight, LayoutGrid, List } from "lucide-react";
@@ -155,7 +157,9 @@ export function OverviewClient({
     fidelitySeries,
     botProfits,
     botCycles,
+    comparison,
 }: {
+    comparison?: ComparisonSeries[];
     botProfits?: BotProfit[];
     botCycles?: BotCycleEvent[];
     data: OverviewData;
@@ -548,6 +552,11 @@ export function OverviewClient({
 
             {/* Invested breakdown, with Week/Month/Year toggle (incl. Vanguard & Fidelity) */}
             <PeriodBreakdown weeklyRows={weeklyRowsV} monthlyRows={monthlyRowsV} yearlyRows={yearlyRowsV} fmt={fmt} pnlColor={pnlColor} hasVanguard={!!vanguardOnly} hasFidelity={!!fidelity} />
+
+            {/* Same month / year side by side, per investment and per account */}
+            {comparison && comparison.length > 0 && (
+                <ComparisonCard series={comparison} factor={factor} fmt={fmt} pnlColor={pnlColor} />
+            )}
 
             <p className="text-[10px] text-faint text-center leading-relaxed">
                 {data.t212.connected && data.t212NativeCurrency && data.t212NativeCurrency !== 'USD' && (

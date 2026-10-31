@@ -21,13 +21,14 @@ import { format } from "date-fns";
 interface HistoryClientProps {
     initialTransactions: any[];
     currentBtcPrice: number;
+    athPrice: number;
 }
 
-export default function HistoryClient({ initialTransactions, currentBtcPrice }: HistoryClientProps) {
+export default function HistoryClient({ initialTransactions, currentBtcPrice, athPrice }: HistoryClientProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
+    const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const itemsPerPage = 10;
@@ -67,26 +68,51 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
             }
 
             // Wallet Filter
-            let matchesWallet = true;
-            if (selectedWallet) {
-                matchesWallet = tx.wallet?.name === selectedWallet;
-            }
+            const matchesWallet = selectedWallets.length === 0 || selectedWallets.includes(tx.wallet?.name);
 
             return matchesSearch && matchesDate && matchesWallet;
         });
-    }, [initialTransactions, searchQuery, startDate, endDate, selectedWallet]);
+    }, [initialTransactions, searchQuery, startDate, endDate, selectedWallets]);
 
     const clearFilters = () => {
         setStartDate('');
         setEndDate('');
-        setSelectedWallet(null);
+        setSelectedWallets([]);
         setSearchQuery('');
         setCurrentPage(1);
         setShowDateModal(false);
         setShowFilterModal(false);
     };
 
-    const hasActiveFilters = startDate || endDate || selectedWallet;
+    const hasActiveFilters = startDate || endDate || selectedWallets.length > 0;
+
+    const toggleWallet = (name: string) =>
+        setSelectedWallets(prev => prev.includes(name) ? prev.filter(w => w !== name) : [...prev, name]);
+
+    // Summary tiles — computed over whatever the filters currently show
+    const summary = useMemo(() => {
+        let invested = 0;
+        let btc = 0;
+        for (const tx of filteredTransactions) {
+            invested += tx.amount * tx.priceAtTime;
+            btc += tx.amount;
+        }
+        const valueNow = btc * currentBtcPrice;
+        const valueAtAth = btc * athPrice;
+        return {
+            invested,
+            btc,
+            valueNow,
+            valueAtAth,
+            avgPrice: btc > 0 ? invested / btc : 0,
+            roi: invested > 0 ? ((valueNow - invested) / invested) * 100 : 0,
+            roiAth: invested > 0 ? ((valueAtAth - invested) / invested) * 100 : 0,
+        };
+    }, [filteredTransactions, currentBtcPrice, athPrice]);
+
+    const usd = (v: number) =>
+        new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+    const pct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 
     // Sorting Logic
     const handleSort = (key: string) => {
@@ -196,7 +222,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                         {startDate ? (endDate ? `${startDate} - ${endDate}` : `From ${startDate}`) : "Custom Range"}
                     </Button>
                     <Button
-                        variant={selectedWallet ? "primary" : "outline"}
+                        variant={selectedWallets.length > 0 ? "primary" : "outline"}
                         size="md"
                         onClick={() => {
                             setShowFilterModal(!showFilterModal);
@@ -204,7 +230,7 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                         }}
                     >
                         <Filter className="w-4 h-4 mr-2" />
-                        {selectedWallet || "Filter"}
+                        {selectedWallets.length === 0 ? "Filter" : selectedWallets.length === 1 ? selectedWallets[0] : `${selectedWallets.length} wallets`}
                     </Button>
 
                     {/* Date Modal */}
@@ -261,29 +287,29 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                     {showFilterModal && (
                         <div className="absolute top-12 right-0 z-50 w-64">
                             <Card className="border border-border bg-surface-strong p-4 animate-in fade-in zoom-in-95 duration-200">
-                                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Filter by Wallet</h3>
+                                <h3 className="text-sm font-bold text-muted uppercase tracking-wider mb-4">Filter by Wallet <span className="normal-case font-normal">(multiple)</span></h3>
                                 <div className="space-y-2 max-h-60 overflow-y-auto">
                                     <button
-                                        onClick={() => setSelectedWallet(null)}
+                                        onClick={() => setSelectedWallets([])}
                                         className={cn(
                                             "w-full text-left px-4 py-3 rounded-xl text-sm transition-colors flex items-center justify-between group",
-                                            !selectedWallet ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
+                                            selectedWallets.length === 0 ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
                                         )}
                                     >
                                         All Wallets
-                                        {!selectedWallet && <Check className="w-4 h-4" />}
+                                        {selectedWallets.length === 0 && <Check className="w-4 h-4" />}
                                     </button>
                                     {uniqueWallets.map((wallet: any) => (
                                         <button
                                             key={wallet}
-                                            onClick={() => setSelectedWallet(wallet === selectedWallet ? null : wallet)}
+                                            onClick={() => toggleWallet(wallet)}
                                             className={cn(
                                                 "w-full text-left px-4 py-3 rounded-xl text-sm transition-colors flex items-center justify-between group",
-                                                selectedWallet === wallet ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
+                                                selectedWallets.includes(wallet) ? "bg-primary/10 text-primary font-bold" : "bg-white/[0.04] text-muted hover:bg-white/5 hover:text-foreground"
                                             )}
                                         >
                                             {wallet}
-                                            {selectedWallet === wallet && <Check className="w-4 h-4" />}
+                                            {selectedWallets.includes(wallet) && <Check className="w-4 h-4" />}
                                         </button>
                                     ))}
                                 </div>
@@ -324,6 +350,35 @@ export default function HistoryClient({ initialTransactions, currentBtcPrice }: 
                             {filteredTransactions.filter((t: any) => new Date(t.timestamp) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).length} Txs
                         </p>
                     </div>
+                </Card>
+            </div>
+
+            {/* Totals for the wallets / dates currently selected */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <Card className="p-4">
+                    <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">Investit</p>
+                    <p className="text-xl font-medium text-foreground">{usd(summary.invested)}</p>
+                </Card>
+                <Card className="p-4">
+                    <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">BTC total</p>
+                    <p className="text-xl font-medium text-foreground">{summary.btc.toFixed(8)}</p>
+                    <p className="text-xs text-muted">Preț mediu {usd(summary.avgPrice)}</p>
+                </Card>
+                <Card className="p-4">
+                    <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">Valoare curentă</p>
+                    <p className="text-xl font-medium text-foreground">{usd(summary.valueNow)}</p>
+                    <p className={cn("text-xs font-medium", summary.roi >= 0 ? "text-emerald-500" : "text-red-500")}>{pct(summary.roi)}</p>
+                </Card>
+                <Card className="p-4">
+                    <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">Profit / pierdere</p>
+                    <p className={cn("text-xl font-medium", summary.valueNow - summary.invested >= 0 ? "text-emerald-500" : "text-red-500")}>
+                        {summary.valueNow - summary.invested >= 0 ? "+" : "-"}{usd(Math.abs(summary.valueNow - summary.invested))}
+                    </p>
+                </Card>
+                <Card className="p-4 col-span-2 lg:col-span-1">
+                    <p className="text-xs text-muted uppercase font-medium tracking-wider mb-1">La ultimul ATH</p>
+                    <p className="text-xl font-medium text-foreground">{usd(summary.valueAtAth)}</p>
+                    <p className={cn("text-xs font-medium", summary.roiAth >= 0 ? "text-emerald-500" : "text-red-500")}>{pct(summary.roiAth)}</p>
                 </Card>
             </div>
 
