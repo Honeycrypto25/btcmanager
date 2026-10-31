@@ -317,13 +317,21 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
             months.push({ key: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
         }
         const byMonth = new Map<string, number>();
+        const profitByMonth = new Map<string, number>();
         for (const lot of lots) {
             const key = format(new Date(lot.soldAt), "yyyy-MM");
             byMonth.set(key, (byMonth.get(key) ?? 0) + Number(lot.usdcReceived));
+            // Profit is only realized when the buy-back fills, so it lands in
+            // the month of the fill (not the sale).
+            if (lot.status === "FILLED" && lot.filledAt) {
+                const pk = format(new Date(lot.filledAt), "yyyy-MM");
+                profitByMonth.set(pk, (profitByMonth.get(pk) ?? 0) + Number(lot.usdcProfit));
+            }
         }
         return months.map(({ key, label }) => ({
             month: label,
             sold: Math.round((byMonth.get(key) ?? 0) * 100) / 100,
+            profit: Math.round((profitByMonth.get(key) ?? 0) * 100) / 100,
         }));
     }, [lots]);
 
@@ -575,8 +583,8 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
 
             {monthlySoldData.length > 0 && (
                 <Card>
-                    <h2 className="mb-1 text-sm font-medium text-foreground">Vândut pe lună</h2>
-                    <p className="mb-4 text-xs text-faint">Ultimele 14 luni — suma în USDC încasată din vânzări, respectă filtrele curente.</p>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">Vândut și profit pe lună</h2>
+                    <p className="mb-4 text-xs text-faint">Ultimele 14 luni — suma în USDC încasată din vânzări (portocaliu) și profitul în USDC produs de ciclurile închise în luna respectivă (verde), respectă filtrele curente.</p>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={monthlySoldData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -586,7 +594,9 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => fmtUsd(Number(v))}
                             />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Bar dataKey="sold" name="Vândut" fill="rgba(245,158,11,0.7)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="profit" name="Profit produs" fill="rgba(34,197,94,0.8)" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </Card>

@@ -412,6 +412,8 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                         )}
                     </Card>
 
+                    <PolygonTokenProfit tokens={data.polygonProfit} view={view} year={year} years={years} />
+
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                         {/* By asset */}
                         <Card className="space-y-4">
@@ -725,6 +727,106 @@ function ChartTooltip({ active, payload, average }: { active?: boolean; payload?
                 </p>
             )}
         </div>
+    );
+}
+
+const TOKEN_COLORS = ["#e8875f", "#d4a15a", "#c46a8a", "#7aa6d9", "#8bc48a", "#b08be0"];
+
+/** USDC made by each Polygon reverse-DCA token (GEOD, MYST, ...), following the page's month/year toggle. */
+function PolygonTokenProfit({ tokens, view, year, years }: { tokens: ColdWalletData["polygonProfit"]; view: View; year: number; years: number[] }) {
+    const withData = tokens.filter((t) => t.items.length > 0);
+    const rows = useMemo(() => {
+        const inScope = (iso: string) => view === "year" || new Date(iso).getFullYear() === year;
+        const keyOf = (iso: string) => {
+            const d = new Date(iso);
+            return view === "month" ? d.getMonth() : d.getFullYear();
+        };
+        const keys: { key: number; label: string }[] =
+            view === "month"
+                ? MONTHS.map((m, i) => ({ key: i, label: `${m} ${year}` }))
+                : [...years].reverse().map((y) => ({ key: y, label: String(y) }));
+        const out = keys.map((k) => {
+            const per = withData.map((t) =>
+                t.items.filter((i) => inScope(i.at) && keyOf(i.at) === k.key).reduce((s, i) => s + i.usdc, 0)
+            );
+            const cycles = withData.map((t) => t.items.filter((i) => inScope(i.at) && keyOf(i.at) === k.key).length);
+            return { ...k, per, cycles, total: per.reduce((a, b) => a + b, 0) };
+        });
+        const firstIdx = out.findIndex((r) => r.total > 0);
+        const now = new Date();
+        const lastIdx = view === "month" && year === now.getFullYear() ? now.getMonth() : out.length - 1;
+        return (firstIdx === -1 ? [] : out.filter((_, i) => i >= firstIdx && i <= lastIdx)).reverse();
+    }, [withData, view, year, years]);
+
+    if (withData.length === 0) return null;
+
+    const scopeTotals = withData.map((t) => {
+        const its = t.items.filter((i) => view === "year" || new Date(i.at).getFullYear() === year);
+        return { symbol: t.symbol, usdc: its.reduce((s, i) => s + i.usdc, 0), cycles: its.length };
+    });
+    const grand = scopeTotals.reduce((s, t) => s + t.usdc, 0);
+
+    return (
+        <Card className="space-y-4">
+            <div className="space-y-1">
+                <h2 className="font-display text-base font-medium text-foreground">
+                    Profit pe token · Polygon (USDC) · {view === "month" ? year : "toți anii"}
+                </h2>
+                <p className="text-xs text-muted">
+                    Cât a produs fiecare token din ciclurile finalizate. Retragerile USDC de mai sus rămân adunate; aici le vezi separat, după data când s-a închis ciclul.
+                </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {scopeTotals.map((t, i) => (
+                    <div key={t.symbol} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                            <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: TOKEN_COLORS[i % TOKEN_COLORS.length] }} />
+                            {t.symbol}
+                        </div>
+                        <p className="mt-1 font-mono text-xl font-medium text-foreground">{usd(t.usdc)}</p>
+                        <p className="text-xs text-faint">
+                            {t.cycles} {t.cycles === 1 ? "ciclu" : "cicluri"}{grand > 0 ? ` · ${((t.usdc / grand) * 100).toFixed(0)}%` : ""}
+                        </p>
+                    </div>
+                ))}
+                <div className="rounded-xl border border-primary/30 bg-primary/10 p-4">
+                    <div className="text-xs text-primary-strong">Total Polygon</div>
+                    <p className="mt-1 font-mono text-xl font-medium text-primary-strong">{usd(grand)}</p>
+                    <p className="text-xs text-faint">{scopeTotals.reduce((s, t) => s + t.cycles, 0)} cicluri</p>
+                </div>
+            </div>
+            {rows.length > 0 && (
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[420px] text-sm">
+                        <thead>
+                            <tr className="border-b border-white/10 text-xs text-faint">
+                                <th scope="col" className="py-2 pr-2 text-left font-medium">{view === "month" ? "Lună" : "An"}</th>
+                                {withData.map((t) => (
+                                    <th key={t.key} scope="col" className="px-2 py-2 text-right font-medium">{t.symbol}</th>
+                                ))}
+                                <th scope="col" className="py-2 pl-2 text-right font-medium">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((r) => (
+                                <tr key={r.key} className="border-b border-white/[0.05]">
+                                    <th scope="row" className="py-2.5 pr-2 text-left font-medium text-foreground">{r.label}</th>
+                                    {r.per.map((v, i) => (
+                                        <td key={withData[i].key} className={cn("px-2 py-2.5 text-right font-mono", v > 0 ? "text-foreground" : "text-faint")}>
+                                            {v > 0 ? usd(v) : "—"}
+                                            {r.cycles[i] > 0 && <div className="text-[11px] text-faint">{r.cycles[i]} {r.cycles[i] === 1 ? "ciclu" : "cicluri"}</div>}
+                                        </td>
+                                    ))}
+                                    <td className={cn("py-2.5 pl-2 text-right font-mono font-medium", r.total > 0 ? "text-primary-strong" : "text-faint")}>
+                                        {r.total > 0 ? usd(r.total) : "—"}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </Card>
     );
 }
 

@@ -55,8 +55,16 @@ export interface ColdWalletBotCycles {
     profitUsdNow: number | null;
 }
 
+/** USDC profit made by one Polygon reverse-DCA token: one entry per completed cycle, dated when the buy-back filled. */
+export interface ColdWalletTokenProfit {
+    key: string;
+    symbol: string;
+    items: { at: string; usdc: number }[];
+}
+
 export interface ColdWalletData {
     sweeps: ColdWalletSweep[];
+    polygonProfit: ColdWalletTokenProfit[];
     failedCount: number;
     currentPrices: Record<ColdAsset, number | null>;
     cycles: ColdWalletBotCycles[];
@@ -214,6 +222,22 @@ export async function getColdWalletData(): Promise<ColdWalletData> {
         botCycles.push({ key: `poly-${ps.id}`, label: `${ps.tokenSymbol} Reverse-DCA`, chain: "Polygon", profitAsset: "USDC", ...t });
     }
 
+    // All-time cycle profit per Polygon token (the sweeps themselves are not
+    // attributed to a token, so "what each token produced" comes from the cycles).
+    const polyAll = polySettings.length
+        ? await db.polygonTokenLot.findMany({
+            where: { userId, status: filled, filledAt: { not: null } },
+            select: { settingsId: true, filledAt: true, usdcProfit: true },
+        })
+        : [];
+    const polygonProfit: ColdWalletTokenProfit[] = polySettings.map((ps) => ({
+        key: ps.id,
+        symbol: ps.tokenSymbol,
+        items: polyAll
+            .filter((l) => l.settingsId === ps.id && l.filledAt)
+            .map((l) => ({ at: l.filledAt!.toISOString(), usdc: Number(l.usdcProfit) })),
+    }));
+
     // Current prices only for assets that were swept or have a bot — avoids
     // hitting Jupiter/1inch for nothing (e.g. on an instance with no bots).
     const has = (a: ColdAsset) => sweeps.some((s) => s.asset === a) || botCycles.some((b) => b.profitAsset === a);
@@ -228,6 +252,7 @@ export async function getColdWalletData(): Promise<ColdWalletData> {
 
     return {
         sweeps,
+        polygonProfit,
         failedCount: failedCounts.reduce((a, b) => a + b, 0),
         currentPrices,
         cycles: botCycles.map((b) => {
