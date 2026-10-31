@@ -1911,11 +1911,11 @@ model ShareLinkView {
   @@index([linkId, createdAt])
 }
 
-// --- Football fixtures (API-Football, api-sports.io) — FCSB page ---
+// --- Football fixtures (TheSportsDB) — FCSB page ---
 model FootballFixture {
   id        String   @id @default(cuid())
-  apiId     Int      @unique // API-Football fixture id
-  teamId    Int // the team we follow (FCSB = 559)
+  apiId     Int      @unique // provider event id (TheSportsDB idEvent)
+  teamId    Int // the team we follow (FCSB = 134005 on TheSportsDB)
   season    Int
   kickoff   DateTime
   league    String

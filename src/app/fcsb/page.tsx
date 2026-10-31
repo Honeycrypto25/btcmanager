@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
-import { FCSB_TEAM_ID } from "@/lib/football/api-football";
+import { FCSB_TEAM_ID } from "@/lib/football/thesportsdb";
 import { FcsbClient, type FixtureDTO } from "./FcsbClient";
 
 export default async function FcsbPage() {

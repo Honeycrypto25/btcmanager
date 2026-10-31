@@ -88,7 +88,7 @@ export function FcsbClient({ fixtures, teamId, lastSync }: { fixtures: FixtureDT
                     <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Fotbal</p>
                     <h1 className="font-display text-2xl font-medium text-foreground">FCSB · meciuri</h1>
                     <p className="text-sm text-muted">
-                        Program și rezultate din API-Football.{lastSync ? ` Ultima actualizare: ${new Date(lastSync).toLocaleString("ro-RO")}.` : " Nu s-a sincronizat încă."}
+                        Program și rezultate din TheSportsDB.{lastSync ? ` Ultima actualizare: ${new Date(lastSync).toLocaleString("ro-RO")}.` : " Nu s-a sincronizat încă."}
                     </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={sync} disabled={pending}>
@@ -105,7 +105,7 @@ export function FcsbClient({ fixtures, teamId, lastSync }: { fixtures: FixtureDT
 
             {fixtures.length === 0 ? (
                 <Card className="p-6">
-                    <p className="text-sm text-muted">Niciun meci salvat încă. Apasă „Actualizează meciurile” ca să îl încarci din API-Football.</p>
+                    <p className="text-sm text-muted">Niciun meci salvat încă. Apasă „Actualizează meciurile” ca să îl încarci din TheSportsDB.</p>
                 </Card>
             ) : (
                 <>
