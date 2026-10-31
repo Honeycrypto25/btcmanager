@@ -37,7 +37,8 @@ import {
     Sparkles,
     FileSignature,
     FolderOpen,
-    ShieldCheck
+    ShieldCheck,
+    Trophy
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -121,6 +122,13 @@ const navEntries: NavEntry[] = [
         section: 'Cold wallet',
         items: [
             { name: 'Profit scos', href: '/cold-wallet', icon: ShieldCheck },
+        ],
+    },
+    {
+        // No sectionKey: admin-only.
+        section: 'Fotbal',
+        items: [
+            { name: 'FCSB', href: '/fcsb', icon: Trophy },
         ],
     },
     {
