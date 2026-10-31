@@ -66,6 +66,7 @@ model User {
   bnbLots              BnbLot[]
   bnbSweeps            BnbSweep[]
   trustedDevices       TrustedDevice[]
+  shareLinks           ShareLink[]
   polygonTokenSettings PolygonTokenSettings[]
   polygonTokenLots     PolygonTokenLot[]
   polygonTokenSweeps   PolygonTokenSweep[]
@@ -1860,4 +1861,52 @@ model Invoice {
   @@index([userId])
   @@index([companyId])
   @@index([clientId])
+}
+
+// --- Read-only share links (e.g. one Polygon token's stats for a partner) ---
+// Served by /api/share/[token] — outside the auth middleware on purpose, so
+// it needs no changes to the site's security. Only the token's own lots are
+// ever read for a link; revoking/expiring a link stops it immediately.
+model ShareLink {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token       String  @unique // random, URL-safe
+  label       String // who it's for / what it shows, admin-only
+  kind        String  @default("POLYGON_TOKEN")
+  settingsId  String // PolygonTokenSettings.id the link is limited to
+  tokenSymbol String // snapshot for display in Admin
+
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  views ShareLinkView[]
+
+  @@index([userId])
+}
+
+model ShareLinkView {
+  id     String    @id @default(cuid())
+  linkId String
+  link   ShareLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  // Coarse location from the host's edge headers; the IP is stored masked
+  // (last IPv4 octet / IPv6 tail zeroed), plus a salted hash to count
+  // unique visitors without keeping the full address.
+  country     String?
+  region      String?
+  city        String?
+  ipMasked    String?
+  visitorHash String?
+  userAgent   String? @db.Text
+  browser     String?
+  os          String?
+  device      String?
+  referrer    String?
+  isBot       Boolean @default(false) // link-preview crawlers (WhatsApp, etc.) — not counted as visits
+
+  @@index([linkId, createdAt])
 }

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, Button, cn } from "@/components/ui/core";
+import { ShareLinksTab } from "@/components/admin/ShareLinksTab";
 import {
     ShieldCheck,
     Key,
@@ -27,7 +28,8 @@ import {
     Copy,
     Check,
     MonitorSmartphone,
-    KeyRound
+    KeyRound,
+    Share2
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
@@ -117,7 +119,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function AdminPageClient() {
-    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'devices' | 'features' | 'env'>('security');
+    const [activeTab, setActiveTab] = useState<'security' | 'access' | 'integrations' | 'reports' | 'dependencies' | 'devices' | 'features' | 'env' | 'links'>('security');
     const [loading, setLoading] = useState(true);
     const [is2faEnabled, setIs2faEnabled] = useState(false);
 
@@ -487,6 +489,7 @@ export default function AdminPageClient() {
                     { id: 'dependencies', name: 'Dependențe', icon: Package },
                     { id: 'devices', name: 'Dispozitive de încredere', icon: MonitorSmartphone },
                     { id: 'env', name: 'Variabile de mediu', icon: KeyRound },
+                    { id: 'links', name: 'Linkuri partajare', icon: Share2 },
                     { id: 'features', name: 'Future Features', icon: Puzzle }
                 ].map(tab => (
                     <button
@@ -1107,6 +1110,8 @@ export default function AdminPageClient() {
                     </Card>
                 </div>
             )}
+
+            {activeTab === 'links' && <ShareLinksTab />}
 
             {activeTab === 'env' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
