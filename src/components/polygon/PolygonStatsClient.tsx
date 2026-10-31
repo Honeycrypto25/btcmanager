@@ -27,6 +27,11 @@ const PAGE_SIZE = 10;
 // One color per token's "Preț curent" reference line on the active-lots chart -- cycles if more than 3 tokens are ever added to ALLOWED_TOKENS.
 const REF_LINE_COLORS = ["#e5e7eb", "#60a5fa", "#f472b6"];
 
+// One color per token in the "Ordine pe lună" stacked bars.
+const ORDER_COLORS = ["#e8a13a", "#60a5fa", "#f472b6", "#a78bfa"];
+// ...and the matching greens for how many of them were bought back.
+const FILLED_COLORS = ["#22c55e", "#2dd4bf", "#a3e635", "#86efac"];
+
 interface TokenSettingsDTO {
     id: string;
     tokenAddress: string;
@@ -335,6 +340,52 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
         }));
     }, [lots]);
 
+    // Orders (sell -> buy-back cycles) started per month, one series per token,
+    // same fixed 14-month window and same filters as the charts above — so
+    // after a few months it's easy to see if the per-order amount should go
+    // up (orders keep filling) or down (they pile up unfilled).
+    const monthlyOrdersData = useMemo(() => {
+        const now = new Date();
+        const months: { key: string; label: string }[] = [];
+        for (let i = 13; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push({ key: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
+        }
+        const symbols = tokenSettings
+            .filter((t) => lots.some((l) => l.settingsId === t.id))
+            .map((t) => ({ id: t.id, symbol: t.tokenSymbol }));
+        const rows = months.map(({ key, label }) => {
+            const row: Record<string, number | string> = { month: label, total: 0, filled: 0, usd: 0 };
+            for (const sy of symbols) { row[sy.symbol] = 0; row[`${sy.symbol} răscumpărate`] = 0; }
+            for (const lot of lots) {
+                if (lot.status === "FAILED" || lot.status === "CANCELLED") continue;
+                if (format(new Date(lot.soldAt), "yyyy-MM") !== key) continue;
+                const sym = symbols.find((x) => x.id === lot.settingsId)?.symbol;
+                if (sym) row[sym] = (row[sym] as number) + 1;
+                row.total = (row.total as number) + 1;
+                row.usd = (row.usd as number) + Number(lot.usdcReceived);
+                if (lot.status === "FILLED") {
+                    row.filled = (row.filled as number) + 1;
+                    if (sym) row[`${sym} răscumpărate`] = (row[`${sym} răscumpărate`] as number) + 1;
+                }
+            }
+            row.usd = Math.round((row.usd as number) * 100) / 100;
+            return row;
+        });
+        const active = rows.filter((r) => (r.total as number) > 0);
+        const orders = active.reduce((t, r) => t + (r.total as number), 0);
+        const filledTotal = active.reduce((t, r) => t + (r.filled as number), 0);
+        const usd = active.reduce((t, r) => t + (r.usd as number), 0);
+        return {
+            rows,
+            symbols: symbols.map((x) => x.symbol),
+            avgPerMonth: active.length ? orders / active.length : 0,
+            avgFilledPerMonth: active.length ? filledTotal / active.length : 0,
+            avgOrderUsd: orders ? usd / orders : 0,
+            hasData: orders > 0,
+        };
+    }, [lots, tokenSettings]);
+
     // How long each filled buy-back order actually took, grouped by its dip
     // percent below the sale price — from allLots, independent of the
     // filters above. Duration measured from when the limit order was placed
@@ -597,6 +648,73 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             <Bar dataKey="sold" name="Vândut" fill="rgba(245,158,11,0.7)" radius={[4, 4, 0, 0]} />
                             <Bar dataKey="profit" name="Profit produs" fill="rgba(34,197,94,0.8)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </Card>
+            )}
+
+            {monthlyOrdersData.hasData && (
+                <Card>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                        <h2 className="text-sm font-medium text-foreground">Ordine pe lună</h2>
+                        {tokenSettings.length > 1 && (
+                            <div className="flex flex-wrap gap-2">
+                                {([{ id: "all", label: "Toate" }, ...tokenSettings.map((t) => ({ id: t.id, label: t.tokenSymbol }))]).map((o) => (
+                                    <button
+                                        key={o.id}
+                                        type="button"
+                                        onClick={() => setTokenFilter(o.id)}
+                                        className={cn(
+                                            "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+                                            tokenFilter === o.id ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted hover:text-foreground"
+                                        )}
+                                    >
+                                        {o.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <p className="mb-4 text-xs text-faint">
+                        Câte cicluri (vânzare → ordin de răscumpărare) s-au deschis în fiecare lună, pe token (prima coloană), și câte din ele s-au răscumpărat deja (a doua coloană, verde) — ultimele 14 luni, fără cele anulate sau eșuate, respectă filtrele curente.
+                        {" "}Liniile punctate sunt mediile pe lunile cu ordine (portocaliu: plasate, verde: răscumpărate, ambele însumate pe toate tokenurile afișate). Medie {monthlyOrdersData.avgPerMonth.toFixed(1)} ordine/lună · {fmtUsd(monthlyOrdersData.avgOrderUsd)} per ordin.
+                    </p>
+                    <ResponsiveContainer width="100%" height={240}>
+                        <BarChart data={monthlyOrdersData.rows}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" allowDecimals={false} />
+                            <Tooltip
+                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                                formatter={(v, name) => [`${v} ${Number(v) === 1 ? "ordin" : "ordine"}`, String(name)]}
+                                labelFormatter={(label, payload) => {
+                                    const p = payload?.[0]?.payload as { total?: number; filled?: number; usd?: number } | undefined;
+                                    return p && p.total ? `${label} · ${p.filled ?? 0} din ${p.total} răscumpărate · ${fmtUsd(p.usd ?? 0)} vândut` : String(label);
+                                }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                            <ReferenceLine
+                                y={Math.round(monthlyOrdersData.avgPerMonth * 100) / 100}
+                                stroke="#e8bc70"
+                                strokeDasharray="6 4"
+                                strokeWidth={1.5}
+                                ifOverflow="extendDomain"
+                                label={{ value: `Medie plasate ${monthlyOrdersData.avgPerMonth.toFixed(1)}/lună`, position: "insideTopLeft", fill: "#e8bc70", fontSize: 11 }}
+                            />
+                            <ReferenceLine
+                                y={Math.round(monthlyOrdersData.avgFilledPerMonth * 100) / 100}
+                                stroke="#4ade80"
+                                strokeDasharray="6 4"
+                                strokeWidth={1.5}
+                                ifOverflow="extendDomain"
+                                label={{ value: `Medie răscumpărate ${monthlyOrdersData.avgFilledPerMonth.toFixed(1)}/lună`, position: "insideBottomLeft", fill: "#4ade80", fontSize: 11 }}
+                            />
+                            {monthlyOrdersData.symbols.map((sym, i) => (
+                                <Bar key={sym} dataKey={sym} name={`${sym} ordine`} stackId="orders" fill={ORDER_COLORS[i % ORDER_COLORS.length]} radius={i === monthlyOrdersData.symbols.length - 1 ? [4, 4, 0, 0] : 0} />
+                            ))}
+                            {monthlyOrdersData.symbols.map((sym, i) => (
+                                <Bar key={`${sym}-f`} dataKey={`${sym} răscumpărate`} name={`${sym} răscumpărate`} stackId="filled" fill={FILLED_COLORS[i % FILLED_COLORS.length]} radius={i === monthlyOrdersData.symbols.length - 1 ? [4, 4, 0, 0] : 0} />
+                            ))}
                         </BarChart>
                     </ResponsiveContainer>
                 </Card>
