@@ -41,7 +41,7 @@ function page(title: string, body: string, status = 200) {
 .note{color:var(--mut);font-size:12px;margin:0 0 12px}svg{width:100%;height:auto;display:block}
 .tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}th{color:var(--mut);font-size:11px;text-transform:uppercase;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:8px 10px;border-bottom:1px solid #1d1d1d;white-space:nowrap;font-variant-numeric:tabular-nums}.pill{border:1px solid currentColor;border-radius:99px;padding:1px 8px;font-size:11px}
-.leg{display:flex;gap:14px;color:var(--mut);font-size:12px;margin-top:8px}.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.leg{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:12px}.lg{background:#101010;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px}.lg b{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px}.lg i{display:inline-block;width:10px;height:10px;border-radius:2px}.lg i.dash{height:0;width:14px;border-top:2px dashed currentColor;border-radius:0}.lg div{display:flex;justify-content:space-between;gap:10px;color:var(--mut);padding:1px 0}.lg div span:last-child{color:var(--fg);font-variant-numeric:tabular-nums;text-align:right}
 .ft{color:#6b6b6b;font-size:11px;text-align:center;margin-top:24px}
 </style></head><body><div class="wrap">${body}</div></body></html>`;
     return new Response(html, {
@@ -58,18 +58,26 @@ td{padding:8px 10px;border-bottom:1px solid #1d1d1d;white-space:nowrap;font-vari
 }
 
 type BarSeries = { name: string; color: string; values: number[] };
-function barChart(labels: string[], series: BarSeries[]): string {
+type RefLine = { y: number; color: string; label: string };
+type ChartOpts = { fmt?: (n: number) => string; int?: boolean; lines?: RefLine[] };
+function barChart(labels: string[], series: BarSeries[], opts: ChartOpts = {}): string {
+    const fmt = opts.fmt ?? usd;
     const W = 760, H = 240, L = 48, R = 8, T = 10, B = 28;
-    const max = Math.max(1, ...series.flatMap((s) => s.values));
-    const nice = Math.pow(10, Math.floor(Math.log10(max)));
-    const top = Math.ceil(max / nice) * nice;
+    const max = Math.max(1, ...series.flatMap((s) => s.values), ...(opts.lines ?? []).map((l) => l.y));
+    let top: number;
+    if (opts.int) top = Math.max(4, Math.ceil(max / 4) * 4);
+    else {
+        const nice = Math.pow(10, Math.floor(Math.log10(max)));
+        top = Math.ceil(max / nice) * nice;
+    }
     const innerW = W - L - R, innerH = H - T - B;
     const group = innerW / labels.length;
     const bw = Math.min(22, (group * 0.8) / series.length);
     let g = "";
     for (let i = 0; i <= 4; i++) {
         const y = T + innerH - (innerH * i) / 4;
-        g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#262626" stroke-dasharray="3 3"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" fill="#8b8b8b" font-size="10">$${Math.round((top * i) / 4)}</text>`;
+        const tv = (top * i) / 4;
+        g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#262626" stroke-dasharray="3 3"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" fill="#8b8b8b" font-size="10">${opts.int ? Math.round(tv) : `$${Math.round(tv)}`}</text>`;
     }
     labels.forEach((lb, i) => {
         const cx = L + group * i + group / 2;
@@ -78,10 +86,23 @@ function barChart(labels: string[], series: BarSeries[]): string {
             const h = (s.values[i] / top) * innerH;
             if (h <= 0) return;
             const x = cx - (bw * series.length) / 2 + bw * j;
-            g += `<rect x="${x.toFixed(1)}" y="${(T + innerH - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${s.color}"><title>${esc(lb)} · ${esc(s.name)}: ${usd(s.values[i])}</title></rect>`;
+            g += `<rect x="${x.toFixed(1)}" y="${(T + innerH - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${s.color}"><title>${esc(lb)} · ${esc(s.name)}: ${fmt(s.values[i])}</title></rect>`;
         });
     });
-    return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg><div class="leg">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>`;
+    (opts.lines ?? []).forEach((ln, k) => {
+        const y = T + innerH - (ln.y / top) * innerH;
+        g += `<line x1="${L}" x2="${W - R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${ln.color}" stroke-dasharray="5 4"/><text x="${L + 6}" y="${(k === 0 ? y - 4 : y + 13).toFixed(1)}" fill="${ln.color}" font-size="10">${esc(ln.label)}</text>`;
+    });
+    return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+}
+
+type LegendItem = { color: string; name: string; dash?: boolean; rows: [string, string][] };
+function legend(items: LegendItem[]): string {
+    return `<div class="leg">${items
+        .map((it) => `<div class="lg"><b style="color:${it.color}"><i${it.dash ? ' class="dash"' : ""} style="${it.dash ? "" : `background:${it.color}`}"></i><span style="color:var(--fg)">${esc(it.name)}</span></b>${it.rows
+            .map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`)
+            .join("")}</div>`)
+        .join("")}</div>`;
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
@@ -130,9 +151,53 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         if (l.status === "FILLED" && l.filledAt) profBy.set(mk(l.filledAt), (profBy.get(mk(l.filledAt)) ?? 0) + Number(l.usdcProfit));
     }
     const labels = months.map((d) => `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`);
+    const soldVals = months.map((d) => Math.round((soldBy.get(mk(d)) ?? 0) * 100) / 100);
+    const profVals = months.map((d) => Math.round((profBy.get(mk(d)) ?? 0) * 100) / 100);
+    const sum = (a: number[]) => a.reduce((t, x) => t + x, 0);
+    const activeAvg = (a: number[]) => { const n = a.filter((x) => x > 0).length; return n ? sum(a) / n : 0; };
+    const best = (a: number[]): string => {
+        const m = Math.max(...a);
+        return m > 0 ? `${labels[a.indexOf(m)]} · ${usd(m)}` : "—";
+    };
+    const cur = months.length - 1;
     const chart = barChart(labels, [
-        { name: "Vândut", color: "#e8a13a", values: months.map((d) => Math.round((soldBy.get(mk(d)) ?? 0) * 100) / 100) },
-        { name: "Profit realizat", color: "#4ade80", values: months.map((d) => Math.round((profBy.get(mk(d)) ?? 0) * 100) / 100) },
+        { name: "Vândut", color: "#e8a13a", values: soldVals },
+        { name: "Profit realizat", color: "#4ade80", values: profVals },
+    ]) + legend([
+        { color: "#e8a13a", name: "Vândut", rows: [["Total 14 luni", usd(sum(soldVals))], ["Medie pe lună activă", usd(activeAvg(soldVals))], ["Cea mai bună lună", best(soldVals)], [`Luna curentă (${labels[cur]})`, usd(soldVals[cur])]] },
+        { color: "#4ade80", name: "Profit realizat", rows: [["Total 14 luni", usd(sum(profVals))], ["Medie pe lună activă", usd(activeAvg(profVals))], ["Cea mai bună lună", best(profVals)], [`Luna curentă (${labels[cur]})`, usd(profVals[cur])]] },
+    ]);
+
+    // Orders per month: cycles opened (by sale date) vs buy-backs already filled. Cancelled/failed left out.
+    const valid = lots.filter((l) => l.status !== "FAILED" && l.status !== "CANCELLED");
+    const placedBy = new Map<string, number>(), filledBy = new Map<string, number>();
+    for (const l of valid) {
+        placedBy.set(mk(l.soldAt), (placedBy.get(mk(l.soldAt)) ?? 0) + 1);
+        if (l.status === "FILLED") filledBy.set(mk(l.soldAt), (filledBy.get(mk(l.soldAt)) ?? 0) + 1);
+    }
+    const placedVals = months.map((d) => placedBy.get(mk(d)) ?? 0);
+    const filledVals = months.map((d) => filledBy.get(mk(d)) ?? 0);
+    const activeMonths = placedVals.filter((x) => x > 0).length;
+    const avgPlaced = activeMonths ? sum(placedVals) / activeMonths : 0;
+    const avgFilled = activeMonths ? sum(filledVals) / activeMonths : 0;
+    const avgOrderUsd = valid.length ? valid.reduce((t, l) => t + Number(l.usdcReceived), 0) / valid.length : 0;
+    const fillRate = sum(placedVals) ? (sum(filledVals) / sum(placedVals)) * 100 : 0;
+    const bestOrders = (() => { const m = Math.max(...placedVals); return m > 0 ? `${labels[placedVals.indexOf(m)]} · ${m}` : "—"; })();
+    const ordersChart = valid.length === 0 ? "" : barChart(labels, [
+        { name: "Ordine plasate", color: "#e8a13a", values: placedVals },
+        { name: "Răscumpărate", color: "#22c55e", values: filledVals },
+    ], {
+        int: true,
+        fmt: (n) => String(n),
+        lines: [
+            { y: Math.round(avgPlaced * 100) / 100, color: "#e8bc70", label: `Medie plasate ${avgPlaced.toFixed(1)}/lună` },
+            { y: Math.round(avgFilled * 100) / 100, color: "#4ade80", label: `Medie răscumpărate ${avgFilled.toFixed(1)}/lună` },
+        ],
+    }) + legend([
+        { color: "#e8a13a", name: "Ordine plasate", rows: [["Total 14 luni", String(sum(placedVals))], ["Cea mai activă lună", bestOrders], [`Luna curentă (${labels[cur]})`, String(placedVals[cur])], ["Sumă medie per ordin", usd(avgOrderUsd)]] },
+        { color: "#22c55e", name: "Răscumpărate", rows: [["Total 14 luni", String(sum(filledVals))], ["Rată de răscumpărare", `${fillRate.toFixed(0)}%`], [`Luna curentă (${labels[cur]})`, String(filledVals[cur])], ["Încă active", String(valid.filter((l) => l.status === "OPEN" || l.status === "PENDING_BUYBACK_ORDER").length)]] },
+        { color: "#e8bc70", name: "Medie plasate / lună", dash: true, rows: [["Pe lunile cu ordine", `${avgPlaced.toFixed(1)} ordine`]] },
+        { color: "#4ade80", name: "Medie răscumpărate / lună", dash: true, rows: [["Pe lunile cu ordine", `${avgFilled.toFixed(1)} ordine`]] },
     ]);
 
     const shown = lots.slice(0, 100);
@@ -158,6 +223,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 <div class="card"><div class="k">Total cicluri</div><div class="v">${real.length}</div></div>
 </div>
 <div class="card" style="margin-bottom:16px"><h2>Vândut și profit pe lună</h2><p class="note">Ultimele 14 luni, în USDC. Profitul apare în luna în care s-a executat răscumpărarea.</p>${chart}</div>
+${ordersChart ? `<div class="card" style="margin-bottom:16px"><h2>Ordine pe lună</h2><p class="note">Câte cicluri s-au deschis în fiecare lună (portocaliu) și câte s-au răscumpărat deja (verde) — ultimele 14 luni, fără cele anulate sau eșuate. Liniile punctate sunt mediile pe lunile cu ordine.</p>${ordersChart}</div>` : ""}
 <div class="card"><h2>Cicluri (vânzare → răscumpărare)</h2><p class="note">${lots.length > shown.length ? `Ultimele ${shown.length} din ${lots.length}.` : `${lots.length} cicluri.`}</p>
 <div class="tw"><table><thead><tr><th>Data</th><th>Status</th><th>Vândut</th><th>Preț vânzare</th><th>Încasat</th><th>Profit</th><th>Țintă răscump.</th><th>Față de vânzare</th><th>Răscumpărat</th></tr></thead><tbody>${rows || `<tr><td colspan="9" style="color:var(--mut)">Niciun ciclu încă.</td></tr>`}</tbody></table></div></div>
 <p class="ft">Pagină doar pentru citire. Valorile sunt în USDC.</p>`;
