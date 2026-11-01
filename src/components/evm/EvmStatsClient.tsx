@@ -22,6 +22,7 @@ import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, 
 import { reconcileEvmOrdersNow } from "@/app/actions/evm";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 import type { LimitBuyDTO } from "./EvmLimitBuyCard";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
@@ -447,6 +448,8 @@ export function EvmStatsClient({
                     </ResponsiveContainer>
                 </Card>
             )}
+
+            <MonthlyOrdersChart lots={lots} symbol="WETH" />
 
             {monthlyData.length > 0 && (
                 <Card>

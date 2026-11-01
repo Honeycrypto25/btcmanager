@@ -22,6 +22,7 @@ import { formatUsd, formatUsdFee, formatPrice, statusMeta, PENDING_STATUSES, FIN
 import { reconcileEvaOrdersNow, migrateEvaLotToV2Action, migrateStuckEvaLotsToV2Action, diagnoseEvaV2Action, setEvaV2SlippageAction, recreateEvaV2OrderAction } from "@/app/actions/eva";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -463,6 +464,8 @@ export function EvaStatsClient({
                     </ResponsiveContainer>
                 </Card>
             )}
+
+            <MonthlyOrdersChart lots={lots} symbol="EVA" />
 
             {monthlyData.length > 0 && (
                 <Card>

@@ -22,6 +22,7 @@ import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, 
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -427,6 +428,8 @@ export function SolanaStatsClient({
                     </ResponsiveContainer>
                 </Card>
             )}
+
+            <MonthlyOrdersChart lots={lots} symbol="SOL" />
 
             {monthlyData.length > 0 && (
                 <Card>

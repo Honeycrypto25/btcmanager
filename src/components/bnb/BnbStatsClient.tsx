@@ -22,6 +22,7 @@ import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, 
 import { reconcileBnbOrdersNow } from "@/app/actions/bnb";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
+import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -422,6 +423,8 @@ export function BnbStatsClient({
                     </ResponsiveContainer>
                 </Card>
             )}
+
+            <MonthlyOrdersChart lots={lots} symbol="WBNB" />
 
             {monthlyData.length > 0 && (
                 <Card>
