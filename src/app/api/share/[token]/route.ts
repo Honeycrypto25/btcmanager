@@ -59,9 +59,9 @@ td{padding:8px 10px;border-bottom:1px solid #1d1d1d;white-space:nowrap;font-vari
 
 type BarSeries = { name: string; color: string; values: number[] };
 type RefLine = { y: number; color: string; label: string };
-type ChartOpts = { fmt?: (n: number) => string; int?: boolean; lines?: RefLine[] };
-function barChart(labels: string[], series: BarSeries[], opts: ChartOpts = {}): string {
-    const fmt = opts.fmt ?? usd;
+type TipRow = [label: string, value: string, color?: string];
+type ChartOpts = { key: string; int?: boolean; lines?: RefLine[]; tips?: (TipRow[] | null)[] };
+function barChart(labels: string[], series: BarSeries[], opts: ChartOpts): string {
     const W = 760, H = 240, L = 48, R = 8, T = 10, B = 28;
     const max = Math.max(1, ...series.flatMap((s) => s.values), ...(opts.lines ?? []).map((l) => l.y));
     let top: number;
@@ -73,27 +73,46 @@ function barChart(labels: string[], series: BarSeries[], opts: ChartOpts = {}): 
     const innerW = W - L - R, innerH = H - T - B;
     const group = innerW / labels.length;
     const bw = Math.min(22, (group * 0.8) / series.length);
+    const k = opts.key;
     let g = "";
     for (let i = 0; i <= 4; i++) {
         const y = T + innerH - (innerH * i) / 4;
         const tv = (top * i) / 4;
         g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#262626" stroke-dasharray="3 3"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" fill="#8b8b8b" font-size="10">${opts.int ? Math.round(tv) : `$${Math.round(tv)}`}</text>`;
     }
+    (opts.lines ?? []).forEach((ln, n) => {
+        const y = T + innerH - (ln.y / top) * innerH;
+        g += `<line x1="${L}" x2="${W - R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${ln.color}" stroke-dasharray="5 4"/><text x="${L + 6}" y="${(n === 0 ? y - 4 : y + 13).toFixed(1)}" fill="${ln.color}" font-size="10">${esc(ln.label)}</text>`;
+    });
+    // Columns layer (hover targets + bars), then a tooltip layer on top. Tooltips show via CSS :hover on the
+    // matching column (general-sibling selector) — no script needed, which the page's CSP wouldn't allow anyway.
+    let cols = "", tips = "", css = "";
     labels.forEach((lb, i) => {
         const cx = L + group * i + group / 2;
-        g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" fill="#8b8b8b" font-size="10">${esc(lb)}</text>`;
+        let bars = "";
         series.forEach((s, j) => {
             const h = (s.values[i] / top) * innerH;
             if (h <= 0) return;
             const x = cx - (bw * series.length) / 2 + bw * j;
-            g += `<rect x="${x.toFixed(1)}" y="${(T + innerH - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${s.color}"><title>${esc(lb)} · ${esc(s.name)}: ${fmt(s.values[i])}</title></rect>`;
+            bars += `<rect x="${x.toFixed(1)}" y="${(T + innerH - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${s.color}"/>`;
         });
+        const rows = opts.tips?.[i] ?? null;
+        cols += `<g class="${k}c${i}"><rect class="hl" x="${(L + group * i).toFixed(1)}" y="${T}" width="${group.toFixed(1)}" height="${innerH + B - 4}" fill="#fff" opacity="0"/>${bars}<text x="${cx}" y="${H - 8}" text-anchor="middle" fill="#8b8b8b" font-size="10">${esc(lb)}</text><rect x="${(L + group * i).toFixed(1)}" y="${T}" width="${group.toFixed(1)}" height="${innerH + B - 4}" fill="transparent"/></g>`;
+        if (rows && rows.length) {
+            const w = 210, lh = 16, h = 34 + rows.length * lh;
+            const tx = cx + 14 + w <= W - R ? cx + 14 : cx - 14 - w;
+            const ty = T + 2;
+            tips += `<g class="${k}t${i}" style="display:none" pointer-events="none"><rect x="${tx.toFixed(1)}" y="${ty}" width="${w}" height="${h}" rx="8" fill="#1c1c1c" stroke="#3a3a3a"/><text x="${(tx + 12).toFixed(1)}" y="${ty + 20}" fill="#ececec" font-size="12" font-weight="600">${esc(lb)}</text>${rows
+                .map(([label, value, color], n) => {
+                    const y = ty + 40 + n * lh;
+                    return `${color ? `<rect x="${(tx + 12).toFixed(1)}" y="${y - 8}" width="8" height="8" rx="2" fill="${color}"/>` : ""}<text x="${(tx + (color ? 26 : 12)).toFixed(1)}" y="${y}" fill="#9a9a9a" font-size="11">${esc(label)}</text><text x="${(tx + w - 12).toFixed(1)}" y="${y}" text-anchor="end" fill="#ececec" font-size="11" font-weight="600">${esc(value)}</text>`;
+                })
+                .join("")}</g>`;
+            css += `.${k}c${i}:hover~.${k}t${i}{display:block!important}`;
+        }
+        css += `.${k}c${i}:hover .hl{opacity:.05}`;
     });
-    (opts.lines ?? []).forEach((ln, k) => {
-        const y = T + innerH - (ln.y / top) * innerH;
-        g += `<line x1="${L}" x2="${W - R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${ln.color}" stroke-dasharray="5 4"/><text x="${L + 6}" y="${(k === 0 ? y - 4 : y + 13).toFixed(1)}" fill="${ln.color}" font-size="10">${esc(ln.label)}</text>`;
-    });
-    return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img"><style>${css}</style>${g}${cols}${tips}</svg>`;
 }
 
 /** Month-by-month breakdown table (newest first) with a totals row and optional extra footer rows. */
@@ -155,10 +174,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const dot = (c: string) => `<i class="dot" style="background:${c}"></i>`;
 
     // Per-month detail, bucketed by sale date (cycles, sold, reinvested) and by buy-back fill date (profit, fills).
-    const cyclesBy = new Map<string, number>(), reinvBy = new Map<string, number>(), fillsBy = new Map<string, number>();
+    const tokBy = new Map<string, number>(), cyclesBy = new Map<string, number>(), reinvBy = new Map<string, number>(), fillsBy = new Map<string, number>();
     for (const l of real) {
         cyclesBy.set(mk(l.soldAt), (cyclesBy.get(mk(l.soldAt)) ?? 0) + 1);
         reinvBy.set(mk(l.soldAt), (reinvBy.get(mk(l.soldAt)) ?? 0) + Number(l.usdcToBuyback));
+        tokBy.set(mk(l.soldAt), (tokBy.get(mk(l.soldAt)) ?? 0) + Number(l.tokenSold));
         if (l.status === "FILLED" && l.filledAt) fillsBy.set(mk(l.filledAt), (fillsBy.get(mk(l.filledAt)) ?? 0) + 1);
     }
     const cyclesVals = months.map((d) => cyclesBy.get(mk(d)) ?? 0);
@@ -177,10 +197,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
             profVals[i] > 0 ? `<span style="color:var(--acc)">${usd(profVals[i])}</span>` : "—",
         ]);
     const activeM = cyclesVals.filter((x) => x > 0).length || 1;
+    const moneyTips: (TipRow[] | null)[] = months.map((d, i) =>
+        cyclesVals[i] > 0 || profVals[i] > 0
+            ? [
+                  ["Vândut", usd(soldVals[i]), "#e8a13a"],
+                  ["Profit realizat", usd(profVals[i]), "#4ade80"],
+                  ["Cicluri vândute", String(cyclesVals[i])],
+                  ["Reinvestit în ordine", usd(reinvVals[i])],
+                  ["Răscumpărări finalizate", String(fillsVals[i])],
+                  ["Preț mediu vânzare", tokBy.get(mk(d)) ? usd(soldVals[i] / (tokBy.get(mk(d)) as number)) : "—"],
+              ]
+            : null,
+    );
     const chart = barChart(labels, [
         { name: "Vândut", color: "#e8a13a", values: soldVals },
         { name: "Profit realizat", color: "#4ade80", values: profVals },
-    ]) + `<div class="k" style="margin-top:12px">${dot("#e8a13a")}Vândut &nbsp; ${dot("#4ade80")}Profit realizat — pe luni</div>` + monthTable(
+    ], { key: "a", tips: moneyTips }) + `<div class="k" style="margin-top:12px">${dot("#e8a13a")}Vândut &nbsp; ${dot("#4ade80")}Profit realizat — pe luni</div>` + monthTable(
         ["Luna", "Cicluri", "Vândut", "Reinvestit", "Răscumpărări", "Profit"],
         moneyRows,
         [["Total", String(sum(cyclesVals)), usd(sum(soldVals)), usd(sum(reinvVals)), String(sum(fillsVals)), `<span style="color:var(--acc)">${usd(sum(profVals))}</span>`]],
@@ -221,8 +253,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         { name: "Ordine plasate", color: "#e8a13a", values: placedVals },
         { name: "Răscumpărate", color: "#22c55e", values: filledVals },
     ], {
+        key: "b",
         int: true,
-        fmt: (n) => String(n),
+        tips: months.map((d, i) =>
+            placedVals[i] > 0
+                ? ([
+                      ["Ordine plasate", String(placedVals[i]), "#e8a13a"],
+                      ["Răscumpărate", String(filledVals[i]), "#22c55e"],
+                      ["Încă active", String(activeVals[i])],
+                      ["Rată răscumpărare", rate(filledVals[i], placedVals[i])],
+                      ["Sumă totală vândută", usd(usdVals[i])],
+                      ["Sumă medie / ordin", usd(usdVals[i] / placedVals[i])],
+                  ] as TipRow[])
+                : null,
+        ),
         lines: [
             { y: Math.round(avgPlaced * 100) / 100, color: "#e8bc70", label: `Medie plasate ${avgPlaced.toFixed(1)}/lună` },
             { y: Math.round(avgFilled * 100) / 100, color: "#4ade80", label: `Medie răscumpărate ${avgFilled.toFixed(1)}/lună` },
