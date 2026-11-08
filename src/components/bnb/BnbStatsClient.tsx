@@ -18,6 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw, Copy, Check } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
+import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileBnbOrdersNow } from "@/app/actions/bnb";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -376,6 +377,8 @@ export function BnbStatsClient({
             </Card>
 
             {/* Charts */}
+            {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={bnbPriceUsd} fmt={formatUsd} />}
+
             {openLotsChartData.length > 0 && (
                 <Card>
                     <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>

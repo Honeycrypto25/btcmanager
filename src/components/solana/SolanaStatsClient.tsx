@@ -18,6 +18,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
+import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -381,6 +382,8 @@ export function SolanaStatsClient({
             </Card>
 
             {/* Charts */}
+            {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={solPriceUsd} fmt={formatUsd} />}
+
             {openLotsChartData.length > 0 && (
                 <Card>
                     <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
