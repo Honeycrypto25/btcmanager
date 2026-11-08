@@ -84,7 +84,7 @@ export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capL
                         <p className="text-xs text-amber-300">Nu am putut citi istoricul tranzacțiilor ({lend.historyError}) — dobânzile și graficele de istoric lipsesc, restul e afișat.</p>
                     )}
                     {lend.positions.map((p) => (
-                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} capLtv={capLtv} />
+                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} capLtv={capLtv} fetchedAt={lend.fetchedAt} />
                     ))}
                 </div>
             )}
@@ -92,7 +92,7 @@ export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capL
     );
 }
 
-function PositionCard({ p, capLtv }: { p: LendPositionFull; capLtv: number }) {
+function PositionCard({ p, capLtv, fetchedAt }: { p: LendPositionFull; capLtv: number; fetchedAt: string }) {
     const lt = p.liqThreshold ?? 0;
     // Same zones jup.ag uses visually: well below max LTV is safe, close to the liquidation threshold is danger.
     const risk = lt > 0 ? p.ltv / lt : 0;
@@ -139,7 +139,7 @@ function PositionCard({ p, capLtv }: { p: LendPositionFull; capLtv: number }) {
                 <BorrowRoom p={p} capLtv={capLtv} />
             </div>
 
-            <InterestTiles p={p} />
+            <InterestTiles p={p} fetchedAt={fetchedAt} />
 
             <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">

@@ -4,6 +4,8 @@ import React, { useMemo, useState } from "react";
 import {
     AreaChart,
     Area,
+    BarChart,
+    Bar,
     LineChart,
     Line,
     XAxis,
@@ -91,42 +93,53 @@ function Tip({ active, payload, label, fmt, labelFmt }: { active?: boolean; payl
 }
 
 /** The two interest figures asked for + the net, with a per-day/month/year projection. */
-export function InterestTiles({ p }: { p: LendPositionFull }) {
+export function InterestTiles({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: string }) {
+    const [sel, setSel] = useState<Metric[]>([]);
     const i = p.interest;
     if (!i) return null;
     const proj = i.projection;
+    const toggle = (m: Metric) => setSel((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : METRIC_ORDER.filter((x) => x === m || cur.includes(x))));
     return (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <Tile
-                label={`Dobândă câștigată · ${p.collateral.symbol} depus`}
-                value={`+${tokenSmall(i.earned, p.collateral.symbol)}`}
-                valueClass="text-emerald-300"
-                note={`≈ ${usdSmall(i.earnedUsd)} până acum`}
-                lines={[
-                    `APY ${pct(p.collateral.apy)} · APR ${pct(p.collateral.apr)}`,
-                    `≈ ${usdSmall(proj.day.earnedUsd)}/zi · ${usdSmall(proj.month.earnedUsd)}/lună · ${usdSmall(proj.year.earnedUsd)}/an`,
-                ]}
-            />
-            <Tile
-                label={`Dobândă plătită · împrumut ${p.debt.symbol}`}
-                value={`−${tokenSmall(i.paid, p.debt.symbol)}`}
-                valueClass="text-amber-300"
-                note={`≈ ${usdSmall(i.paidUsd)} până acum`}
-                lines={[
-                    `APY ${pct(p.debt.apy)} · APR ${pct(p.debt.apr)}`,
-                    `≈ ${usdSmall(proj.day.paidUsd)}/zi · ${usdSmall(proj.month.paidUsd)}/lună · ${usdSmall(proj.year.paidUsd)}/an`,
-                ]}
-            />
-            <Tile
-                label="Dobândă netă"
-                value={`${i.netUsd >= 0 ? "+" : "−"}${usdSmall(Math.abs(i.netUsd)).replace("−", "")}`}
-                valueClass={i.netUsd >= 0 ? "text-emerald-300" : "text-red-300"}
-                note="câștigată − plătită, până acum"
-                lines={[
-                    `Net APY ${p.netApy == null ? "—" : `${p.netApy >= 0 ? "+" : ""}${pct(p.netApy)}`}`,
-                    `≈ ${usdSmall(proj.day.netUsd)}/zi · ${usdSmall(proj.month.netUsd)}/lună · ${usdSmall(proj.year.netUsd)}/an`,
-                ]}
-            />
+        <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <Tile
+                    label={`Dobândă câștigată · ${p.collateral.symbol} depus`}
+                    value={`+${tokenSmall(i.earned, p.collateral.symbol)}`}
+                    valueClass="text-emerald-300"
+                    active={sel.includes("earned")}
+                    onClick={() => toggle("earned")}
+                    note={`≈ ${usdSmall(i.earnedUsd)} până acum`}
+                    lines={[
+                        `APY ${pct(p.collateral.apy)} · APR ${pct(p.collateral.apr)}`,
+                        `≈ ${usdSmall(proj.day.earnedUsd)}/zi · ${usdSmall(proj.month.earnedUsd)}/lună · ${usdSmall(proj.year.earnedUsd)}/an`,
+                    ]}
+                />
+                <Tile
+                    label={`Dobândă plătită · împrumut ${p.debt.symbol}`}
+                    value={`−${tokenSmall(i.paid, p.debt.symbol)}`}
+                    valueClass="text-amber-300"
+                    active={sel.includes("paid")}
+                    onClick={() => toggle("paid")}
+                    note={`≈ ${usdSmall(i.paidUsd)} până acum`}
+                    lines={[
+                        `APY ${pct(p.debt.apy)} · APR ${pct(p.debt.apr)}`,
+                        `≈ ${usdSmall(proj.day.paidUsd)}/zi · ${usdSmall(proj.month.paidUsd)}/lună · ${usdSmall(proj.year.paidUsd)}/an`,
+                    ]}
+                />
+                <Tile
+                    label="Dobândă netă"
+                    value={`${i.netUsd >= 0 ? "+" : "−"}${usdSmall(Math.abs(i.netUsd)).replace("−", "")}`}
+                    valueClass={i.netUsd >= 0 ? "text-emerald-300" : "text-red-300"}
+                    active={sel.includes("net")}
+                    onClick={() => toggle("net")}
+                    note="câștigată − plătită, până acum"
+                    lines={[
+                        `Net APY ${p.netApy == null ? "—" : `${p.netApy >= 0 ? "+" : ""}${pct(p.netApy)}`}`,
+                        `≈ ${usdSmall(proj.day.netUsd)}/zi · ${usdSmall(proj.month.netUsd)}/lună · ${usdSmall(proj.year.netUsd)}/an`,
+                    ]}
+                />
+            </div>
+            {sel.length > 0 && <InterestPeriodChart p={p} metrics={sel} fetchedAt={fetchedAt} />}
         </div>
     );
 }
@@ -229,9 +242,33 @@ export function ProfitabilityCard({ p }: { p: LendPositionFull }) {
     );
 }
 
-function Tile({ label, value, valueClass, note, lines }: { label: string; value: string; valueClass: string; note: string; lines: string[] }) {
+function Tile({
+    label,
+    value,
+    valueClass,
+    note,
+    lines,
+    active,
+    onClick,
+}: {
+    label: string;
+    value: string;
+    valueClass: string;
+    note: string;
+    lines: string[];
+    active?: boolean;
+    onClick?: () => void;
+}) {
     return (
-        <div className="space-y-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={active}
+            className={cn(
+                "w-full space-y-1 rounded-xl border p-4 text-left transition-colors hover:bg-white/[0.04]",
+                active ? "border-primary/50 bg-white/[0.04]" : "border-white/[0.08] bg-white/[0.02]",
+            )}
+        >
             <p className="text-[11px] font-medium uppercase tracking-wider text-faint">{label}</p>
             <p className={cn("font-mono text-xl font-medium", valueClass)}>{value}</p>
             <p className="text-xs text-muted">{note}</p>
@@ -240,7 +277,181 @@ function Tile({ label, value, valueClass, note, lines }: { label: string; value:
                     {l}
                 </p>
             ))}
-        </div>
+            <p className="pt-1 text-[11px] text-primary-strong">{active ? "În grafic ✓ — click ca să scoți" : "Click ca să adaugi în grafic"}</p>
+        </button>
+    );
+}
+
+type Metric = "earned" | "paid" | "net";
+type Period = "day" | "week" | "month" | "year";
+const PERIOD_LABEL: Record<Period, string> = {
+    day: "Zi",
+    week: "Săptămână",
+    month: "Lună",
+    year: "An",
+};
+const UTC_DAY = 24 * 3600 * 1000;
+
+/** UTC start of the day / Monday-week / month / year containing t. */
+function bucketStart(t: number, period: Period): number {
+    const d = new Date(t);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth();
+    const day = d.getUTCDate();
+    if (period === "day") return Date.UTC(y, m, day);
+    if (period === "week") return Date.UTC(y, m, day) - ((d.getUTCDay() + 6) % 7) * UTC_DAY;
+    if (period === "month") return Date.UTC(y, m, 1);
+    return Date.UTC(y, 0, 1);
+}
+function nextBucket(t: number, period: Period): number {
+    const d = new Date(t);
+    if (period === "day") return t + UTC_DAY;
+    if (period === "week") return t + 7 * UTC_DAY;
+    if (period === "month") return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+    return Date.UTC(d.getUTCFullYear() + 1, 0, 1);
+}
+const fmtD = (t: number) =>
+    new Date(t).toLocaleDateString("ro-RO", {
+        day: "2-digit",
+        month: "2-digit",
+        timeZone: "UTC",
+    });
+function bucketLabel(t: number, period: Period): string {
+    if (period === "day") return fmtD(t);
+    if (period === "week") return `${fmtD(t)}–${fmtD(t + 6 * UTC_DAY)}`;
+    if (period === "month")
+        return new Date(t).toLocaleDateString("ro-RO", {
+            month: "2-digit",
+            year: "numeric",
+            timeZone: "UTC",
+        });
+    return String(new Date(t).getUTCFullYear());
+}
+
+/**
+ * Interest per day / week / month / year. Past periods come from the accrued curve,
+ * the rest of the current period and the following ones are estimated at today's balances and rates.
+ */
+const METRIC_META: Record<Metric, { name: string; color: string }> = {
+    earned: { name: "Câștigată", color: GREEN },
+    paid: { name: "Plătită", color: AMBER },
+    net: { name: "Netă", color: PURPLE },
+};
+const METRIC_ORDER: Metric[] = ["earned", "paid", "net"];
+
+function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; metrics: Metric[]; fetchedAt: string }) {
+    const [period, setPeriod] = useState<Period>("day");
+    const i = p.interest!;
+    const now = new Date(fetchedAt).getTime();
+    const val = (m: Metric, pt: { earnedUsd: number; paidUsd: number }) => (m === "earned" ? pt.earnedUsd : m === "paid" ? pt.paidUsd : pt.earnedUsd - pt.paidUsd);
+    const dayRate = (m: Metric) => (m === "earned" ? i.projection.day.earnedUsd : m === "paid" ? i.projection.day.paidUsd : i.projection.day.netUsd); // USD per day, today's rates
+    const rateOf = (m: Metric, k: Period) => {
+        if (k === "day") return dayRate(m);
+        if (k === "week") return dayRate(m) * 7;
+        const pr = k === "month" ? i.projection.month : i.projection.year;
+        return m === "earned" ? pr.earnedUsd : m === "paid" ? pr.paidUsd : pr.netUsd;
+    };
+
+    const key = metrics.join(",");
+    const rows = useMemo(() => {
+        const curve = p.curve;
+        // Cumulative value at time t: interpolate the curve, extrapolate beyond its end at today's daily rate.
+        const cum = (m: Metric, t: number) => {
+            if (curve.length === 0) return 0;
+            const a = curve[0];
+            const z = curve[curve.length - 1];
+            if (t <= a.t) return 0;
+            if (t >= z.t) return val(m, z) + (dayRate(m) * (t - z.t)) / UTC_DAY;
+            let k = 1;
+            while (curve[k].t < t) k++;
+            const l = curve[k - 1];
+            const r = curve[k];
+            const f = (t - l.t) / (r.t - l.t || 1);
+            return val(m, l) + (val(m, r) - val(m, l)) * f;
+        };
+        const opened = curve.length ? curve[0].t : now;
+        const total = period === "year" ? 4 : 12;
+        const past = period === "year" ? 0 : 5;
+        const cur = bucketStart(now, period);
+        let start = bucketStart(opened, period);
+        for (let k = 0; k < 400 && start < cur; k++) {
+            // keep at most `past` buckets before the current one
+            let n = 0;
+            for (let bb = start; bb < cur; bb = nextBucket(bb, period)) n++;
+            if (n <= past) break;
+            start = nextBucket(start, period);
+        }
+        const out: Record<string, number | string>[] = [];
+        let b = start;
+        while (out.length < total) {
+            const e = nextBucket(b, period);
+            const row: Record<string, number | string> = { label: bucketLabel(b, period) };
+            for (const m of key.split(",") as Metric[]) {
+                const from = Math.max(b, opened);
+                const full = cum(m, e) - cum(m, from);
+                const actual = b >= now ? 0 : cum(m, Math.min(e, now)) - cum(m, from);
+                // Net can dip below zero; the other two never do.
+                const clamp = (v: number) => (m === "net" ? v : Math.max(0, v));
+                row[`${m}_a`] = clamp(actual);
+                row[`${m}_e`] = clamp(full - actual);
+            }
+            out.push(row);
+            b = e;
+        }
+        return out;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [p.curve, period, key, now, i]);
+
+    const max = Math.max(...rows.map((r) => Math.max(...metrics.map((m) => Math.abs(Number(r[`${m}_a`]) + Number(r[`${m}_e`]))))), 0);
+    const title = metrics.length === 1 ? `Dobândă ${METRIC_META[metrics[0]].name.toLowerCase()}` : "Dobânzi";
+    return (
+        <Card className="space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3 className="font-display text-sm font-medium text-foreground">
+                        {title} pe {PERIOD_LABEL[period].toLowerCase()}
+                    </h3>
+                    <p className="text-xs text-muted">Plin = acumulat până acum · transparent = estimat la soldurile și ratele de azi. Perioadele sunt în UTC.</p>
+                </div>
+                <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
+                    {(Object.keys(PERIOD_LABEL) as Period[]).map((k) => (
+                        <button
+                            key={k}
+                            type="button"
+                            onClick={() => setPeriod(k)}
+                            className={cn("rounded-md px-3 py-1 transition-colors", period === k ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground")}
+                        >
+                            {PERIOD_LABEL[k]}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="space-y-0.5 text-xs text-muted">
+                {metrics.map((m) => (
+                    <p key={m} className="flex flex-wrap gap-x-4">
+                        <span style={{ color: METRIC_META[m].color }}>{METRIC_META[m].name}</span>
+                        {(["day", "week", "month", "year"] as Period[]).map((k) => (
+                            <span key={k} className={cn(k === period && "text-foreground")}>
+                                ≈ <span className="font-mono">{usdSmall(rateOf(m, k))}</span>/{k === "day" ? "zi" : k === "week" ? "săptămână" : k === "month" ? "lună" : "an"}
+                            </span>
+                        ))}
+                    </p>
+                ))}
+            </div>
+            <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} interval={0} />
+                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} />
+                    <Tooltip content={<Tip fmt={usdSmall} />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {metrics.flatMap((m) => [
+                        <Bar key={`${m}_a`} dataKey={`${m}_a`} name={`${METRIC_META[m].name} · acumulat`} stackId={m} fill={METRIC_META[m].color} />,
+                        <Bar key={`${m}_e`} dataKey={`${m}_e`} name={`${METRIC_META[m].name} · estimat`} stackId={m} fill={METRIC_META[m].color} fillOpacity={0.35} />,
+                    ])}
+                </BarChart>
+            </ResponsiveContainer>
+        </Card>
     );
 }
 
