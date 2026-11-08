@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
     AreaChart,
     Area,
@@ -50,19 +50,40 @@ const fmtAxisTime = (t: number, spanMs: number) => {
 const fmtFullTime = (t: number) =>
     new Date(t).toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 
+const DAY = 24 * 3600 * 1000;
+type ApyRow = { t: number; col: number; debt: number; spread: number };
+/** One averaged point per UTC day or month (bucket start as the timestamp). */
+function bucketAvg(rows: ApyRow[], unit: "day" | "month"): ApyRow[] {
+    const groups = new Map<number, ApyRow[]>();
+    for (const r of rows) {
+        const d = new Date(r.t);
+        const k = unit === "day" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+        const g = groups.get(k);
+        if (g) g.push(r);
+        else groups.set(k, [r]);
+    }
+    const avg = (g: ApyRow[], f: (r: ApyRow) => number) => g.reduce((s, r) => s + f(r), 0) / g.length;
+    return [...groups.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([t, g]) => ({ t, col: avg(g, (r) => r.col), debt: avg(g, (r) => r.debt), spread: avg(g, (r) => r.spread) }));
+}
+const fmtDayUtc = (t: number, year = false) => new Date(t).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" });
+const fmtMonth = (t: number) => new Date(t).toLocaleDateString("ro-RO", { month: "2-digit", year: "numeric", timeZone: "UTC" });
+
 type TipEntry = { name?: string; value?: number | string; color?: string; dataKey?: string | number };
-function Tip({ active, payload, label, fmt }: { active?: boolean; payload?: TipEntry[]; label?: string | number; fmt: (v: number) => string }) {
+// A custom tooltip `content` ignores Recharts' labelFormatter, so the label is formatted here.
+function Tip({ active, payload, label, fmt, labelFmt }: { active?: boolean; payload?: TipEntry[]; label?: string | number; fmt: (v: number, key?: string | number) => string; labelFmt?: (l: string | number) => string }) {
     if (!active || !payload || payload.length === 0) return null;
     return (
         <div className="rounded-lg border border-white/10 bg-[#141414] px-3 py-2 text-xs shadow-xl">
-            {label != null && <p className="mb-1 font-medium text-foreground">{label}</p>}
+            {label != null && <p className="mb-1 font-medium text-foreground">{labelFmt ? labelFmt(label) : label}</p>}
             {payload.map((e) => (
                 <p key={String(e.dataKey)} className="flex items-center justify-between gap-4">
                     <span className="flex items-center gap-1.5 text-muted">
                         <span className="h-2 w-2 rounded-sm" style={{ background: e.color }} />
                         {e.name}
                     </span>
-                    <span className="font-mono text-foreground">{fmt(Number(e.value))}</span>
+                    <span className="font-mono text-foreground">{fmt(Number(e.value), e.dataKey)}</span>
                 </p>
             ))}
         </div>
@@ -178,12 +199,15 @@ export function LendCharts({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: s
     );
 }
 
-function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function ChartCard({ title, subtitle, action, children }: { title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) {
     return (
         <Card className="space-y-3">
-            <div>
-                <h3 className="font-display text-sm font-medium text-foreground">{title}</h3>
-                <p className="text-xs text-muted">{subtitle}</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h3 className="font-display text-sm font-medium text-foreground">{title}</h3>
+                    <p className="text-xs text-muted">{subtitle}</p>
+                </div>
+                {action}
             </div>
             {children}
         </Card>
@@ -210,7 +234,7 @@ function ProjectionChart({ p }: { p: LendPositionFull }) {
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} interval={1} />
                     <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(Math.max(year.earnedUsd, year.paidUsd))} width={52} />
-                    <Tooltip content={<Tip fmt={usdSmall} />} />
+                    <Tooltip content={<Tip fmt={usdSmall} labelFmt={(l) => (l === "Acum" ? "Acum" : `Peste ${String(l).replace("+", "")} luni`)} />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="earned" name={`Câștigată (${p.collateral.symbol})`} stroke={GREEN} strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="paid" name={`Plătită (${p.debt.symbol})`} stroke={AMBER} strokeWidth={2} dot={false} />
@@ -251,7 +275,7 @@ function AccruedChart({ p }: { p: LendPositionFull }) {
                         tickFormatter={(t) => fmtAxisTime(Number(t), span)}
                     />
                     <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(maxVal)} width={64} />
-                    <Tooltip content={<Tip fmt={usdSmall} />} labelFormatter={(t) => fmtFullTime(Number(t))} />
+                    <Tooltip content={<Tip fmt={usdSmall} labelFmt={(l) => fmtFullTime(Number(l))} />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="earned" name={`Câștigată (${p.collateral.symbol})`} stroke={GREEN} strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="paid" name={`Plătită (${p.debt.symbol})`} stroke={AMBER} strokeWidth={2} dot={false} />
@@ -276,6 +300,29 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
         return pts;
     }, [p.snapshots, p.collateral.apy, p.debt.apy, liveT]);
 
+    // Default: last 90 days; once more than 90 days of data exist, switch to the monthly view.
+    const [pick, setPick] = useState<"w" | "m" | "y" | null>(null);
+    const end = rows.length ? rows[rows.length - 1].t : liveT;
+    const auto: "m" | "y" = rows.length && end - rows[0].t > 90 * DAY ? "y" : "m";
+    const mode = pick ?? auto;
+    const { view, raw } = useMemo(() => {
+        if (mode === "w") return { view: rows.filter((r) => r.t >= end - 7 * DAY), raw: true };
+        let inWin: ApyRow[];
+        let b: ApyRow[];
+        if (mode === "m") {
+            inWin = rows.filter((r) => r.t >= end - 90 * DAY);
+            b = bucketAvg(inWin, "day");
+        } else {
+            const from = new Date(end);
+            from.setUTCMonth(from.getUTCMonth() - 11, 1);
+            from.setUTCHours(0, 0, 0, 0);
+            inWin = rows.filter((r) => r.t >= from.getTime());
+            b = bucketAvg(inWin, "month");
+        }
+        // Too little history to average (e.g. everything recorded within one day): show the raw points.
+        return b.length >= 2 ? { view: b, raw: false } : { view: inWin, raw: true };
+    }, [rows, mode, end]);
+
     const title = "Diferența APY · colateral − împrumut";
     if (rows.length < 2) {
         const r = rows[0];
@@ -295,26 +342,55 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
         );
     }
 
-    const first = rows[0].t;
-    const last = rows[rows.length - 1].t;
+    const toggle = (
+        <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
+            {(["w", "m", "y"] as const).map((k) => (
+                <button
+                    key={k}
+                    type="button"
+                    onClick={() => setPick(k)}
+                    className={cn("rounded-md px-3 py-1 transition-colors", mode === k ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground")}
+                >
+                    {k === "w" ? "Săptămână" : k === "m" ? "Lună" : "An"}
+                </button>
+            ))}
+        </div>
+    );
+    const modeNote = mode === "w" ? "ultimele 7 zile, toate înregistrările" : mode === "m" ? "ultimele 90 de zile, media zilnică" : "ultimele 12 luni, media lunară";
+
+    if (view.length < 2) {
+        return (
+            <ChartCard title={title} subtitle={`Vedere: ${modeNote}.`} action={toggle}>
+                <p className="text-sm text-muted">Nu sunt încă destule înregistrări în această fereastră. Alege altă perioadă sau revino după următoarele înregistrări.</p>
+            </ChartCard>
+        );
+    }
+
+    const first = view[0].t;
+    const last = view[view.length - 1].t;
     const span = last - first;
-    const ticks = Array.from({ length: 6 }, (_, i) => first + (span * i) / 5);
+    // Monthly view: one tick per month (evenly spaced ticks would repeat the same month label).
+    const ticks = !raw && mode === "y" ? view.map((r) => r.t) : Array.from({ length: 6 }, (_, i) => first + (span * i) / 5);
+    const bucketed = !raw;
+    const axisFmt = (t: number) => (raw ? fmtAxisTime(t, span) : mode === "y" ? fmtMonth(t) : fmtDayUtc(t));
+    const tipLabel = (l: string | number) => (raw ? fmtFullTime(Number(l)) : mode === "y" ? fmtMonth(Number(l)) : fmtDayUtc(Number(l), true));
     return (
         <ChartCard
             title={title}
-            subtitle={`${rows.length} puncte înregistrate pentru poziția ta, din ${fmtFullTime(first)}. Peste linia 0 = dobânda colateralului e mai mare decât a împrumutului.`}
+            action={toggle}
+            subtitle={`Vedere: ${modeNote} · ${view.length} puncte, din valorile înregistrate pentru poziția ta. Peste linia 0 = dobânda colateralului e mai mare decât a împrumutului.`}
         >
             <ResponsiveContainer width="100%" height={340}>
-                <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <LineChart data={view} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-                    <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => fmtAxisTime(Number(t), span)} />
+                    <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => axisFmt(Number(t))} />
                     <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} width={48} />
-                    <Tooltip content={<Tip fmt={(v) => `${v.toFixed(2)}%`} />} labelFormatter={(t) => fmtFullTime(Number(t))} />
+                    <Tooltip content={<Tip fmt={(v, k) => (k === "spread" ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} pp` : `${v.toFixed(2)}%`)} labelFmt={tipLabel} />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <ReferenceLine y={0} stroke="#ffffff" strokeOpacity={0.4} />
-                    <Line type="monotone" dataKey="col" name="APY colateral" stroke={GREEN} strokeWidth={2} dot={rows.length < 12} />
-                    <Line type="monotone" dataKey="debt" name="APY împrumut" stroke={AMBER} strokeWidth={2} dot={rows.length < 12} />
-                    <Line type="monotone" dataKey="spread" name="Diferență (pp)" stroke={PURPLE} strokeWidth={2} strokeDasharray="5 4" dot={rows.length < 12} />
+                    <Line type="monotone" dataKey="col" name="APY colateral" stroke={GREEN} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
+                    <Line type="monotone" dataKey="debt" name="APY împrumut" stroke={AMBER} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
+                    <Line type="monotone" dataKey="spread" name="Diferență (pp)" stroke={PURPLE} strokeWidth={2} strokeDasharray="5 4" dot={view.length < 12 || bucketed && view.length < 40} />
                 </LineChart>
             </ResponsiveContainer>
         </ChartCard>
@@ -367,7 +443,7 @@ function LtvChart({ p }: { p: LendPositionFull }) {
                         tickFormatter={(v) => `$${Math.round(Number(v))}`}
                     />
                     <YAxis domain={[0, 100]} allowDataOverflow tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `${v}%`} width={44} />
-                    <Tooltip content={<Tip fmt={(v) => `${v.toFixed(1)}%`} />} labelFormatter={(v) => `${p.collateral.symbol} = ${usdSmall(Number(v))}`} />
+                    <Tooltip content={<Tip fmt={(v) => `${v.toFixed(1)}%`} labelFmt={(v) => `${p.collateral.symbol} = ${usdSmall(Number(v))}`} />} />
                     <Area type="monotone" dataKey="ltv" name="LTV" stroke={PURPLE} strokeWidth={2} fill={`url(#ltvFill-${p.id})`} />
                     {p.maxLtv != null && (
                         <ReferenceLine y={p.maxLtv * 100} stroke={AMBER} strokeDasharray="6 4" label={{ value: `LTV max ${(p.maxLtv * 100).toFixed(0)}%`, position: "insideTopRight", fill: AMBER, fontSize: 11 }} />

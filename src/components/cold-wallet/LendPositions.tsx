@@ -25,6 +25,27 @@ const ago = (days: number) => {
     if (days >= 30) return plural(Math.floor(days / 30), "lună", "luni");
     return plural(days, "zi", "zile");
 };
+// Track colours, left (safe) to right (liquidation). The fill is a window onto this gradient,
+// so the colour at its tip always matches the position.
+const RISK_STOPS: [number, [number, number, number]][] = [
+    [0, [16, 214, 143]],
+    [0.5, [250, 204, 21]],
+    [0.75, [251, 146, 60]],
+    [1, [239, 68, 68]],
+];
+const RISK_GRADIENT = `linear-gradient(to right, ${RISK_STOPS.map(([at, c]) => `rgb(${c.join(",")}) ${at * 100}%`).join(", ")})`;
+const riskColor = (r: number) => {
+    const x = Math.max(0, Math.min(1, r));
+    for (let i = 1; i < RISK_STOPS.length; i++) {
+        const [b, cb] = RISK_STOPS[i];
+        const [a, ca] = RISK_STOPS[i - 1];
+        if (x <= b) {
+            const k = (x - a) / (b - a);
+            return `rgb(${ca.map((v, j) => Math.round(v + (cb[j] - v) * k)).join(",")})`;
+        }
+    }
+    return "rgb(239,68,68)";
+};
 const short = (a: string) => (a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 
 /** Jupiter Lend borrow positions held by the cold wallet — read-only. */
@@ -76,8 +97,7 @@ function PositionCard({ p }: { p: LendPositionFull }) {
     // Same zones jup.ag uses visually: well below max LTV is safe, close to the liquidation threshold is danger.
     const risk = lt > 0 ? p.ltv / lt : 0;
     const tone = risk < 0.6 ? "safe" : risk < 0.85 ? "warn" : "danger";
-    const toneText = { safe: "text-emerald-300", warn: "text-amber-300", danger: "text-red-300" }[tone];
-    const toneBar = { safe: "bg-emerald-400", warn: "bg-amber-400", danger: "bg-red-400" }[tone];
+    const fillPct = Math.max(2, Math.min(100, risk * 100));
     const toneLabel = { safe: "Sigur", warn: "Atenție", danger: "Risc mare" }[tone];
 
     return (
@@ -113,12 +133,23 @@ function PositionCard({ p }: { p: LendPositionFull }) {
             <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                     <span className="text-muted">Sănătate poziție (LTV)</span>
-                    <span className={cn("font-mono", toneText)}>
+                    <span className="font-mono" style={{ color: riskColor(risk) }}>
                         {toneLabel} · {pct(p.ltv)}
                     </span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div className={cn("h-full rounded-full", toneBar)} style={{ width: `${Math.min(100, lt > 0 ? (p.ltv / lt) * 100 : 0)}%` }} />
+                {/* Pill outline like a loading bar; the fill shows the slice of the green→red track up to the current position. */}
+                <div className="rounded-full border border-white/20 p-[3px]">
+                    <div className="h-3 overflow-hidden rounded-full bg-white/[0.06]">
+                        <div
+                            className="h-full rounded-full"
+                            style={{
+                                width: `${fillPct}%`,
+                                backgroundImage: RISK_GRADIENT,
+                                backgroundSize: `${fillPct > 0 ? 10000 / fillPct : 100}% 100%`,
+                                backgroundRepeat: "no-repeat",
+                            }}
+                        />
+                    </div>
                 </div>
                 <div className="flex justify-between text-[11px] text-faint">
                     <span>0%</span>
