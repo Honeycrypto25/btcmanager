@@ -71,11 +71,26 @@ export async function getSwapQuote(params: {
 
 interface SwapTxResponse {
     swapTransaction: string; // base64
+    lastValidBlockHeight?: number;
 }
 
-/** Builds, signs, sends and confirms a swap transaction from a quote. Returns the tx signature. */
+/** Thrown when a swap tx was definitively NOT included before its blockhash expired — safe to retry with a fresh quote (no double-buy risk). */
+export class SwapExpiredError extends Error {
+    constructor(signature: string) {
+        super(`Signature ${signature} has expired: block height exceeded (tranzacția nu a intrat în blockchain).`);
+        this.name = "SwapExpiredError";
+    }
+}
+
+/**
+ * Builds, signs, sends and confirms a swap transaction from a quote.
+ * The tx is re-broadcast every ~2s until it lands or its blockhash expires
+ * (a single send is easily dropped under congestion). On expiry the
+ * signature status is checked one last time; only if it truly never landed
+ * a SwapExpiredError is thrown, so callers can safely retry.
+ */
 export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair): Promise<{ signature: string; feeLamports: number }> {
-    const { swapTransaction } = await jupiterFetch<SwapTxResponse>(`${JUPITER_API_BASE}/swap/v1/swap`, {
+    const { swapTransaction, lastValidBlockHeight: jupLastValid } = await jupiterFetch<SwapTxResponse>(`${JUPITER_API_BASE}/swap/v1/swap`, {
         method: "POST",
         body: JSON.stringify({
             quoteResponse,
@@ -83,28 +98,52 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
             dynamicComputeUnitLimit: true,
             dynamicSlippage: true,
             prioritizationFeeLamports: {
-                priorityLevelWithMaxLamports: { maxLamports: 1_000_000, priorityLevel: "high" },
+                priorityLevelWithMaxLamports: { maxLamports: 2_000_000, priorityLevel: "veryHigh" },
             },
         }),
     });
 
     const tx = VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
     tx.sign([keypair]);
+    const raw = tx.serialize();
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const signature = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3, skipPreflight: true });
+    const lastValidBlockHeight = jupLastValid ?? (await connection.getBlockHeight("confirmed")) + 150;
+    const signature = await connection.sendRawTransaction(raw, { maxRetries: 0, skipPreflight: true });
 
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-    if (confirmation.value.err) {
-        throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
+    const statusOf = async () => {
+        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+        return value[0];
+    };
+
+    let landed = false;
+    for (;;) {
+        const st = await statusOf().catch(() => null);
+        if (st) {
+            if (st.err) throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(st.err)} (${signature})`);
+            if (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") {
+                landed = true;
+                break;
+            }
+        }
+        const height = await connection.getBlockHeight("confirmed").catch(() => 0);
+        if (height > lastValidBlockHeight) break;
+        await connection.sendRawTransaction(raw, { maxRetries: 0, skipPreflight: true }).catch(() => undefined);
+        await sleep(2000);
     }
 
+    if (!landed) {
+        // Final check after expiry: it may have landed in the last moments.
+        await sleep(2000);
+        const st = await statusOf().catch(() => null);
+        if (st && !st.err && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) landed = true;
+        else if (st?.err) throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(st.err)} (${signature})`);
+    }
+    if (!landed) throw new SwapExpiredError(signature);
+
     // Read back the actual network fee paid (base fee + any priority fee), for
-    // accurate cost tracking. confirmTransaction() resolving doesn't guarantee
-    // getTransaction() can find the tx yet — RPC read replicas can lag the
-    // write path by a beat, especially right after sendRawTransaction with
-    // skipPreflight. Retry briefly rather than silently recording a $0 fee.
+    // accurate cost tracking. RPC read replicas can lag, so retry briefly
+    // rather than silently recording a $0 fee.
     let feeLamports = 0;
     for (let attempt = 0; attempt < 5; attempt++) {
         const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
@@ -112,7 +151,7 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
             feeLamports = txInfo.meta.fee;
             break;
         }
-        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        if (attempt < 4) await sleep(500 * (attempt + 1));
     }
 
     return { signature, feeLamports };

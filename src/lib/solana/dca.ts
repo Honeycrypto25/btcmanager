@@ -6,6 +6,7 @@ import { runSolanaSweepForUser } from "./sweep";
 import {
     createTriggerSellOrder,
     executeSwap,
+    SwapExpiredError,
     getActiveTriggerOrders,
     getHistoricalTriggerOrder,
     getSolPriceUsd,
@@ -256,13 +257,26 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
 
         // 1) Buy: USDC -> SOL
         const buyAmountUsd = Number(settings.buyAmountUsd);
-        const quote = await getSwapQuote({
-            inputMint: USDC_MINT,
-            outputMint: SOL_MINT,
-            amount: toRawAmount(buyAmountUsd, USDC_DECIMALS),
-            slippageBps: settings.slippageBps,
-        });
-        const { signature: buyTxSignature, feeLamports } = await executeSwap(quote, keypair);
+        // Up to 3 attempts, each with a fresh quote. A retry only happens after
+        // the previous tx definitively expired without landing (SwapExpiredError),
+        // so a double buy is not possible.
+        let quote!: Awaited<ReturnType<typeof getSwapQuote>>;
+        let buyTxSignature = "";
+        let feeLamports = 0;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            quote = await getSwapQuote({
+                inputMint: USDC_MINT,
+                outputMint: SOL_MINT,
+                amount: toRawAmount(buyAmountUsd, USDC_DECIMALS),
+                slippageBps: settings.slippageBps,
+            });
+            try {
+                ({ signature: buyTxSignature, feeLamports } = await executeSwap(quote, keypair));
+                break;
+            } catch (e) {
+                if (!(e instanceof SwapExpiredError) || attempt === 3) throw e;
+            }
+        }
 
         const solAcquired = fromRawAmount(quote.outAmount, SOL_DECIMALS);
         const buyPriceUsd = buyAmountUsd / solAcquired;
