@@ -5,6 +5,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
+import type { LendData } from "@/lib/solana/jupiter-lend";
+import { LendPositions } from "@/components/cold-wallet/LendPositions";
 import type { ColdAsset, ColdWalletBotCycles, ColdWalletData, ColdWalletSweep } from "@/app/actions/cold-wallet";
 
 const ASSETS: { key: ColdAsset; chain: string; color: string; decimals: number }[] = [
@@ -27,7 +29,7 @@ const fmtAmount = (v: number, a: ColdAsset) =>
     `${v.toLocaleString("en-US", { maximumFractionDigits: ASSET_META[a].decimals, minimumFractionDigits: Math.min(2, ASSET_META[a].decimals) })} ${a}`;
 const shortTx = (tx: string) => (tx.length > 14 ? `${tx.slice(0, 6)}…${tx.slice(-4)}` : tx);
 
-export function ColdWalletClient({ data }: { data: ColdWalletData }) {
+export function ColdWalletClient({ data, lend }: { data: ColdWalletData; lend: LendData }) {
     const { sweeps, currentPrices, failedCount } = data;
 
     const years = useMemo(() => {
@@ -300,6 +302,7 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                     </p>
                 </Card>
                 <CurrentMonthCycles cycles={data.cycles} monthStart={data.monthStart} />
+                <LendPositions lend={lend} />
                 </>
             ) : (
                 <>
@@ -411,6 +414,8 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                             </p>
                         )}
                     </Card>
+
+                    <LendPositions lend={lend} />
 
                     <PolygonTokenProfit tokens={data.polygonProfit} view={view} year={year} years={years} />
 
