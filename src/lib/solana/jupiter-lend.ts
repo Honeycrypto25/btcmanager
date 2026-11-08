@@ -63,6 +63,7 @@ export interface SnapshotPoint {
     t: number; // ms
     supplyApy: number;
     borrowApy: number;
+    ltv: number | null; // debt value / collateral value at that moment (null when the row predates the balances)
 }
 
 /** Where the collateral price has been relative to the liquidation price (from daily candles). */

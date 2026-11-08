@@ -6,6 +6,7 @@ import { getExchangeRate } from "@/lib/fx";
 import { getBtcEvolution, getT212Evolution, getVanguardEvolution } from "@/lib/overview-evolution";
 import { getSolanaDcaReportData, getEvmDcaReportData, getBnbDcaReportData, getEvaDcaReportData, getPolygonDcaReportData } from "@/lib/email/dca-report-data";
 import { logEmail } from "@/lib/email/email-log";
+import { getLendReportData } from "@/lib/email/lend-report-data";
 
 function getResendClient(): Resend | null {
     const apiKey = process.env.RESEND_API_KEY;
@@ -44,16 +45,17 @@ function rangeLabel(start: Date, end: Date): string {
  * getBtcEvolution/getT212Evolution) can never stop the weekly/monthly
  * report from sending with at least the BTC/T212 figures it already had.
  */
-async function getReportExtras() {
+async function getReportExtras(start: Date, end: Date) {
     // Each DCA read is isolated behind its own catch, same reasoning as the
     // outer try/catch below — a Solana RPC hiccup or a missing BASE_PRIVATE_KEY
     // should never take down the whole report, just that one card.
-    const [solanaDca, evmDca, bnbDca, evaDca, polygonDca] = await Promise.all([
+    const [solanaDca, evmDca, bnbDca, evaDca, polygonDca, lend] = await Promise.all([
         getSolanaDcaReportData().catch(() => null),
         getEvmDcaReportData().catch(() => null),
         getBnbDcaReportData().catch(() => null),
         getEvaDcaReportData().catch(() => null),
         getPolygonDcaReportData().catch(() => null),
+        getLendReportData(start, end),
     ]);
 
     try {
@@ -71,9 +73,10 @@ async function getReportExtras() {
             bnbDca,
             evaDca,
             polygonDca,
+            lend,
         };
     } catch {
-        return { vanguard: null, evolution: null, solanaDca, evmDca, bnbDca, evaDca, polygonDca };
+        return { vanguard: null, evolution: null, solanaDca, evmDca, bnbDca, evaDca, polygonDca, lend };
     }
 }
 
@@ -88,7 +91,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
         // Săptămâna calendaristică ÎNCHEIATĂ cel mai recent (luni-duminică),
         // nu ultimele 7 zile de la momentul rulării.
         const { start, end, ...windowStats } = await getCalendarWeekStats(1);
-        const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca, lend } = await getReportExtras(start, end);
         const botPeriod = await getBotPeriodReport(start, end).catch((): BotPeriodRow[] => []);
 
         const html = buildReportHtml({
@@ -105,6 +108,7 @@ export async function sendWeeklyReport(): Promise<{ ok: true } | { ok: false; er
             bnbDca,
             evaDca,
             polygonDca,
+            lend,
         });
 
         const subject = `Weekly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`;
@@ -139,7 +143,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
         // prinde deja o tranzacție din ziua 1 a lunii noi, înainte ca
         // raportul, tot pe ziua 1, să ruleze).
         const { start, end, ...windowStats } = await getCalendarMonthStats(1);
-        const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca } = await getReportExtras();
+        const { vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca, lend } = await getReportExtras(start, end);
         const botPeriod = await getBotPeriodReport(start, end).catch((): BotPeriodRow[] => []);
 
         const html = buildReportHtml({
@@ -156,6 +160,7 @@ export async function sendMonthlyReport(): Promise<{ ok: true } | { ok: false; e
             bnbDca,
             evaDca,
             polygonDca,
+            lend,
         });
 
         const subject = `Monthly portfolio report \u2014 ${data.totalPnl >= 0 ? '+' : ''}${data.pnlPercent.toFixed(1)}% overall`;

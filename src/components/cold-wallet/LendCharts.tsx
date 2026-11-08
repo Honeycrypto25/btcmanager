@@ -341,6 +341,7 @@ const METRIC_ORDER: Metric[] = ["earned", "paid", "net"];
 
 function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; metrics: Metric[]; fetchedAt: string }) {
     const [period, setPeriod] = useState<Period>("day");
+    const [kind, setKind] = useState<"bars" | "line">("bars");
     const i = p.interest!;
     const now = new Date(fetchedAt).getTime();
     const val = (m: Metric, pt: { earnedUsd: number; paidUsd: number }) => (m === "earned" ? pt.earnedUsd : m === "paid" ? pt.paidUsd : pt.earnedUsd - pt.paidUsd);
@@ -394,6 +395,7 @@ function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; m
                 const clamp = (v: number) => (m === "net" ? v : Math.max(0, v));
                 row[`${m}_a`] = clamp(actual);
                 row[`${m}_e`] = clamp(full - actual);
+                row[`${m}_t`] = clamp(actual) + clamp(full - actual);
             }
             out.push(row);
             b = e;
@@ -413,6 +415,19 @@ function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; m
                     </h3>
                     <p className="text-xs text-muted">Plin = acumulat până acum · transparent = estimat la soldurile și ratele de azi. Perioadele sunt în UTC.</p>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
+                        {(["bars", "line"] as const).map((k) => (
+                            <button
+                                key={k}
+                                type="button"
+                                onClick={() => setKind(k)}
+                                className={cn("rounded-md px-3 py-1 transition-colors", kind === k ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground")}
+                            >
+                                {k === "bars" ? "Bare" : "Linie"}
+                            </button>
+                        ))}
+                    </div>
                 <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
                     {(Object.keys(PERIOD_LABEL) as Period[]).map((k) => (
                         <button
@@ -424,6 +439,7 @@ function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; m
                             {PERIOD_LABEL[k]}
                         </button>
                     ))}
+                </div>
                 </div>
             </div>
             <div className="space-y-0.5 text-xs text-muted">
@@ -439,29 +455,43 @@ function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; m
                 ))}
             </div>
             <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} interval={0} />
-                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} />
-                    <Tooltip content={<Tip fmt={usdSmall} />} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    {metrics.flatMap((m) => [
-                        <Bar key={`${m}_a`} dataKey={`${m}_a`} name={`${METRIC_META[m].name} · acumulat`} stackId={m} fill={METRIC_META[m].color} />,
-                        <Bar key={`${m}_e`} dataKey={`${m}_e`} name={`${METRIC_META[m].name} · estimat`} stackId={m} fill={METRIC_META[m].color} fillOpacity={0.35} />,
-                    ])}
-                </BarChart>
+                {kind === "bars" ? (
+                    <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                        <XAxis dataKey="label" type="category" allowDuplicatedCategory={false} tick={{ fontSize: 11 }} stroke={AXIS} interval={0} />
+                        <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} />
+                        <Tooltip content={<Tip fmt={usdSmall} />} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {metrics.flatMap((m) => [
+                            <Bar key={`${m}_a`} dataKey={`${m}_a`} name={`${METRIC_META[m].name} · acumulat`} stackId={m} fill={METRIC_META[m].color} />,
+                            <Bar key={`${m}_e`} dataKey={`${m}_e`} name={`${METRIC_META[m].name} · estimat`} stackId={m} fill={METRIC_META[m].color} fillOpacity={0.35} />,
+                        ])}
+                    </BarChart>
+                ) : (
+                    <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                        <XAxis dataKey="label" type="category" allowDuplicatedCategory={false} tick={{ fontSize: 11 }} stroke={AXIS} interval={0} />
+                        <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} />
+                        <Tooltip content={<Tip fmt={usdSmall} />} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {metrics.map((m) => (
+                            <Line key={m} type="monotone" dataKey={`${m}_t`} name={`${METRIC_META[m].name} (acumulat + estimat)`} stroke={METRIC_META[m].color} strokeWidth={2} dot={{ r: 3 }} />
+                        ))}
+                    </LineChart>
+                )}
             </ResponsiveContainer>
         </Card>
     );
 }
 
-export function LendCharts({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: string }) {
+export function LendCharts({ p, fetchedAt, capLtv = 0.3 }: { p: LendPositionFull; fetchedAt: string; capLtv?: number }) {
     return (
         <div className="grid grid-cols-1 gap-4">
             {p.interest && <ProjectionChart p={p} />}
             {p.interest && p.curve.length > 1 && <AccruedChart p={p} />}
             <ApySpreadChart p={p} fetchedAt={fetchedAt} />
             <VaultRatesChart p={p} />
+            <LtvHistoryChart p={p} fetchedAt={fetchedAt} capLtv={capLtv} />
             <LtvChart p={p} />
         </div>
     );
@@ -692,6 +722,46 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
                     <Line type="monotone" dataKey="col" name="APY colateral" stroke={GREEN} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
                     <Line type="monotone" dataKey="debt" name="APY împrumut" stroke={AMBER} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
                     <Line type="monotone" dataKey="spread" name="Diferență (pp)" stroke={PURPLE} strokeWidth={2} strokeDasharray="5 4" dot={view.length < 12 || bucketed && view.length < 40} />
+                </LineChart>
+            </ResponsiveContainer>
+        </ChartCard>
+    );
+}
+
+/** This position's own LTV over time, from the recorded snapshots (plus today's live value). */
+function LtvHistoryChart({ p, fetchedAt, capLtv }: { p: LendPositionFull; fetchedAt: string; capLtv: number }) {
+    const liveT = new Date(fetchedAt).getTime();
+    const rows = useMemo(() => {
+        const pts = p.snapshots.filter((s) => s.ltv != null).map((s) => ({ t: s.t, ltv: (s.ltv as number) * 100 }));
+        const last = pts.length ? pts[pts.length - 1].t : 0;
+        if (liveT - last > 5 * 60 * 1000) pts.push({ t: liveT, ltv: p.ltv * 100 });
+        return pts;
+    }, [p.snapshots, p.ltv, liveT]);
+    const title = "Istoricul LTV-ului tău";
+    if (rows.length < 2) {
+        return (
+            <ChartCard title={title} subtitle="Din valorile înregistrate pentru poziția ta — graficul apare după a doua înregistrare.">
+                <p className="text-sm text-muted">Acum: LTV {(p.ltv * 100).toFixed(2)}%. Se înregistrează la fiecare deschidere a paginii (cel mult o dată la 20 de minute) și o dată pe zi automat.</p>
+            </ChartCard>
+        );
+    }
+    const first = rows[0].t;
+    const last = rows[rows.length - 1].t;
+    const span = last - first;
+    const ticks = Array.from({ length: 6 }, (_, i) => first + (span * i) / 5);
+    const lt = (p.liqThreshold ?? 0.85) * 100;
+    const top = Math.max(lt, ...rows.map((r) => r.ltv)) * 1.02;
+    return (
+        <ChartCard title={title} subtitle={`${rows.length} puncte înregistrate, din ${fmtFullTime(first)}. Linia galbenă e plafonul tău (${(capLtv * 100).toFixed(0)}%), cea roșie pragul de lichidare (${lt.toFixed(0)}%).`}>
+            <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                    <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => fmtAxisTime(Number(t), span)} />
+                    <YAxis domain={[0, top]} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} width={48} />
+                    <Tooltip content={<Tip fmt={(v) => `${v.toFixed(2)}%`} labelFmt={(l) => fmtFullTime(Number(l))} />} />
+                    <ReferenceLine y={capLtv * 100} stroke={AMBER} strokeDasharray="4 4" />
+                    <ReferenceLine y={lt} stroke={RED} strokeDasharray="4 4" />
+                    <Line type="monotone" dataKey="ltv" name="LTV" stroke={GREEN} strokeWidth={2} dot={rows.length < 12} />
                 </LineChart>
             </ResponsiveContainer>
         </ChartCard>

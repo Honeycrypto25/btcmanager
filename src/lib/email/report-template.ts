@@ -1,3 +1,4 @@
+import type { LendReportData } from "@/lib/email/lend-report-data";
 import type { OverviewData, PeriodRow } from "@/components/overview/OverviewClient";
 import type { AssetEvolution } from "@/lib/overview-evolution";
 import type { DcaReportAsset, PolygonDcaReportSummary } from "@/lib/email/dca-report-data";
@@ -143,6 +144,36 @@ function dcaAssetCard(asset: DcaReportAsset, accentColor: string): string {
         pnlPercentText: pct(realizedPercent),
         pnlHex: pnlColor(asset.totalRealizedPnlUsd),
         extraLine: extraParts.join('<br/>'),
+    });
+}
+
+/**
+ * Jupiter Lend loan: what the bot's borrowed fuel costs and where the loan stands. Same assetCard() shell
+ * as the DCA cards, with the loan's numbers: debt, collateral, LTV against the owner's own ceiling,
+ * interest for the period and the bot's realized profit next to it.
+ */
+function lendReportCard(l: LendReportData, accentColor: string, periodType: 'weekly' | 'monthly'): string {
+    const period = periodType === 'weekly' ? 'this week' : 'last month';
+    const over = l.ltv >= l.capLtv;
+    const lines = [
+        `LTV ${(l.ltv * 100).toFixed(2)}% (your ceiling ${(l.capLtv * 100).toFixed(0)}%${over ? ' \u2014 <b style="color:' + COLORS.red + ';">over it</b>' : ''})`,
+        l.liqPriceUsd != null ? `Liquidation at ${l.liqSymbol} ${fmt(l.liqPriceUsd)}` : null,
+        l.netApy != null ? `Net APY ${l.netApy >= 0 ? '+' : ''}${(l.netApy * 100).toFixed(2)}%` : null,
+        l.earnedUsd != null && l.paidUsd != null ? `Interest ${period}: earned ${fmt(l.earnedUsd)}, paid ${fmt(l.paidUsd)}` : null,
+        l.botRealizedUsd != null ? `Solana bot realized ${period}: ${l.botRealizedUsd >= 0 ? '+' : ''}${fmt(l.botRealizedUsd)} (${l.botRealizedCount} lot${l.botRealizedCount === 1 ? '' : 's'})` : null,
+    ].filter(Boolean);
+    const pnl = l.pnlUsd;
+    return assetCard({
+        name: l.label,
+        accentColor,
+        investedLabel: 'Debt',
+        investedValue: fmt(l.debtUsd),
+        valueLabel: 'Collateral',
+        currentValue: fmt(l.collateralUsd),
+        pnlText: pnl != null ? `${pnl >= 0 ? '+' : ''}${fmt(pnl)} position PnL \u00b7 net ${fmt(l.netUsd)}` : `Net ${fmt(l.netUsd)}`,
+        pnlPercentText: `LTV ${(l.ltv * 100).toFixed(1)}%`,
+        pnlHex: over ? COLORS.red : pnl != null ? pnlColor(pnl) : COLORS.accent,
+        extraLine: lines.join('<br/>'),
     });
 }
 
@@ -295,10 +326,12 @@ export function buildReportHtml(opts: {
     bnbDca?: DcaReportAsset | null;
     evaDca?: DcaReportAsset | null;
     polygonDca?: PolygonDcaReportSummary | null;
+    /** Jupiter Lend loan funding the bot; omitted when none is configured. */
+    lend?: LendReportData | null;
     /** Cycles closed + realized profit per bot for the period vs the one before; empty/omitted hides the section. */
     botPeriod?: BotPeriodRow[];
 }): string {
-    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca, botPeriod } = opts;
+    const { periodType, periodLabel, data, windowStats, dashboardUrl, vanguard, evolution, solanaDca, evmDca, bnbDca, evaDca, polygonDca, lend, botPeriod } = opts;
     const badge = periodType === 'weekly' ? 'WEEKLY REPORT' : 'MONTHLY REPORT';
     const windowLabel = periodType === 'weekly' ? 'This week' : 'Last month';
 
@@ -446,6 +479,7 @@ export function buildReportHtml(opts: {
             ${bnbDca ? dcaAssetCard(bnbDca, COLORS.bnb) : ''}
             ${evaDca ? dcaAssetCard(evaDca, COLORS.eva) : ''}
             ${polygonDca ? polygonReportCard(polygonDca, COLORS.polygon) : ''}
+            ${lend ? lendReportCard(lend, COLORS.accent, periodType) : ''}
           </td>
         </tr>
 

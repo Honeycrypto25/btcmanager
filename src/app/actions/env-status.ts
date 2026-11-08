@@ -56,6 +56,8 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
             { key: "JUPITER_API_KEY", description: "Cheie API Jupiter (portal.jup.ag). Opțională pentru swap/V1, OBLIGATORIE pentru ordinele Trigger V2.", required: false },
             { key: "JUPITER_LEND_WALLETS", description: "Opțional: adrese Solana (separate prin virgulă) ale căror împrumuturi Jupiter Lend apar pe Cold wallet. Lipsă = SOLANA_SWEEP_DESTINATION.", required: false },
             { key: "LEND_MAX_LTV", description: "Opțional: plafonul tău de LTV pentru împrumuturi noi, în % (ex. 30). Pagina Împrumuturi arată cât mai poți împrumuta până la el. Lipsă = 30.", required: false },
+            { key: "LEND_ALERT_EMAIL", description: "Opțional: pornit implicit — trimite un e-mail când LTV-ul împrumutului Jupiter Lend trece de un nou pas (implicit din 5 în 5 puncte: 30%, 35%, 40%…). Verificat zilnic din cron și la deschiderea paginii Împrumuturi. \"0\" = oprit. Folosește RESEND_API_KEY și REPORT_EMAIL_TO.", required: false },
+            { key: "LEND_ALERT_STEP", description: "Opțional: pasul alertei de LTV, în puncte procentuale (implicit 5).", required: false },
             { key: "EVA_TRIGGER_VERSION", description: "\"2\" = ordinele noi de vânzare EVA se pun pe Jupiter Trigger V2; lipsă/\"1\" = V1 (implicit).", required: false },
         ],
     },

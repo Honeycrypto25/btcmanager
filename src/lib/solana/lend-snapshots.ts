@@ -47,9 +47,13 @@ export async function readLendSnapshots(p: LendPosition, limit = 2000): Promise<
             where: { owner: p.owner, vaultId: p.vaultId, nftId: p.id },
             orderBy: { capturedAt: "desc" },
             take: limit,
-            select: { capturedAt: true, supplyApy: true, borrowApy: true },
+            select: { capturedAt: true, supplyApy: true, borrowApy: true, collateralAmount: true, debtAmount: true, collateralPriceUsd: true, debtPriceUsd: true },
         });
-        return rows.reverse().map((r: { capturedAt: Date; supplyApy: number; borrowApy: number }) => ({ t: r.capturedAt.getTime(), supplyApy: r.supplyApy, borrowApy: r.borrowApy }));
+        type Row = { capturedAt: Date; supplyApy: number; borrowApy: number; collateralAmount: number; debtAmount: number; collateralPriceUsd: number; debtPriceUsd: number };
+        return rows.reverse().map((r: Row) => {
+            const col = r.collateralAmount * r.collateralPriceUsd;
+            return { t: r.capturedAt.getTime(), supplyApy: r.supplyApy, borrowApy: r.borrowApy, ltv: col > 0 ? (r.debtAmount * r.debtPriceUsd) / col : null };
+        });
     } catch (err) {
         console.warn("[lend-snapshots] read failed:", (err as Error).message);
         return [];

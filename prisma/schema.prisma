@@ -1933,3 +1933,16 @@ model LendSnapshot {
 
   @@index([owner, vaultId, nftId, capturedAt])
 }
+
+// Last LTV step (in whole percent, multiple of the alert step) an alert email was sent for, per Jupiter Lend position.
+// Lets the checks (daily cron + page opens) mail once per upward crossing instead of on every run.
+model LendAlertState {
+  id        String   @id @default(cuid())
+  owner     String
+  vaultId   Int
+  nftId     Int
+  lastLevel Int
+  updatedAt DateTime @updatedAt
+
+  @@unique([owner, vaultId, nftId])
+}

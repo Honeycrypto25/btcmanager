@@ -19,6 +19,8 @@ export interface BotPendingData {
     usd: number;
 }
 export interface BotOverview {
+    /** Realized profit of bot lots sold in the last 30 days. */
+    realized30d: { usd: number; count: number } | null;
     fuel: BotFuelData | null;
     fuelError: string | null;
     pending: BotPendingData | null;

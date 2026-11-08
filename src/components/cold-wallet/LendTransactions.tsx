@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import type { LendAction, LendOverview, LendPositionFull } from "@/lib/solana/jupiter-lend";
 import { tokenSmall, usdSmall } from "@/components/cold-wallet/LendCharts";
@@ -31,6 +31,43 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString("ro-RO", { hou
 const shortSig = (s: string) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
 
 type Row = LendAction & { pos: LendPositionFull };
+
+const csvCell = (v: string | number) => {
+    const t = String(v);
+    return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+/** All rows of the current filter as a CSV (UTC dates, token units and USD at the time of each transaction). */
+function downloadCsv(rows: Row[]) {
+    const head = ["data_utc", "tip", "pozitie", "status", "colateral_intrat", "colateral_iesit", "datorie_intrata", "datorie_iesita", "colateral_intrat_usd", "colateral_iesit_usd", "datorie_intrata_usd", "datorie_iesita_usd", "semnatura"];
+    const lines = rows.map((r) =>
+        [
+            new Date(r.at).toISOString(),
+            r.type,
+            `${r.pos.collateral.symbol}/${r.pos.debt.symbol} #${r.pos.id}`,
+            r.status,
+            r.collateralIn,
+            r.collateralOut,
+            r.debtIn,
+            r.debtOut,
+            r.collateralInUsd,
+            r.collateralOutUsd,
+            r.debtInUsd,
+            r.debtOutUsd,
+            r.signature,
+        ]
+            .map(csvCell)
+            .join(",")
+    );
+    const blob = new Blob(["\uFEFF" + [head.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `imprumuturi-tranzactii-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
 
 export function LendTransactions({ lend }: { lend: LendOverview }) {
     const [type, setType] = useState<string>("all");
@@ -102,7 +139,17 @@ export function LendTransactions({ lend }: { lend: LendOverview }) {
 
             <Card className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="font-display text-base font-medium text-foreground">Istoric · {filtered.length} tranzacții</h2>
+                    <div className="flex items-center gap-3">
+                        <h2 className="font-display text-base font-medium text-foreground">Istoric · {filtered.length} tranzacții</h2>
+                        <button
+                            type="button"
+                            onClick={() => downloadCsv(filtered)}
+                            disabled={filtered.length === 0}
+                            className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-40"
+                        >
+                            <Download className="h-3 w-3" /> CSV
+                        </button>
+                    </div>
                     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtru tip">
                         {["all", ...types].map((t) => (
                             <button
