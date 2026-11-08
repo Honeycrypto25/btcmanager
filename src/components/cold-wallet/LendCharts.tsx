@@ -169,7 +169,7 @@ function Tile({ label, value, valueClass, note, lines }: { label: string; value:
 
 export function LendCharts({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: string }) {
     return (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4">
             {p.interest && <ProjectionChart p={p} />}
             {p.interest && p.curve.length > 1 && <AccruedChart p={p} />}
             <ApySpreadChart p={p} fetchedAt={fetchedAt} />
@@ -205,7 +205,7 @@ function ProjectionChart({ p }: { p: LendPositionFull }) {
     );
     return (
         <ChartCard title="Proiecție dobândă · 12 luni" subtitle="Cumulat, la soldurile, ratele și prețurile de acum — o estimare, nu o valoare garantată. Axa = luni de acum încolo.">
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} interval={1} />
@@ -237,7 +237,7 @@ function AccruedChart({ p }: { p: LendPositionFull }) {
             title="Dobândă acumulată de la deschidere"
             subtitle="Punctele intermediare sunt estimate din tranzacții și rata de acum; ultimul punct e valoarea reală din poziție."
         >
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                     <XAxis
@@ -304,7 +304,7 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
             title={title}
             subtitle={`${rows.length} puncte înregistrate pentru poziția ta, din ${fmtFullTime(first)}. Peste linia 0 = dobânda colateralului e mai mare decât a împrumutului.`}
         >
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                     <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => fmtAxisTime(Number(t), span)} />
@@ -349,7 +349,7 @@ function LtvChart({ p }: { p: LendPositionFull }) {
                     : "Cum se schimbă LTV-ul dacă prețul colateralului se mișcă."
             }
         >
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={340}>
                 <AreaChart data={rows} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                     <defs>
                         <linearGradient id={`ltvFill-${p.id}`} x1="0" y1="0" x2="0" y2="1">
