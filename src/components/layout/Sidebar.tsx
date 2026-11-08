@@ -121,6 +121,7 @@ const navEntries: NavEntry[] = [
         section: 'Cold wallet',
         items: [
             { name: 'Profit scos', href: '/cold-wallet', icon: ShieldCheck },
+            { name: 'Împrumuturi', href: '/cold-wallet/imprumuturi', icon: Landmark },
         ],
     },
     {

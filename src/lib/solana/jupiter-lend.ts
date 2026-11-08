@@ -12,8 +12,8 @@ import { JUPITER_API_BASE } from "./constants";
  *
  * Units (Fluid-based API): position `supply`/`borrow` are raw base units
  * (divide by token decimals); `collateralFactor` / `liquidationThreshold`
- * are per-mille (850 = 85%); `supplyRate` / `borrowRate` are 1e2 precision
- * (565 = 5.65%). Checked against position #10671 on jup.ag
+ * are per-mille (850 = 85%); `liquidationPenalty`, `supplyRate`, `borrowRate`
+ * are 1e2 precision (100 = 1%, 369 = 3.69% APR). Checked against position #10671 on jup.ag
  * (14 SOL / 346.36 USDC → liq. price 29.1, LTV 27.79%).
  */
 
@@ -70,6 +70,7 @@ const num = (v: unknown): number | null => {
 const fromBase = (raw: string, decimals: number) => (raw.includes(".") ? Number(raw) : Number(raw) / 10 ** decimals);
 const perMille = (v?: string) => (num(v) != null ? num(v)! / 1000 : null);
 const pct1e2 = (v?: string) => (num(v) != null ? num(v)! / 10000 : null);
+const toApy = (apr: number | null) => (apr == null ? null : (1 + apr / 365) ** 365 - 1);
 
 export function lendWallets(): string[] {
     const list = (process.env.JUPITER_LEND_WALLETS || process.env.SOLANA_SWEEP_DESTINATION || "")
@@ -96,9 +97,9 @@ function toPosition(p: RawPosition): LendPosition {
     const curPriceInDebt = debtPrice > 0 ? colPrice / debtPrice : null;
     const liqOffset = liqPrice != null && curPriceInDebt ? 1 - liqPrice / curPriceInDebt : null;
 
-    const supplyRate = pct1e2(p.vault.supplyRate);
-    const colApy = supplyRate;
-    const debtApy = pct1e2(p.vault.borrowRate);
+    // API rates are APR; jup.ag shows APY (daily compounding).
+    const colApy = toApy(pct1e2(p.vault.supplyRate));
+    const debtApy = toApy(pct1e2(p.vault.borrowRate));
     const netUsd = colUsd - debtUsd;
     const netApy = colApy != null && debtApy != null && netUsd > 0 ? (colUsd * colApy - debtUsd * debtApy) / netUsd : null;
 
@@ -113,7 +114,7 @@ function toPosition(p: RawPosition): LendPosition {
         ltv: colUsd > 0 ? debtUsd / colUsd : 0,
         maxLtv: perMille(p.vault.collateralFactor),
         liqThreshold: lt,
-        liqPenalty: perMille(p.vault.liquidationPenalty),
+        liqPenalty: pct1e2(p.vault.liquidationPenalty),
         liqPrice,
         liqOffset,
         netApy,
