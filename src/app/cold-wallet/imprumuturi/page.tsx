@@ -36,6 +36,13 @@ async function getBotOverview(): Promise<BotOverview> {
 // Admin-only, like the rest of the Cold wallet section. Read-only: it only
 // reads Jupiter Lend (positions) and Fluid (history) for the wallets in
 // JUPITER_LEND_WALLETS. Neither call can fail the page — errors show as a note.
+// Own LTV ceiling for new borrowing, set in Vercel as LEND_MAX_LTV (e.g. 30 or 0.3). Defaults to 30%.
+function lendCapLtv(): number {
+    const raw = Number(process.env.LEND_MAX_LTV);
+    if (!Number.isFinite(raw) || raw <= 0) return 0.3;
+    return raw > 1 ? Math.min(raw / 100, 0.95) : Math.min(raw, 0.95);
+}
+
 export default async function ColdWalletLoansPage() {
     await requireAdminPage();
     const [lend, bot] = await Promise.all([getLendOverview({ record: true }), getBotOverview()]);
@@ -47,7 +54,7 @@ export default async function ColdWalletLoansPage() {
                     <h1 className="font-display text-2xl font-medium text-foreground">Împrumuturi</h1>
                     <p className="text-sm text-muted">Pozițiile de împrumut Jupiter Lend din cold wallet — colateral, datorie, dobânzi și cât de departe e lichidarea.</p>
                 </div>
-                <LendPositions lend={lend} />
+                <LendPositions lend={lend} capLtv={lendCapLtv()} />
                 <LendBotFuel bot={bot} />
                 {lend.positions.map((p) => (
                     <LendCharts key={`${p.vaultId}-${p.id}`} p={p} fetchedAt={lend.fetchedAt} />

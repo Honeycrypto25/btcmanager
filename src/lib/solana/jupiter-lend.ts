@@ -2,6 +2,7 @@ import "server-only";
 import { JUPITER_API_BASE } from "./constants";
 import { getPriceLevelHistory } from "./lend-price-history";
 import { readLendSnapshots, recordLendSnapshots } from "./lend-snapshots";
+import { getLendExtras, type LendExtras } from "./lend-extras";
 
 /**
  * Read-only view of Jupiter Lend borrow positions (the position NFTs from
@@ -264,6 +265,7 @@ export interface LendPositionFull extends LendPosition {
     curve: InterestPoint[];
     snapshots: SnapshotPoint[]; // this position's own recorded APYs over time
     liqHistory: PriceLevelHistory | null;
+    extras: LendExtras;
 }
 export interface LendOverview {
     configured: boolean;
@@ -417,15 +419,19 @@ export async function getLendOverview(opts: { record?: boolean } = {}): Promise<
     if (opts.record) await recordLendSnapshots(base.positions);
     const positions: LendPositionFull[] = await Promise.all(
         base.positions.map(async (p) => {
-            const [snapshots, liqHistory] = await Promise.all([readLendSnapshots(p), getPriceLevelHistory(p.collateral.symbol, p.liqPriceUsd)]);
+            const [snapshots, liqHistory, extras] = await Promise.all([
+                readLendSnapshots(p),
+                getPriceLevelHistory(p.collateral.symbol, p.liqPriceUsd),
+                getLendExtras(p.vaultId, p.id, p.collateral.priceUsd),
+            ]);
             try {
                 const actions = await fetchActions(p.vaultId, p.id, p.decimals.collateral, p.decimals.debt);
                 const interest = computeInterest(p, actions);
-                return { ...p, actions, interest, curve: interestCurve(p, actions, interest), snapshots, liqHistory };
+                return { ...p, actions, interest, curve: interestCurve(p, actions, interest), snapshots, liqHistory, extras };
             } catch (err) {
                 historyError = (err as Error).message;
                 console.warn("[jupiter-lend] history fetch failed:", historyError);
-                return { ...p, actions: null, interest: null, curve: [], snapshots, liqHistory };
+                return { ...p, actions: null, interest: null, curve: [], snapshots, liqHistory, extras };
             }
         })
     );

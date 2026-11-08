@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import Link from "next/link";
 import type { LendOverview, LendPositionFull } from "@/lib/solana/jupiter-lend";
-import { InterestTiles, ProfitabilityCard } from "@/components/cold-wallet/LendCharts";
+import { BorrowRoom, InterestTiles, PnlCard, ProfitabilityCard } from "@/components/cold-wallet/LendCharts";
 
 const usd = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const amt = (v: number, d = 2) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -49,7 +49,7 @@ const riskColor = (r: number) => {
 const short = (a: string) => (a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 
 /** Jupiter Lend borrow positions held by the cold wallet — read-only. */
-export function LendPositions({ lend }: { lend: LendOverview }) {
+export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capLtv?: number }) {
     return (
         <Card className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,7 +84,7 @@ export function LendPositions({ lend }: { lend: LendOverview }) {
                         <p className="text-xs text-amber-300">Nu am putut citi istoricul tranzacțiilor ({lend.historyError}) — dobânzile și graficele de istoric lipsesc, restul e afișat.</p>
                     )}
                     {lend.positions.map((p) => (
-                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} />
+                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} capLtv={capLtv} />
                     ))}
                 </div>
             )}
@@ -92,7 +92,7 @@ export function LendPositions({ lend }: { lend: LendOverview }) {
     );
 }
 
-function PositionCard({ p }: { p: LendPositionFull }) {
+function PositionCard({ p, capLtv }: { p: LendPositionFull; capLtv: number }) {
     const lt = p.liqThreshold ?? 0;
     // Same zones jup.ag uses visually: well below max LTV is safe, close to the liquidation threshold is danger.
     const risk = lt > 0 ? p.ltv / lt : 0;
@@ -117,16 +117,27 @@ function PositionCard({ p }: { p: LendPositionFull }) {
                 <Stat label="Net USD" value={usd(p.netUsd)} note={`Net APY ${p.netApy == null ? "—" : `${p.netApy >= 0 ? "+" : ""}${pct(p.netApy)}`}`} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <Mini label="Preț lichidare" value={p.liqPrice == null ? "—" : `${amt(p.liqPrice, 1)} ${p.debt.symbol}`} />
                 <Mini label="Distanță până la lichidare" value={pct(p.liqOffset, 1)} />
                 <Mini label={`Preț ${p.collateral.symbol} acum`} value={usd(p.collateral.priceUsd)} />
+                {p.extras.oracle && (
+                    <Mini
+                        label="Preț oracol (după care se lichidează)"
+                        value={`${usd(p.extras.oracle.priceUsd)} (${p.extras.oracle.diffPct >= 0 ? "+" : "−"}${(Math.abs(p.extras.oracle.diffPct) * 100).toFixed(2)}% față de piață)`}
+                    />
+                )}
                 <Mini label="LTV max / Lichidare / Penalizare" value={`${pct(p.maxLtv, 0)} / ${pct(p.liqThreshold, 0)} / ${pct(p.liqPenalty, 0)}`} />
             </div>
 
             {p.liqHistory && <LiqSeen h={p.liqHistory} />}
 
             <ProfitabilityCard p={p} />
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <PnlCard p={p} />
+                <BorrowRoom p={p} capLtv={capLtv} />
+            </div>
 
             <InterestTiles p={p} />
 

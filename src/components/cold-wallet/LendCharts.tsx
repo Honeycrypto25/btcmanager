@@ -131,6 +131,62 @@ export function InterestTiles({ p }: { p: LendPositionFull }) {
     );
 }
 
+/**
+ * Position PnL in USD, like jup.ag: net value now minus the net value deposited
+ * (each deposit/borrow at the USD price of its own day). Split into the interest
+ * accrued and what's left, i.e. the price move.
+ */
+export function PnlCard({ p }: { p: LendPositionFull }) {
+    const ok = (p.actions ?? []).filter((a) => a.status === "success");
+    const official = p.extras.pnl;
+    if (ok.length === 0 && !official) return null;
+    // Jupiter's own number when its API answers; otherwise our own calculation from the history.
+    const basis = ok.reduce((s, a) => s + a.collateralInUsd - a.collateralOutUsd - (a.debtInUsd - a.debtOutUsd), 0);
+    const pnl = official ? official.usd : p.netUsd - basis;
+    const pnlPct = official ? official.pct : basis > 0 ? pnl / basis : null;
+    const interest = p.interest?.netUsd ?? 0;
+    const price = pnl - interest;
+    const signed = (v: number) => `${v >= 0 ? "+" : "−"}${usdSmall(Math.abs(v)).replace("−", "")}`;
+    const tone = (v: number) => (v >= 0 ? "text-emerald-300" : "text-red-300");
+    return (
+        <div className="space-y-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Profit poziție (USD)</p>
+            <p className={cn("font-mono text-xl font-medium", tone(pnl))}>
+                {signed(pnl)} {pnlPct != null && <span className="text-sm text-muted">({pnlPct >= 0 ? "+" : "−"}{(Math.abs(pnlPct) * 100).toFixed(2)}%)</span>}
+            </p>
+            <p className="text-xs text-muted">
+                {official
+                    ? "cifra oficială din Jupiter (valoarea netă acum − valoarea netă depusă)"
+                    : `valoarea netă acum (${usdSmall(p.netUsd)}) − valoarea netă depusă (${usdSmall(basis)}), calculat din istoric`}
+            </p>
+            <p className="text-[11px] text-faint">
+                din care dobândă <span className={tone(interest)}>{signed(interest)}</span> · mișcarea prețului <span className={tone(price)}>{signed(price)}</span>
+            </p>
+        </div>
+    );
+}
+
+/** How much more could be borrowed before the LTV reaches the user's own cap. */
+export function BorrowRoom({ p, capLtv }: { p: LendPositionFull; capLtv: number }) {
+    const maxDebt = p.collateral.usd * capLtv;
+    const room = maxDebt - p.debt.usd;
+    const ok = room >= 0;
+    return (
+        <div className="space-y-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Poți mai împrumuta acum</p>
+            <p className={cn("font-mono text-xl font-medium", ok ? "text-emerald-300" : "text-red-300")}>
+                {ok ? usdSmall(room) : `−${usdSmall(-room).replace("−", "")}`}
+            </p>
+            <p className="text-xs text-muted">
+                până la LTV {(capLtv * 100).toFixed(0)}% (datorie maximă {usdSmall(maxDebt)}, acum {usdSmall(p.debt.usd)})
+            </p>
+            <p className="text-[11px] text-faint">
+                {ok ? "Fiecare $100 de colateral adăugat îți dă" : "Peste plafon. Fiecare $100 de colateral adăugat îți dă"} ≈ {usdSmall(100 * capLtv)} capacitate în plus.
+            </p>
+        </div>
+    );
+}
+
 /** Is the position on the plus? Rate × amount, not the raw rate difference. */
 export function ProfitabilityCard({ p }: { p: LendPositionFull }) {
     const pr = p.profit;
@@ -194,6 +250,7 @@ export function LendCharts({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: s
             {p.interest && <ProjectionChart p={p} />}
             {p.interest && p.curve.length > 1 && <AccruedChart p={p} />}
             <ApySpreadChart p={p} fetchedAt={fetchedAt} />
+            <VaultRatesChart p={p} />
             <LtvChart p={p} />
         </div>
     );
@@ -279,6 +336,39 @@ function AccruedChart({ p }: { p: LendPositionFull }) {
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="earned" name={`Câștigată (${p.collateral.symbol})`} stroke={GREEN} strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="paid" name={`Plătită (${p.debt.symbol})`} stroke={AMBER} strokeWidth={2} dot={false} />
+                </LineChart>
+            </ResponsiveContainer>
+        </ChartCard>
+    );
+}
+
+/** The vault's own hourly rates for the last 7 days (market context, not this position). The API publishes them with a delay. */
+function VaultRatesChart({ p }: { p: LendPositionFull }) {
+    const rows = useMemo(
+        () => p.extras.rates.map((r) => ({ t: r.t, supply: ((1 + r.supplyApr / 365) ** 365 - 1) * 100, borrow: ((1 + r.borrowApr / 365) ** 365 - 1) * 100 })),
+        [p.extras.rates]
+    );
+    if (rows.length < 2) return null;
+    const first = rows[0].t;
+    const last = rows[rows.length - 1].t;
+    const span = last - first;
+    const ticks = Array.from({ length: 6 }, (_, i) => first + (span * i) / 5);
+    const lo = Math.min(...rows.map((r) => r.borrow));
+    const hi = Math.max(...rows.map((r) => r.borrow));
+    return (
+        <ChartCard
+            title="Rata vault-ului · ultimele 7 zile"
+            subtitle={`Rata de împrumut a fost între ${lo.toFixed(2)}% și ${hi.toFixed(2)}% APY. Date de piață pentru tot vault-ul (nu doar poziția ta), publicate cu întârziere — ultimul punct: ${fmtFullTime(last)}.`}
+        >
+            <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+                    <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => fmtAxisTime(Number(t), span)} />
+                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} width={48} />
+                    <Tooltip content={<Tip fmt={(v) => `${v.toFixed(2)}%`} labelFmt={(l) => fmtFullTime(Number(l))} />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Line type="monotone" dataKey="supply" name="APY depunere (vault)" stroke={GREEN} strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="borrow" name="APY împrumut (vault)" stroke={AMBER} strokeWidth={2} dot={false} />
                 </LineChart>
             </ResponsiveContainer>
         </ChartCard>

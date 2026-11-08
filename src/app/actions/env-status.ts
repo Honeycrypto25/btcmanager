@@ -55,6 +55,7 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
             { key: "SOLANA_SWEEP_DESTINATION", description: "Adresa cold-wallet unde se trimit retragerile lunare (SOL și EVA).", required: false },
             { key: "JUPITER_API_KEY", description: "Cheie API Jupiter (portal.jup.ag). Opțională pentru swap/V1, OBLIGATORIE pentru ordinele Trigger V2.", required: false },
             { key: "JUPITER_LEND_WALLETS", description: "Opțional: adrese Solana (separate prin virgulă) ale căror împrumuturi Jupiter Lend apar pe Cold wallet. Lipsă = SOLANA_SWEEP_DESTINATION.", required: false },
+            { key: "LEND_MAX_LTV", description: "Opțional: plafonul tău de LTV pentru împrumuturi noi, în % (ex. 30). Pagina Împrumuturi arată cât mai poți împrumuta până la el. Lipsă = 30.", required: false },
             { key: "EVA_TRIGGER_VERSION", description: "\"2\" = ordinele noi de vânzare EVA se pun pe Jupiter Trigger V2; lipsă/\"1\" = V1 (implicit).", required: false },
         ],
     },
