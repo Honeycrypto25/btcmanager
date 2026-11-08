@@ -1,18 +1,34 @@
 "use client";
 
 import React from "react";
-import { format } from "date-fns";
 import { ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
-import type { LendData, LendPosition } from "@/lib/solana/jupiter-lend";
+import Link from "next/link";
+import type { LendOverview, LendPositionFull } from "@/lib/solana/jupiter-lend";
+import { InterestTiles, ProfitabilityCard } from "@/components/cold-wallet/LendCharts";
 
 const usd = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const amt = (v: number, d = 2) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = (v: number | null, d = 2) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+// Fixed time zone so the server render and the browser agree (a plain
+// date-fns format() uses each side's own zone and triggers a hydration mismatch).
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+// Candle days are UTC days; fixed zone keeps server and browser identical.
+const dayUtc = (iso: string) => new Date(iso).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const ago = (days: number) => {
+    if (days >= 365) {
+        const y = Math.floor(days / 365);
+        const m = Math.floor((days % 365) / 30);
+        return m > 0 ? `${plural(y, "an", "ani")} și ${plural(m, "lună", "luni")}` : plural(y, "an", "ani");
+    }
+    if (days >= 30) return plural(Math.floor(days / 30), "lună", "luni");
+    return plural(days, "zi", "zile");
+};
 const short = (a: string) => (a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 
 /** Jupiter Lend borrow positions held by the cold wallet — read-only. */
-export function LendPositions({ lend }: { lend: LendData }) {
+export function LendPositions({ lend }: { lend: LendOverview }) {
     return (
         <Card className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -20,10 +36,15 @@ export function LendPositions({ lend }: { lend: LendData }) {
                     <h2 className="font-display text-base font-medium text-foreground">Împrumuturi Jupiter Lend</h2>
                     <p className="text-xs text-muted">
                         {lend.configured
-                            ? `Poziții deschise în ${lend.wallets.map(short).join(", ")} · actualizat ${format(new Date(lend.fetchedAt), "HH:mm")}`
+                            ? `Poziții deschise în ${lend.wallets.map(short).join(", ")} · actualizat ${hhmm(lend.fetchedAt)}`
                             : "Niciun portofel configurat"}
                     </p>
                 </div>
+                {lend.positions.length > 0 && (
+                    <Link href="/cold-wallet/imprumuturi/tranzactii" className="text-xs text-primary-strong hover:underline">
+                        Vezi tranzacțiile →
+                    </Link>
+                )}
             </div>
 
             {!lend.configured ? (
@@ -38,6 +59,9 @@ export function LendPositions({ lend }: { lend: LendData }) {
                 </p>
             ) : (
                 <div className="space-y-4">
+                    {lend.historyError && (
+                        <p className="text-xs text-amber-300">Nu am putut citi istoricul tranzacțiilor ({lend.historyError}) — dobânzile și graficele de istoric lipsesc, restul e afișat.</p>
+                    )}
                     {lend.positions.map((p) => (
                         <PositionCard key={`${p.vaultId}-${p.id}`} p={p} />
                     ))}
@@ -47,7 +71,7 @@ export function LendPositions({ lend }: { lend: LendData }) {
     );
 }
 
-function PositionCard({ p }: { p: LendPosition }) {
+function PositionCard({ p }: { p: LendPositionFull }) {
     const lt = p.liqThreshold ?? 0;
     // Same zones jup.ag uses visually: well below max LTV is safe, close to the liquidation threshold is danger.
     const risk = lt > 0 ? p.ltv / lt : 0;
@@ -79,6 +103,12 @@ function PositionCard({ p }: { p: LendPosition }) {
                 <Mini label={`Preț ${p.collateral.symbol} acum`} value={usd(p.collateral.priceUsd)} />
                 <Mini label="LTV max / Lichidare / Penalizare" value={`${pct(p.maxLtv, 0)} / ${pct(p.liqThreshold, 0)} / ${pct(p.liqPenalty, 0)}`} />
             </div>
+
+            {p.liqHistory && <LiqSeen h={p.liqHistory} />}
+
+            <ProfitabilityCard p={p} />
+
+            <InterestTiles p={p} />
 
             <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
@@ -114,6 +144,32 @@ function Mini({ label, value }: { label: string; value: string }) {
         <div className="space-y-0.5">
             <p className="text-[11px] text-faint">{label}</p>
             <p className="font-mono text-sm text-foreground">{value}</p>
+        </div>
+    );
+}
+
+/** When the collateral was last as low as the liquidation price. */
+function LiqSeen({ h }: { h: NonNullable<LendPositionFull["liqHistory"]> }) {
+    return (
+        <div className="space-y-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-xs">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Prețul de lichidare în istoric</p>
+            {h.lastAtOrBelow ? (
+                <p className="text-sm text-foreground">
+                    Ultima dată când {h.symbol} a fost la sau sub {usd(h.level)}: <span className="font-mono">{dayUtc(h.lastAtOrBelow.at)}</span>{" "}
+                    <span className="text-muted">
+                        (acum {ago(h.lastAtOrBelow.daysAgo)} · minimul acelei zile {usd(h.lastAtOrBelow.low)})
+                    </span>
+                </p>
+            ) : (
+                <p className="text-sm text-foreground">
+                    {h.symbol} nu a fost niciodată la sau sub {usd(h.level)} de la {dayUtc(h.coverageFrom)} (primele date disponibile).
+                </p>
+            )}
+            {h.min12m && (
+                <p className="text-muted">
+                    Minimul ultimelor 12 luni: {usd(h.min12m.low)} pe {dayUtc(h.min12m.at)}. Sursa: prețuri zilnice Binance, pe minimul zilei.
+                </p>
+            )}
         </div>
     );
 }

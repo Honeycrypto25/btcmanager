@@ -1910,3 +1910,26 @@ model ShareLinkView {
 
   @@index([linkId, createdAt])
 }
+
+// Record of a Jupiter Lend borrow position over time (rates, balances, prices) —
+// the only way to chart "my" APY spread, since the position's own history isn't
+// exposed by any API. Written when the Împrumuturi page is opened (throttled)
+// and by a daily cron. Not tied to a User: the wallets come from the
+// JUPITER_LEND_WALLETS env var. Floats are fine here — it's analytics, not accounting.
+model LendSnapshot {
+  id                 String   @id @default(cuid())
+  owner              String // wallet that holds the position NFT
+  vaultId            Int
+  nftId              Int
+  capturedAt         DateTime @default(now())
+  supplyApr          Float // collateral rate, fraction (0.0369 = 3.69%)
+  borrowApr          Float
+  supplyApy          Float
+  borrowApy          Float
+  collateralAmount   Float // token units, interest included
+  debtAmount         Float
+  collateralPriceUsd Float
+  debtPriceUsd       Float
+
+  @@index([owner, vaultId, nftId, capturedAt])
+}

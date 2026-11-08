@@ -34,6 +34,7 @@ import {
     Hexagon,
     Diamond,
     Repeat,
+    ArrowLeftRight,
     Sparkles,
     FileSignature,
     FolderOpen,
@@ -122,6 +123,7 @@ const navEntries: NavEntry[] = [
         items: [
             { name: 'Profit scos', href: '/cold-wallet', icon: ShieldCheck },
             { name: 'Împrumuturi', href: '/cold-wallet/imprumuturi', icon: Landmark },
+            { name: 'Tranzacții împrumuturi', href: '/cold-wallet/imprumuturi/tranzactii', icon: ArrowLeftRight },
         ],
     },
     {
