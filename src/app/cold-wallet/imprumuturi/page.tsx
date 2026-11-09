@@ -35,13 +35,20 @@ async function getBotOverview(): Promise<BotOverview> {
         realized30d = { usd: sold.reduce((s: number, l: { realizedPnlUsd: unknown }) => s + Number(l.realizedPnlUsd ?? 0), 0), count: sold.length };
     }
 
+    let profits: BotOverview["profits"] = [];
+    if (lotsRes.status === "fulfilled") {
+        profits = lotsRes.value
+            .filter((l: { status: string; soldAt: Date | string | null }) => l.status === "FILLED" && l.soldAt != null)
+            .map((l: { soldAt: Date | string | null; realizedPnlUsd: unknown }) => ({ t: new Date(l.soldAt as Date | string).getTime(), usd: Number(l.realizedPnlUsd ?? 0) }));
+    }
+
     let pending: BotOverview["pending"] = null;
     if (lotsRes.status === "fulfilled") {
         const open = lotsRes.value.filter((l: { status: string }) => PENDING_STATUSES.has(l.status));
         const sol = open.reduce((s: number, l: { solRemaining: unknown }) => s + Number(l.solRemaining), 0);
         pending = { count: open.length, sol, usd: solPriceUsd != null ? sol * solPriceUsd : 0 };
     }
-    return { fuel, fuelError, pending, realized30d, solPriceUsd };
+    return { fuel, fuelError, pending, realized30d, profits, solPriceUsd };
 }
 
 // Admin-only, like the rest of the Cold wallet section. Read-only: it only

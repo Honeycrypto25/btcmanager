@@ -5,6 +5,7 @@ import { AlertTriangle } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import type { LendPositionFull } from "@/lib/solana/jupiter-lend";
 import type { BotOverview } from "@/components/cold-wallet/LendBotFuel";
+import { ProfitVsInterestChart } from "@/components/cold-wallet/ProfitVsInterestChart";
 
 const usd = (v: number) => (v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (v: number, d = 1) => `${(v * 100).toFixed(d)}%`;
@@ -140,6 +141,7 @@ function BotVsInterest({ p, bot }: { p: LendPositionFull; bot: BotOverview }) {
                 <Tile label="Rămâne" value={usd(left)} tone={left >= 0 ? "good" : "bad"} note={left >= 0 ? "botul acoperă dobânda" : "botul nu acoperă dobânda"} />
                 <Tile label="Raport" value={month > 0 ? `${(r.usd / month).toFixed(1)}×` : "—"} note="profit bot ÷ dobândă" />
             </div>
+            <ProfitVsInterestChart p={p} profits={bot.profits} />
         </Section>
     );
 }
