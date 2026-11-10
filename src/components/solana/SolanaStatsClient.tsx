@@ -19,6 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
+import { ProfitHeatmap, type HeatLot } from "@/components/ui/ProfitHeatmap";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -148,6 +149,21 @@ export function SolanaStatsClient({
                 buyPrice: Number(lot.buyPriceUsd),
                 targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
             }));
+    }, [allLots]);
+
+    // Open sell targets for the profit heatmap: profit taken when each order fills = planned slice × (target − buy).
+    const heatLots = useMemo<HeatLot[]>(() => {
+        const out: HeatLot[] = [];
+        for (const lot of allLots) {
+            if (lot.status !== "OPEN" || !lot.targetPriceUsd) continue;
+            const buy = Number(lot.buyPriceUsd);
+            const target = Number(lot.targetPriceUsd);
+            const qty = Number(lot.sellAmountSolPlanned ?? lot.solRemaining);
+            const profit = qty * (target - buy);
+            if (!(buy > 0) || !(target > 0) || !Number.isFinite(profit)) continue;
+            out.push({ t: new Date(lot.boughtAt).getTime(), buyPrice: buy, targetPrice: target, profitUsd: profit });
+        }
+        return out;
     }, [allLots]);
 
     // Fixed trailing 14-month window, independent of the filter bar above, and
@@ -383,6 +399,7 @@ export function SolanaStatsClient({
 
             {/* Charts */}
             {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={solPriceUsd} fmt={formatUsd} />}
+            {heatLots.length > 0 && <ProfitHeatmap lots={heatLots} currentPrice={solPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
             {openLotsChartData.length > 0 && (
                 <Card>
