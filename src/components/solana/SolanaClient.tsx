@@ -8,6 +8,7 @@ import { Card, Button, cn } from "@/components/ui/core";
 import { upsertSolanaSettings, runSolanaDcaNow, runSolanaDcaForceNow, runSolanaSweepNow, type SolanaSettingsInput } from "@/app/actions/solana";
 import { formatUsd, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { SolanaLimitBuyCard, type SolanaLimitBuyDTO } from "./SolanaLimitBuyCard";
 
 /** Vercel Cron for /api/cron/solana-dca runs daily at 09:00 UTC (see vercel.json) — this just mirrors that schedule for display. */
 function nextCronRunUtc(): Date {
@@ -22,11 +23,15 @@ export function SolanaClient({
     solPriceUsd,
     botWallet,
     sweepDestination,
+    limitBuys,
+    lastBuyPriceUsd,
 }: {
     initialSettings: SettingsDTO | null;
     solPriceUsd: number | null;
     botWallet: { address: string } | { error: string };
     sweepDestination: { address: string } | { error: string };
+    limitBuys: SolanaLimitBuyDTO[];
+    lastBuyPriceUsd: number | null;
 }) {
     const isAdmin = useIsAdmin();
     const [settings, setSettings] = useState<SettingsDTO | null>(initialSettings);
@@ -207,6 +212,10 @@ export function SolanaClient({
                     {!settings && isAdmin && <span className="text-xs text-faint">Salvează întâi setările mai jos.</span>}
                 </div>
             </Card>
+
+            {isAdmin && settings && (
+                <SolanaLimitBuyCard orders={limitBuys} settings={settings} solPriceUsd={solPriceUsd} lastBuyPriceUsd={lastBuyPriceUsd} />
+            )}
 
             {/* Settings */}
             <Card className="space-y-4">

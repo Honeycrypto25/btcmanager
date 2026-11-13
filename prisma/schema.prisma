@@ -54,6 +54,7 @@ model User {
   financialGoals       FinancialGoal[]
   solanaSettings       SolanaSettings?
   solanaLots           SolanaLot[]
+  solanaBuyOrders      SolanaBuyOrder[]
   solanaSweeps         SolanaSweep[]
   evaSettings          EvaSettings?
   evaLots              EvaLot[]
@@ -963,8 +964,58 @@ model SolanaSettings {
   lastSweepStatus String? // "ok" | "skipped" | "error"
   lastSweepError  String? @db.Text
 
+  // --- Auto "dip" limit buy ---
+  // Keeps ONE resting limit buy at autoDipPercent below the price of the most
+  // recent buy, so a spike down fills even though the cron only runs daily.
+  // Re-anchored (cancel + replace) when the last buy price moves by at least
+  // autoDipMinMovePercent. Off by default.
+  autoDipEnabled        Boolean   @default(false)
+  autoDipPercent        Decimal   @default(10) @db.Decimal(6, 2)
+  autoDipAmountUsd      Decimal   @default(20) @db.Decimal(10, 2)
+  autoDipMinMovePercent Decimal   @default(2) @db.Decimal(6, 2)
+  autoDipLastAt         DateTime?
+  autoDipLastNote       String?   @db.Text
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum SolanaBuyOrderStatus {
+  OPEN // limit buy live on Jupiter Trigger, waiting for the price to drop to the limit
+  FILLED // executed — a SolanaLot was created from it
+  CANCELLED // cancelled by the user / replaced by the auto-dip logic / invalidated
+}
+
+// A resting Jupiter Trigger (V1) limit order that BUYS SOL with USDC at a
+// lower price. Unlike the Base module the USDC is escrowed by Jupiter when
+// the order is created (it leaves the wallet) and returns on cancel. When the
+// order fills, reconcile turns it into a normal SolanaLot (PENDING_SELL_ORDER)
+// and the usual take-profit sell order is placed by retryPendingSellOrders.
+model SolanaBuyOrder {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status SolanaBuyOrderStatus @default(OPEN)
+
+  amountUsd     Decimal @db.Decimal(12, 4) // USDC put up
+  limitPriceUsd Decimal @db.Decimal(14, 4) // buy when SOL is at/below this
+  solPlanned    Decimal @db.Decimal(20, 9) // SOL to receive when filled (amountUsd / limitPriceUsd)
+  jupiterOrderKey String
+  txSignature     String?
+
+  // Placed by the auto-dip logic (vs. by hand), and the last-buy price it was anchored to.
+  auto           Boolean  @default(false)
+  anchorPriceUsd Decimal? @db.Decimal(14, 4)
+
+  createdAt     DateTime  @default(now())
+  filledAt      DateTime?
+  cancelledAt   DateTime?
+  lastCheckedAt DateTime?
+  lotId         String? // SolanaLot created when this order filled
+  notes         String?   @db.Text
+
+  @@index([userId, status])
 }
 
 // One row per executed (or attempted) monthly sweep — the excess SOL above

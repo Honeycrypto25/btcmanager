@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
+import { createSolanaLimitBuy, cancelSolanaLimitBuy, syncAutoDipOrder } from "@/lib/solana/limit-buy";
 import { runSolanaSweepForUser } from "@/lib/solana/sweep";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
@@ -250,4 +251,64 @@ export async function getSolanaStats(): Promise<SolanaStats> {
         filledLots,
         totalLots: lots.filter((l) => l.status !== "FAILED").length,
     };
+}
+
+
+/**
+ * Places a resting limit order that BUYS SOL with USDC at a lower price. Jupiter
+ * escrows the USDC until the order fills or is cancelled; a fill becomes a lot and
+ * the usual take-profit sell order is placed at the next check.
+ */
+export async function createSolanaLimitBuyNow(input: { amountUsd: number; limitPriceUsd: number }) {
+    await requireAdmin();
+    const userId = await requireUserId();
+    const order = await createSolanaLimitBuy(userId, input);
+    revalidatePath("/solana");
+    return { id: order.id };
+}
+
+/** Cancels one open limit buy (small network fee); the escrowed USDC returns to the wallet. */
+export async function cancelSolanaLimitBuyNow(id: string) {
+    await requireAdmin();
+    const userId = await requireUserId();
+    await cancelSolanaLimitBuy(userId, id);
+    revalidatePath("/solana");
+}
+
+export interface AutoDipInput {
+    enabled: boolean;
+    percent: number;
+    amountUsd: number;
+    minMovePercent: number;
+}
+
+/**
+ * Saves the auto "dip" settings. Turning it on places the order right away (so the
+ * outcome is visible); turning it off cancels the open auto order and frees its USDC.
+ */
+export async function saveSolanaAutoDip(input: AutoDipInput): Promise<{ note: string }> {
+    await requireAdmin();
+    const userId = await requireUserId();
+    if (!(input.percent > 0 && input.percent < 90)) throw new Error("Procentul trebuie să fie între 0 și 90.");
+    if (input.amountUsd < MIN_TRIGGER_ORDER_USD) throw new Error(`Suma trebuie să fie de cel puțin $${MIN_TRIGGER_ORDER_USD} (minim impus de Jupiter).`);
+    if (!(input.minMovePercent >= 0 && input.minMovePercent < 50)) throw new Error("Mișcarea minimă trebuie să fie între 0 și 50%.");
+    const settings = await db.solanaSettings.findUnique({ where: { userId } });
+    if (!settings) throw new Error("Salvează întâi setările botului.");
+
+    await db.solanaSettings.update({
+        where: { userId },
+        data: { autoDipEnabled: input.enabled, autoDipPercent: input.percent, autoDipAmountUsd: input.amountUsd, autoDipMinMovePercent: input.minMovePercent },
+    });
+
+    let note: string;
+    if (input.enabled) {
+        note = await syncAutoDipOrder(userId);
+    } else {
+        const open = await db.solanaBuyOrder.findMany({ where: { userId, status: "OPEN", auto: true } });
+        for (const o of open) await cancelSolanaLimitBuy(userId, o.id, "Anulat: automatizarea a fost oprită.");
+        note = open.length ? `Oprit. ${open.length} ordin anulat, USDC-ul revine în portofel.` : "Oprit.";
+        await db.solanaSettings.update({ where: { userId }, data: { autoDipLastAt: new Date(), autoDipLastNote: note } });
+    }
+    revalidatePath("/solana");
+    return { note };
 }

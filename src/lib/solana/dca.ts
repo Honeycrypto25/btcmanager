@@ -14,6 +14,7 @@ import {
 } from "./jupiter";
 import { MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
+import { reconcileSolanaLimitBuys, syncAutoDipOrder } from "./limit-buy";
 
 function toRawAmount(amount: number, decimals: number): string {
     return Math.round(amount * 10 ** decimals).toString();
@@ -142,7 +143,9 @@ async function reconcileOpenLots(userId: string, walletAddress: string): Promise
 export async function reconcileSolanaOrdersForUser(userId: string): Promise<ReconcileResult> {
     const settings = await db.solanaSettings.findUnique({ where: { userId } });
     if (!settings) return { checked: 0, filled: 0, cancelled: 0 };
-    return reconcileOpenLots(userId, settings.walletAddress);
+    const buys = await reconcileSolanaLimitBuys(userId, settings.walletAddress);
+    const sells = await reconcileOpenLots(userId, settings.walletAddress);
+    return { checked: sells.checked + buys.checked, filled: sells.filled + buys.filled, cancelled: sells.cancelled + buys.cancelled };
 }
 
 /**
@@ -228,6 +231,8 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
 
     try {
         await reconcileOpenLots(userId, settings.walletAddress);
+        // Filled limit buys become lots here, so retryPendingSellOrders below places their take-profit sell orders.
+        await reconcileSolanaLimitBuys(userId, settings.walletAddress);
 
         // Keypair is needed both for retrying any stuck sell order and for
         // a fresh buy, so load it up front — independent of whether a new
@@ -247,6 +252,7 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
             ? new Date(settings.lastRunAt.getTime() + settings.intervalHours * 60 * 60 * 1000)
             : null;
         if (!force && dueAt && dueAt.getTime() > Date.now()) {
+            await syncAutoDipOrder(userId); // a limit buy may just have filled, moving the reference price
             return { userId, action: "skipped", reason: `next buy due at ${dueAt.toISOString()}` };
         }
 
@@ -350,6 +356,7 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
                 : { lastRunAt: new Date(), lastRunStatus: "ok", lastRunError: null },
         });
 
+        await syncAutoDipOrder(userId); // the new buy moved the reference price
         return { userId, action: "bought", lotId: lot.id };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

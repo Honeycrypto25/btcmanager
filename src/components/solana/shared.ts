@@ -44,6 +44,12 @@ export interface SettingsDTO {
     lastSweepAt: string | null;
     lastSweepStatus: string | null;
     lastSweepError: string | null;
+    autoDipEnabled?: boolean;
+    autoDipPercent?: string;
+    autoDipAmountUsd?: string;
+    autoDipMinMovePercent?: string;
+    autoDipLastAt?: string | null;
+    autoDipLastNote?: string | null;
 }
 
 export interface SweepDTO {

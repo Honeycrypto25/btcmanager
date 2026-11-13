@@ -309,6 +309,27 @@ export async function createTriggerSellOrder(params: {
     return { orderKey: created.order, txSignature: executed.signature };
 }
 
+/**
+ * Places a resting limit BUY (USDC -> SOL) through the same Trigger V1 API as the
+ * sell orders. Jupiter escrows the USDC when the order is created and returns it
+ * on cancel. `takingAmountRaw` encodes the limit price (usdc / sol).
+ */
+export async function createTriggerBuyOrder(params: {
+    keypair: Keypair;
+    usdcMint: string;
+    solMint: string;
+    makingAmountRaw: string; // USDC put up, raw units
+    takingAmountRaw: string; // SOL to receive at the limit price, raw lamports
+}): Promise<{ orderKey: string; txSignature: string }> {
+    return createTriggerSellOrder({
+        keypair: params.keypair,
+        inputMint: params.usdcMint,
+        outputMint: params.solMint,
+        makingAmountRaw: params.makingAmountRaw,
+        takingAmountRaw: params.takingAmountRaw,
+    });
+}
+
 export interface TriggerOrderTrade {
     // Jupiter's history API returns BOTH a human-readable decimal string
     // (inputAmount/outputAmount/feeAmount) AND the raw atomic-unit string
