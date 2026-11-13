@@ -403,7 +403,7 @@ export function EvmStatsClient({
 
             {/* Charts */}
             {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={wethPriceUsd} fmt={formatUsd} />}
-            {heatLots.length > 0 && <ProfitHeatmap lots={heatLots} currentPrice={wethPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
+            {(heatLots.length > 0) && <ProfitHeatmap lots={heatLots} buyOrders={openLimitBuys.map((o) => ({ t: new Date(o.createdAt).getTime(), price: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))} currentPrice={wethPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
             {(openLotsChartData.length > 0 || openLimitBuys.length > 0) && (
                 <Card>

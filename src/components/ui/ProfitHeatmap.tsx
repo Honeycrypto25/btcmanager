@@ -10,8 +10,16 @@ export interface HeatLot {
     profitUsd: number; // profit taken when the sell order fills (planned slice × (target − buy))
 }
 
+export interface HeatBuyOrder {
+    t: number; // when the order was placed, ms
+    price: number; // limit price
+    amountUsd: number;
+}
+
 interface Props {
     lots: HeatLot[];
+    /** Open limit BUY orders (pending): drawn as amber dashed lines at their limit price. */
+    buyOrders?: HeatBuyOrder[];
     currentPrice: number | null;
     fmt: (n: number) => string; // price formatter
     fmtUsd: (n: number) => string; // dollar amounts
@@ -41,21 +49,21 @@ function ramp(v: number): string {
 const MONTHS = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Liquidity-heatmap look-alike for profits: where the open sell targets sit, hotter where more profit is waiting. */
-export function ProfitHeatmap({ lots, currentPrice, fmt, fmtUsd }: Props) {
+export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd }: Props) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [hover, setHover] = useState<number | null>(null);
     const [now] = useState(() => Date.now());
 
     const model = useMemo(() => {
         if (lots.length === 0) return null;
-        const prices = [...lots.flatMap((l) => [l.buyPrice, l.targetPrice]), ...(currentPrice ? [currentPrice] : [])];
+        const prices = [...lots.flatMap((l) => [l.buyPrice, l.targetPrice]), ...buyOrders.map((o) => o.price), ...(currentPrice ? [currentPrice] : [])];
         let pmin = Math.min(...prices);
         let pmax = Math.max(...prices);
         const pad = (pmax - pmin) * 0.04 || pmax * 0.02;
         pmin -= pad;
         pmax += pad;
         const bin = (pmax - pmin) / BINS;
-        const t0 = Math.min(...lots.map((l) => l.t));
+        const t0 = Math.min(...lots.map((l) => l.t), ...buyOrders.map((o) => o.t));
         const t1 = Math.max(now, ...lots.map((l) => l.t)) + (now - t0) * 0.02;
         const cols = 90;
         const grid = Array.from({ length: cols }, () => new Float64Array(BINS));
@@ -78,7 +86,7 @@ export function ProfitHeatmap({ lots, currentPrice, fmt, fmtUsd }: Props) {
             if (v > profile[best]) best = i;
         });
         return { pmin, pmax, bin, t0, t1, cols, grid, profile, count, max, pmaxProfile, best };
-    }, [lots, currentPrice, now]);
+    }, [lots, buyOrders, currentPrice, now]);
 
     const draw = useCallback(() => {
         const cv = canvasRef.current;
@@ -147,6 +155,24 @@ export function ProfitHeatmap({ lots, currentPrice, fmt, fmtUsd }: Props) {
             ctx.arc(X(l.t), Y(l.buyPrice), 2.4, 0, Math.PI * 2);
             ctx.fill();
         }
+        // pending limit buys: amber dashed line from the moment the order was placed
+        for (const o of buyOrders) {
+            const y = Y(o.price);
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(Math.max(pl, X(o.t)), y);
+            ctx.lineTo(pl + cw + prof, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1;
+            ctx.fillStyle = "#f59e0b";
+            ctx.beginPath();
+            ctx.arc(Math.max(pl + 3, X(o.t)), y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillText(`Limit buy ${fmt(o.price)} · ${fmtUsd(o.amountUsd)}`, pl + 8, y - 6);
+        }
         // current price
         if (currentPrice) {
             ctx.setLineDash([5, 4]);
@@ -173,7 +199,7 @@ export function ProfitHeatmap({ lots, currentPrice, fmt, fmtUsd }: Props) {
         }
         ctx.fillStyle = "rgba(255,255,255,0.45)";
         ctx.fillText("PROFIL", px, pt + 10);
-    }, [model, lots, currentPrice, fmt, hover]);
+    }, [model, lots, buyOrders, currentPrice, fmt, fmtUsd, hover]);
 
     useEffect(() => {
         draw();
@@ -205,7 +231,7 @@ export function ProfitHeatmap({ lots, currentPrice, fmt, fmtUsd }: Props) {
                 <div>
                     <h2 className="text-sm font-medium text-foreground">Heatmap profituri · unde se vând ordinele active</h2>
                     <p className="text-xs text-muted">
-                        Fiecare lot desenează o bandă la prețul lui țintă, de la data cumpărării până azi. Mai gros și mai fierbinte unde se adună mai mult profit. Bara din dreapta = profit pe nivel.
+                        Fiecare lot desenează o bandă la prețul lui țintă, de la data cumpărării până azi. Mai gros și mai fierbinte unde se adună mai mult profit. Bara din dreapta = profit pe nivel.{buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}
                     </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted">

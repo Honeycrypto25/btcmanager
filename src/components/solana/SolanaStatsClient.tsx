@@ -20,6 +20,7 @@ import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
 import { ProfitHeatmap, type HeatLot } from "@/components/ui/ProfitHeatmap";
+import type { SolanaLimitBuyDTO } from "./SolanaLimitBuyCard";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileSolanaOrdersNow } from "@/app/actions/solana";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -50,12 +51,14 @@ export function SolanaStatsClient({
     solPriceUsd,
     sweeps,
     fuelStatus,
+    limitBuys = [],
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
     solPriceUsd: number | null;
     sweeps: SweepDTO[];
     fuelStatus: FuelStatus | { error: string };
+    limitBuys?: SolanaLimitBuyDTO[];
 }) {
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -150,6 +153,8 @@ export function SolanaStatsClient({
                 targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
             }));
     }, [allLots]);
+
+    const openLimitBuys = useMemo(() => limitBuys.filter((o) => o.status === "OPEN"), [limitBuys]);
 
     // Open sell targets for the profit heatmap: profit taken when each order fills = planned slice × (target − buy).
     const heatLots = useMemo<HeatLot[]>(() => {
@@ -399,11 +404,12 @@ export function SolanaStatsClient({
 
             {/* Charts */}
             {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={solPriceUsd} fmt={formatUsd} />}
-            {heatLots.length > 0 && <ProfitHeatmap lots={heatLots} currentPrice={solPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
+            {(heatLots.length > 0 || openLimitBuys.length > 0) && <ProfitHeatmap lots={heatLots} buyOrders={openLimitBuys.map((o) => ({ t: new Date(o.createdAt).getTime(), price: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))} currentPrice={solPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
-            {openLotsChartData.length > 0 && (
+            {(openLotsChartData.length > 0 || openLimitBuys.length > 0) && (
                 <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
+                    {openLimitBuys.length > 0 && <p className="mb-3 text-xs text-amber-400">Liniile galbene punctate = ordine limit de cumpărare active (nivelul la care se cumpără).</p>}
                     <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={openLotsChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -422,6 +428,17 @@ export function SolanaStatsClient({
                                     label={{ value: `Preț curent: ${formatUsd(solPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
                                 />
                             )}
+                            {openLimitBuys.map((o) => (
+                                <ReferenceLine
+                                    key={o.id}
+                                    y={Number(o.limitPriceUsd)}
+                                    stroke="#f59e0b"
+                                    strokeDasharray="6 4"
+                                    strokeWidth={1.5}
+                                    ifOverflow="extendDomain"
+                                    label={{ value: `Limit buy ${formatUsd(Number(o.limitPriceUsd))} · ${formatUsd(Number(o.amountUsd))}`, position: "insideBottomLeft", fill: "#f59e0b", fontSize: 11 }}
+                                />
+                            ))}
                             <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
                             <Line type="monotone" dataKey="targetPrice" name="Preț țintă" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
                         </ComposedChart>
