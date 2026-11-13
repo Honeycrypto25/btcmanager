@@ -53,7 +53,7 @@ const fmtFullTime = (t: number) =>
     new Date(t).toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 
 const DAY = 24 * 3600 * 1000;
-type ApyRow = { t: number; col: number; debt: number; spread: number };
+type ApyRow = { t: number; col: number; debt: number; spread: number; cm: number; dm: number; nm: number }; // cm/dm/nm: collateral earned / debt cost / net, in USD per month
 /** One averaged point per UTC day or month (bucket start as the timestamp). */
 function bucketAvg(rows: ApyRow[], unit: "day" | "month"): ApyRow[] {
     const groups = new Map<number, ApyRow[]>();
@@ -67,7 +67,7 @@ function bucketAvg(rows: ApyRow[], unit: "day" | "month"): ApyRow[] {
     const avg = (g: ApyRow[], f: (r: ApyRow) => number) => g.reduce((s, r) => s + f(r), 0) / g.length;
     return [...groups.entries()]
         .sort((a, b) => a[0] - b[0])
-        .map(([t, g]) => ({ t, col: avg(g, (r) => r.col), debt: avg(g, (r) => r.debt), spread: avg(g, (r) => r.spread) }));
+        .map(([t, g]) => ({ t, col: avg(g, (r) => r.col), debt: avg(g, (r) => r.debt), spread: avg(g, (r) => r.spread), cm: avg(g, (r) => r.cm), dm: avg(g, (r) => r.dm), nm: avg(g, (r) => r.nm) }));
 }
 const fmtDayUtc = (t: number, year = false) => new Date(t).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" });
 const fmtMonth = (t: number) => new Date(t).toLocaleDateString("ro-RO", { month: "2-digit", year: "numeric", timeZone: "UTC" });
@@ -623,13 +623,20 @@ function VaultRatesChart({ p }: { p: LendPositionFull }) {
 function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: string }) {
     const liveT = new Date(fetchedAt).getTime();
     const rows = useMemo(() => {
-        const pts = p.snapshots.map((s) => ({ t: s.t, col: s.supplyApy * 100, debt: s.borrowApy * 100, spread: (s.supplyApy - s.borrowApy) * 100 }));
+        // USD per month = value × APY / 12. Rows recorded before balances were stored use today's balances.
+        const mk = (t: number, supply: number, borrow: number, colUsd: number | null, debtUsd: number | null): ApyRow => {
+            const cm = ((colUsd ?? p.collateral.usd) * supply) / 12;
+            const dm = ((debtUsd ?? p.debt.usd) * borrow) / 12;
+            return { t, col: supply * 100, debt: borrow * 100, spread: (supply - borrow) * 100, cm, dm, nm: cm - dm };
+        };
+        const pts = p.snapshots.map((s) => mk(s.t, s.supplyApy, s.borrowApy, s.colUsd, s.debtUsd));
         const last = pts.length ? pts[pts.length - 1].t : 0;
         if (p.collateral.apy != null && p.debt.apy != null && liveT - last > 5 * 60 * 1000) {
-            pts.push({ t: liveT, col: p.collateral.apy * 100, debt: p.debt.apy * 100, spread: (p.collateral.apy - p.debt.apy) * 100 });
+            pts.push(mk(liveT, p.collateral.apy, p.debt.apy, p.collateral.usd, p.debt.usd));
         }
         return pts;
-    }, [p.snapshots, p.collateral.apy, p.debt.apy, liveT]);
+    }, [p.snapshots, p.collateral.apy, p.debt.apy, p.collateral.usd, p.debt.usd, liveT]);
+    const [unit, setUnit] = useState<"usd" | "pct">("usd");
 
     // Default: last 90 days; once more than 90 days of data exist, switch to the monthly view.
     const [pick, setPick] = useState<"w" | "m" | "y" | null>(null);
@@ -654,7 +661,7 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
         return b.length >= 2 ? { view: b, raw: false } : { view: inWin, raw: true };
     }, [rows, mode, end]);
 
-    const title = "Diferența APY · colateral − împrumut";
+    const title = unit === "usd" ? "Câștig net · colateral − împrumut (USD pe lună)" : "Diferența APY · colateral − împrumut";
     if (rows.length < 2) {
         const r = rows[0];
         return (
@@ -674,6 +681,19 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
     }
 
     const toggle = (
+        <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
+            {(["usd", "pct"] as const).map((k) => (
+                <button
+                    key={k}
+                    type="button"
+                    onClick={() => setUnit(k)}
+                    className={cn("rounded-md px-3 py-1 transition-colors", unit === k ? "bg-white/10 text-foreground" : "text-muted hover:text-foreground")}
+                >
+                    {k === "usd" ? "Dolari" : "Procente"}
+                </button>
+            ))}
+        </div>
         <div className="inline-flex rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs">
             {(["w", "m", "y"] as const).map((k) => (
                 <button
@@ -685,6 +705,7 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
                     {k === "w" ? "Săptămână" : k === "m" ? "Lună" : "An"}
                 </button>
             ))}
+        </div>
         </div>
     );
     const modeNote = mode === "w" ? "ultimele 7 zile, toate înregistrările" : mode === "m" ? "ultimele 90 de zile, media zilnică" : "ultimele 12 luni, media lunară";
@@ -709,19 +730,32 @@ function ApySpreadChart({ p, fetchedAt }: { p: LendPositionFull; fetchedAt: stri
         <ChartCard
             title={title}
             action={toggle}
-            subtitle={`Vedere: ${modeNote} · ${view.length} puncte, din valorile înregistrate pentru poziția ta. Peste linia 0 = dobânda colateralului e mai mare decât a împrumutului.`}
+            subtitle={`Vedere: ${modeNote} · ${view.length} puncte, din valorile înregistrate pentru poziția ta. ${unit === "usd" ? "Dobânda colateralului în dolari minus costul împrumutului, la soldurile din fiecare moment. Peste linia 0 = câștigi mai mult decât plătești." : "Procentele ignoră mărimea soldurilor: colateralul e mai mare decât datoria, deci poți fi pe plus în dolari chiar dacă diferența în procente e negativă."}`}
         >
             <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={view} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
                     <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} ticks={ticks} tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(t) => axisFmt(Number(t))} />
-                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} width={48} />
-                    <Tooltip content={<Tip fmt={(v, k) => (k === "spread" ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} pp` : `${v.toFixed(2)}%`)} labelFmt={tipLabel} />} />
+                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => (unit === "usd" ? `${Number(v) < 0 ? "−" : ""}$${Math.abs(Number(v)).toFixed(Math.abs(Number(v)) < 10 ? 2 : 0)}` : `${Number(v).toFixed(1)}%`)} width={52} />
+                    <Tooltip
+                        content={
+                            <Tip
+                                fmt={(v, k) =>
+                                    unit === "usd"
+                                        ? `${v < 0 ? "−" : k === "nm" && v > 0 ? "+" : ""}$${Math.abs(v).toFixed(2)}`
+                                        : k === "spread"
+                                          ? `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} pp`
+                                          : `${v.toFixed(2)}%`
+                                }
+                                labelFmt={tipLabel}
+                            />
+                        }
+                    />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <ReferenceLine y={0} stroke="#ffffff" strokeOpacity={0.4} />
-                    <Line type="monotone" dataKey="col" name="APY colateral" stroke={GREEN} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
-                    <Line type="monotone" dataKey="debt" name="APY împrumut" stroke={AMBER} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
-                    <Line type="monotone" dataKey="spread" name="Diferență (pp)" stroke={PURPLE} strokeWidth={2} strokeDasharray="5 4" dot={view.length < 12 || bucketed && view.length < 40} />
+                    <Line type="monotone" dataKey={unit === "usd" ? "cm" : "col"} name={unit === "usd" ? "Colateral câștigă ($/lună)" : "APY colateral"} stroke={GREEN} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
+                    <Line type="monotone" dataKey={unit === "usd" ? "dm" : "debt"} name={unit === "usd" ? "Împrumut costă ($/lună)" : "APY împrumut"} stroke={AMBER} strokeWidth={2} dot={view.length < 12 || bucketed && view.length < 40} />
+                    <Line type="monotone" dataKey={unit === "usd" ? "nm" : "spread"} name={unit === "usd" ? "Net ($/lună)" : "Diferență (pp)"} stroke={PURPLE} strokeWidth={2} strokeDasharray="5 4" dot={view.length < 12 || bucketed && view.length < 40} />
                 </LineChart>
             </ResponsiveContainer>
         </ChartCard>

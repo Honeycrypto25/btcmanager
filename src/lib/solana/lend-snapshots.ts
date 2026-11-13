@@ -52,7 +52,8 @@ export async function readLendSnapshots(p: LendPosition, limit = 2000): Promise<
         type Row = { capturedAt: Date; supplyApy: number; borrowApy: number; collateralAmount: number; debtAmount: number; collateralPriceUsd: number; debtPriceUsd: number };
         return rows.reverse().map((r: Row) => {
             const col = r.collateralAmount * r.collateralPriceUsd;
-            return { t: r.capturedAt.getTime(), supplyApy: r.supplyApy, borrowApy: r.borrowApy, ltv: col > 0 ? (r.debtAmount * r.debtPriceUsd) / col : null };
+            const debt = r.debtAmount * r.debtPriceUsd;
+            return { t: r.capturedAt.getTime(), supplyApy: r.supplyApy, borrowApy: r.borrowApy, ltv: col > 0 ? debt / col : null, colUsd: col > 0 ? col : null, debtUsd: col > 0 ? debt : null };
         });
     } catch (err) {
         console.warn("[lend-snapshots] read failed:", (err as Error).message);
