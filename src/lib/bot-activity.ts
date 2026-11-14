@@ -36,31 +36,76 @@ export async function getBotActivity(userId: string): Promise<BotActivity[]> {
         db.evaSettings.findUnique({ where: { userId }, select: { enabled: true, intervalHours: true, lastRunAt: true } }),
     ]);
 
+    // One plain-typed loader per bot (the Prisma delegates differ per model, so they can't be
+    // called through a shared union — each loader calls its own delegate and returns the same shape).
+    type LotStats = {
+        placed: Date | null; // latest sell order created
+        checked: Date | null; // latest order check
+        finalized: Date | null; // latest sell filled
+        count30: number; // sells filled in the last 30 days
+        buyPlaced: Date | null; // latest limit-buy order created (SOL/Base)
+        buyChecked: Date | null;
+        buyFinalized: Date | null;
+    };
+    const NO_BUY = { buyPlaced: null, buyChecked: null, buyFinalized: null };
+    const loaders: Record<string, () => Promise<LotStats>> = {
+        SOL: async () => {
+            const [agg, filled, count30, bo, boFilled] = await Promise.all([
+                db.solanaLot.aggregate({ where: { userId }, _max: { sellOrderCreatedAt: true, lastCheckedAt: true } }),
+                db.solanaLot.aggregate({ where: { userId, status: "FILLED" }, _max: { soldAt: true } }),
+                db.solanaLot.count({ where: { userId, status: "FILLED", soldAt: { gte: since30 } } }),
+                db.solanaBuyOrder.aggregate({ where: { userId }, _max: { createdAt: true, lastCheckedAt: true } }),
+                db.solanaBuyOrder.aggregate({ where: { userId, status: "FILLED" }, _max: { filledAt: true } }),
+            ]);
+            return { placed: agg._max.sellOrderCreatedAt, checked: agg._max.lastCheckedAt, finalized: filled._max.soldAt, count30, buyPlaced: bo._max.createdAt, buyChecked: bo._max.lastCheckedAt, buyFinalized: boFilled._max.filledAt };
+        },
+        BASE: async () => {
+            const [agg, filled, count30, bo, boFilled] = await Promise.all([
+                db.evmLot.aggregate({ where: { userId }, _max: { sellOrderCreatedAt: true, lastCheckedAt: true } }),
+                db.evmLot.aggregate({ where: { userId, status: "FILLED" }, _max: { soldAt: true } }),
+                db.evmLot.count({ where: { userId, status: "FILLED", soldAt: { gte: since30 } } }),
+                db.evmBuyOrder.aggregate({ where: { userId }, _max: { createdAt: true, lastCheckedAt: true } }),
+                db.evmBuyOrder.aggregate({ where: { userId, status: "FILLED" }, _max: { filledAt: true } }),
+            ]);
+            return { placed: agg._max.sellOrderCreatedAt, checked: agg._max.lastCheckedAt, finalized: filled._max.soldAt, count30, buyPlaced: bo._max.createdAt, buyChecked: bo._max.lastCheckedAt, buyFinalized: boFilled._max.filledAt };
+        },
+        BNB: async () => {
+            const [agg, filled, count30] = await Promise.all([
+                db.bnbLot.aggregate({ where: { userId }, _max: { sellOrderCreatedAt: true, lastCheckedAt: true } }),
+                db.bnbLot.aggregate({ where: { userId, status: "FILLED" }, _max: { soldAt: true } }),
+                db.bnbLot.count({ where: { userId, status: "FILLED", soldAt: { gte: since30 } } }),
+            ]);
+            return { placed: agg._max.sellOrderCreatedAt, checked: agg._max.lastCheckedAt, finalized: filled._max.soldAt, count30, ...NO_BUY };
+        },
+        EVA: async () => {
+            const [agg, filled, count30] = await Promise.all([
+                db.evaLot.aggregate({ where: { userId }, _max: { sellOrderCreatedAt: true, lastCheckedAt: true } }),
+                db.evaLot.aggregate({ where: { userId, status: "FILLED" }, _max: { soldAt: true } }),
+                db.evaLot.count({ where: { userId, status: "FILLED", soldAt: { gte: since30 } } }),
+            ]);
+            return { placed: agg._max.sellOrderCreatedAt, checked: agg._max.lastCheckedAt, finalized: filled._max.soldAt, count30, ...NO_BUY };
+        },
+    };
+
     const lotBots = [
-        { bot: "SOL", key: "sol", label: "Solana (SOL)", s: solS, lot: db.solanaLot, buyOrders: db.solanaBuyOrder },
-        { bot: "BASE", key: "base", label: "Base (ETH)", s: evmS, lot: db.evmLot, buyOrders: db.evmBuyOrder },
-        { bot: "BNB", key: "bnb", label: "BNB", s: bnbS, lot: db.bnbLot, buyOrders: null },
-        { bot: "EVA", key: "eva", label: "EVA", s: evaS, lot: db.evaLot, buyOrders: null },
-    ] as const;
+        { bot: "SOL", key: "sol", label: "Solana (SOL)", s: solS },
+        { bot: "BASE", key: "base", label: "Base (ETH)", s: evmS },
+        { bot: "BNB", key: "bnb", label: "BNB", s: bnbS },
+        { bot: "EVA", key: "eva", label: "EVA", s: evaS },
+    ];
 
     for (const b of lotBots) {
         if (!b.s) continue;
-        const [agg, filled, bo, boFilled, count30] = await Promise.all([
-            b.lot.aggregate({ where: { userId }, _max: { sellOrderCreatedAt: true, lastCheckedAt: true } }),
-            b.lot.aggregate({ where: { userId, status: "FILLED" }, _max: { soldAt: true } }),
-            b.buyOrders ? b.buyOrders.aggregate({ where: { userId }, _max: { createdAt: true, lastCheckedAt: true } }) : Promise.resolve(null),
-            b.buyOrders ? b.buyOrders.aggregate({ where: { userId, status: "FILLED" }, _max: { filledAt: true } }) : Promise.resolve(null),
-            b.lot.count({ where: { userId, status: "FILLED", soldAt: { gte: since30 } } }),
-        ]);
+        const st = await loaders[b.bot]();
         const uptime = await getBotUptime({ userId, bot: b.bot, label: b.label, enabled: b.s.enabled, intervalHours: b.s.intervalHours });
         out.push({
             bot: b.bot,
             label: b.label,
             enabled: b.s.enabled,
-            lastOrderPlacedAt: latest(agg._max.sellOrderCreatedAt, bo?._max.createdAt),
-            lastCheckedAt: latest(agg._max.lastCheckedAt, b.s.lastRunAt, bo?._max.lastCheckedAt),
-            lastFinalizedAt: latest(filled._max.soldAt, boFilled?._max.filledAt),
-            finalized30d: count30,
+            lastOrderPlacedAt: latest(st.placed, st.buyPlaced),
+            lastCheckedAt: latest(st.checked, b.s.lastRunAt, st.buyChecked),
+            lastFinalizedAt: latest(st.finalized, st.buyFinalized),
+            finalized30d: st.count30,
             profit30d: profits.get(b.key) ?? 0,
             uptime,
         });
