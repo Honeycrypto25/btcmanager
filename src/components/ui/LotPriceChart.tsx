@@ -10,6 +10,8 @@ export interface LotChartPoint {
     buyPrice: number;
     targetPrice: number | null;
     status: string; // "OPEN" | "FILLED" | others (ignored)
+    /** Actual executed sell price of a FILLED lot (proceeds ÷ tokens sold), when known. */
+    soldPrice?: number | null;
 }
 
 export interface LotChartLimitBuy {
@@ -46,7 +48,7 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                     status: l.status,
                     buyPrice: l.buyPrice,
                     targetPrice: l.status === "OPEN" ? l.targetPrice : null,
-                    donePrice: l.status === "FILLED" ? l.targetPrice : null,
+                    donePrice: l.status === "FILLED" ? (l.soldPrice ?? l.targetPrice) : null,
                 })),
         [lots]
     );
@@ -81,7 +83,15 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                                 <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" minTickGap={24} />
                                 <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
-                                <Tooltip contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} formatter={(v) => money(Number(v))} />
+                                <Tooltip contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} formatter={(v, _name, item) => {
+                                        // Target / executed prices also show the % over the lot's own buy price.
+                                        const buy = Number((item?.payload as { buyPrice?: number } | undefined)?.buyPrice);
+                                        const val = Number(v);
+                                        if (item?.dataKey === "buyPrice" || !(buy > 0)) return money(val);
+                                        const pct = (val / buy - 1) * 100;
+                                        return `${money(val)} (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`;
+                                    }}
+                                />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
                                 {currentPrice && (
                                     <ReferenceLine
@@ -104,7 +114,7 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                                 ))}
                                 <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
                                 <Line type="monotone" dataKey="targetPrice" name="Preț țintă (activ)" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} connectNulls />
-                                {withDone && <Line type="monotone" dataKey="donePrice" name="Țintă atinsă (finalizat)" stroke="#9ca3af" strokeWidth={0} dot={{ r: 3.5, fill: "#9ca3af", stroke: "#9ca3af" }} activeDot={{ r: 5 }} />}
+                                {withDone && <Line type="monotone" dataKey="donePrice" name="Preț vânzare (executat)" stroke="#9ca3af" strokeWidth={0} dot={{ r: 3.5, fill: "#9ca3af", stroke: "#9ca3af" }} activeDot={{ r: 5 }} />}
                             </ComposedChart>
                         </ResponsiveContainer>
                     </div>

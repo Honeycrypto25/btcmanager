@@ -404,7 +404,7 @@ export function BnbStatsClient({
             {heatLots.length > 0 && <ProfitHeatmap lots={heatLots} currentPrice={bnbPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
             <LotPriceChart
-                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status }))}
+                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status, soldPrice: Number(l.bnbSold) > 0 && l.sellProceedsUsd ? Number(l.sellProceedsUsd) / Number(l.bnbSold) : null }))}
                 currentPrice={bnbPriceUsd}
                 fmt={formatUsd}
                 

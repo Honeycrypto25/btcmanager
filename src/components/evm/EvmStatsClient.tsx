@@ -413,7 +413,7 @@ export function EvmStatsClient({
             {(heatLots.length > 0) && <ProfitHeatmap lots={heatLots} buyOrders={openLimitBuys.map((o) => ({ t: new Date(o.createdAt).getTime(), price: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))} currentPrice={wethPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
             <LotPriceChart
-                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status }))}
+                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status, soldPrice: Number(l.wethSold) > 0 && l.sellProceedsUsd ? Number(l.sellProceedsUsd) / Number(l.wethSold) : null }))}
                 currentPrice={wethPriceUsd}
                 fmt={formatUsd}
                 limitBuys={openLimitBuys.map((o) => ({ id: o.id, limitPriceUsd: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))}

@@ -598,7 +598,14 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => fmtUsd(Number(v))}
+                                formatter={(v, _name, item) => {
+                                    // The buy-back target also shows its % under the lot's own sell price.
+                                    const sell = Number((item?.payload as { sellPrice?: number } | undefined)?.sellPrice);
+                                    const val = Number(v);
+                                    if (item?.dataKey !== "targetPrice" || !(sell > 0)) return fmtUsd(val);
+                                    const pct = (val / sell - 1) * 100;
+                                    return `${fmtUsd(val)} (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`;
+                                }}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
                             {openLotsTokenPrices.map((t, i) => (

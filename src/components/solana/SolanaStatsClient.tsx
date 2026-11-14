@@ -414,7 +414,7 @@ export function SolanaStatsClient({
             {(heatLots.length > 0 || openLimitBuys.length > 0) && <ProfitHeatmap lots={heatLots} buyOrders={openLimitBuys.map((o) => ({ t: new Date(o.createdAt).getTime(), price: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))} currentPrice={solPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
             <LotPriceChart
-                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status }))}
+                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status, soldPrice: Number(l.solSold) > 0 && l.sellProceedsUsd ? Number(l.sellProceedsUsd) / Number(l.solSold) : null }))}
                 currentPrice={solPriceUsd}
                 fmt={formatUsd}
                 limitBuys={openLimitBuys.map((o) => ({ id: o.id, limitPriceUsd: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))}
