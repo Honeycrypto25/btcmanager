@@ -1,6 +1,7 @@
 "use client";
 
 import { fmtLotDate, fmtLotDays, lotTiming } from "@/lib/lot-timing";
+import { SortTh, useSort } from "@/components/ui/SortableTh";
 import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
@@ -795,6 +796,37 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
     const [page, setPage] = useState(1);
     const lotFilter = useLotStatusFilter(tableLots, ["PENDING_BUYBACK_ORDER", "OPEN"]);
     const lots = lotFilter.filtered;
+    const priceOf = (l: LotDTO) => (l.status === "OPEN" ? priceBySettingsId.get(l.settingsId) ?? null : null);
+    const pctOf = (l: LotDTO) => {
+        const cur = priceOf(l);
+        return cur !== null ? ((cur - Number(l.sellPriceUsd)) / Number(l.sellPriceUsd)) * 100 : null;
+    };
+    const num = (v: string | null | undefined) => (v === null || v === undefined ? null : Number(v));
+    const { sorted, sort, toggle } = useSort<LotDTO>(
+        lots,
+        {
+            token: (l) => symbolBySettingsId.get(l.settingsId) ?? "",
+            status: (l) => l.status,
+            sold: (l) => Number(l.tokenSold),
+            sellPrice: (l) => Number(l.sellPriceUsd),
+            received: (l) => Number(l.usdcReceived),
+            profit: (l) => Number(l.usdcProfit),
+            target: (l) => num(l.targetPriceUsd),
+            current: priceOf,
+            pct: pctOf,
+            rebought: (l) => num(l.tokenReacquired),
+            date: (l) => new Date(l.soldAt).getTime(),
+            placed: (l) => (l.buybackOrderCreatedAt ? new Date(l.buybackOrderCreatedAt).getTime() : null),
+            executed: (l) => (l.status === "FILLED" && l.filledAt ? new Date(l.filledAt).getTime() : null),
+            days: (l) => lotTiming(l.buybackOrderCreatedAt, l.status === "FILLED" ? l.filledAt : null).days,
+        },
+        { key: "date", dir: "desc" },
+        ["status", "token"]
+    );
+    const onSort = (k: string) => {
+        toggle(k);
+        setPage(1);
+    };
     const [copiedHash, setCopiedHash] = useState<string | null>(null);
     const [busyLotId, setBusyLotId] = useState<string | null>(null);
     const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
@@ -832,7 +864,6 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
         setTimeout(() => setCopiedHash(null), 2000);
     };
     if (tableLots.length === 0) return <p className="text-sm text-muted">Niciun lot încă.</p>;
-    const sorted = [...lots].sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
@@ -852,20 +883,20 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
                 <table className="w-full text-sm min-w-[1800px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
-                            <th className="px-6 py-2 font-medium">Token</th>
-                            <th className="px-3 py-2 font-medium">Status</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Vândut</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Preț vânzare</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Încasat</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Profit realizat</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Preț țintă răscump.</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Preț curent</th>
-                            <th className="px-3 py-2 font-medium">%</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Răscumpărat</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Data</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Ordin plasat</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Executat</th>
-                            <th className="px-3 py-2 font-medium whitespace-nowrap">Zile</th>
+                            <SortTh className="px-6 py-2 font-medium" label="Token" k="token" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium" label="Status" k="status" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Vândut" k="sold" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Preț vânzare" k="sellPrice" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Încasat" k="received" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Profit realizat" k="profit" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Preț țintă răscump." k="target" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Preț curent" k="current" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium" label="%" k="pct" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Răscumpărat" k="rebought" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Data" k="date" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Ordin plasat" k="placed" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Executat" k="executed" sort={sort} onSort={onSort} />
+                            <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Zile" k="days" sort={sort} onSort={onSort} />
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Vânzare</th>
                             <th className="px-3 py-2 font-medium">Ordin 1inch</th>
                             {isAdmin && <th className="px-3 py-2 font-medium">Acțiune</th>}

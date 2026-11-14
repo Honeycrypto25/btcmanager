@@ -19,6 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Sparkles, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
+import { SortTh, useSort } from "@/components/ui/SortableTh";
 import { LotPriceChart } from "@/components/ui/LotPriceChart";
 import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
 import { fmtLotDate, fmtLotDays, lotTiming } from "@/lib/lot-timing";
@@ -645,6 +646,37 @@ function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; cur
     const [page, setPage] = useState(1);
     const lotFilter = useLotStatusFilter(tableLots, PENDING_STATUSES);
     const lots = lotFilter.filtered;
+    const pctOf = (l: LotDTO) =>
+        PENDING_STATUSES.has(l.status) && currentPriceUsd ? ((currentPriceUsd - Number(l.buyPriceUsd)) / Number(l.buyPriceUsd)) * 100 : null;
+    const num = (v: string | null | undefined) => (v === null || v === undefined ? null : Number(v));
+    const { sorted, sort, toggle } = useSort<LotDTO>(
+        lots,
+        {
+            date: (l) => new Date(l.boughtAt).getTime(),
+            status: (l) => l.status,
+            placed: (l) => (l.sellOrderCreatedAt ? new Date(l.sellOrderCreatedAt).getTime() : null),
+            executed: (l) => (l.status === "FILLED" && l.soldAt ? new Date(l.soldAt).getTime() : null),
+            days: (l) => lotTiming(l.sellOrderCreatedAt, l.status === "FILLED" ? l.soldAt : null).days,
+            amount: (l) => Number(l.buyAmountUsd),
+            got: (l) => Number(l.evaAcquired),
+            buy: (l) => Number(l.buyPriceUsd),
+            fee: (l) => Number(l.buyFeeUsd),
+            target: (l) => num(l.targetPriceUsd),
+            current: (l) => (PENDING_STATUSES.has(l.status) ? currentPriceUsd : null),
+            pct: pctOf,
+            sold: (l) => num(l.sellProceedsUsd),
+            pnl: (l) => num(l.realizedPnlUsd),
+            remaining: (l) => Number(l.evaRemaining),
+            checked: (l) => (l.lastCheckedAt ? new Date(l.lastCheckedAt).getTime() : null),
+            quoted: (l) => num(l.quotedPriceUsd),
+            slippage: (l) => (l.quotedPriceUsd ? ((Number(l.buyPriceUsd) - Number(l.quotedPriceUsd)) / Number(l.quotedPriceUsd)) * 100 : null),
+        },
+        { key: "date", dir: "desc" }
+    );
+    const onSort = (k: string) => {
+        toggle(k);
+        setPage(1);
+    };
     const isAdmin = useIsAdmin();
     const [busyLotId, setBusyLotId] = useState<string | null>(null);
     const [rowMessage, setRowMessage] = useState<{ lotId: string; ok: boolean; text: string } | null>(null);
@@ -694,7 +726,6 @@ function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; cur
     }
 
     if (tableLots.length === 0) return <p className="text-sm text-muted">Niciun ciclu încă.</p>;
-    const sorted = [...lots].sort((a, b) => new Date(b.boughtAt).getTime() - new Date(a.boughtAt).getTime());
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const pageStart = (Math.min(page, totalPages) - 1) * PAGE_SIZE;
     const pageItems = sorted.slice(pageStart, pageStart + PAGE_SIZE);
@@ -713,24 +744,24 @@ function CyclesTable({ lots: tableLots, currentPriceUsd }: { lots: LotDTO[]; cur
             <table className="w-full min-w-[2000px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
-                        <th className="pb-2 pr-4">Data</th>
-                        <th className="pb-2 pr-4">Status</th>
-                        <th className="pb-2 pr-4 whitespace-nowrap">Ordin plasat</th>
-                        <th className="pb-2 pr-4 whitespace-nowrap">Executat</th>
-                        <th className="pb-2 pr-4 whitespace-nowrap">Zile</th>
-                        <th className="pb-2 pr-4">Sumă</th>
-                        <th className="pb-2 pr-4">EVA primit</th>
-                        <th className="pb-2 pr-4">Preț cotat</th>
-                        <th className="pb-2 pr-4">Preț cumpărare</th>
-                        <th className="pb-2 pr-4">Slippage</th>
-                        <th className="pb-2 pr-4">Fee</th>
-                        <th className="pb-2 pr-4">Preț țintă</th>
-                        <th className="pb-2 pr-4">Preț curent</th>
-                        <th className="pb-2 pr-4">%</th>
-                        <th className="pb-2 pr-4">Vândut</th>
-                        <th className="pb-2 pr-4">P&L</th>
-                        <th className="pb-2 pr-4">EVA rămas</th>
-                        <th className="pb-2 pr-4">Verificat</th>
+                        <SortTh className="pb-2 pr-4" label="Data" k="date" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Status" k="status" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4 whitespace-nowrap" label="Ordin plasat" k="placed" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4 whitespace-nowrap" label="Executat" k="executed" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4 whitespace-nowrap" label="Zile" k="days" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Sumă" k="amount" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="EVA primit" k="got" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Preț cotat" k="quoted" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Preț cumpărare" k="buy" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Slippage" k="slippage" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Fee" k="fee" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Preț țintă" k="target" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Preț curent" k="current" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="%" k="pct" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Vândut" k="sold" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="P&L" k="pnl" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="EVA rămas" k="remaining" sort={sort} onSort={onSort} />
+                        <SortTh className="pb-2 pr-4" label="Verificat" k="checked" sort={sort} onSort={onSort} />
                         <th className="pb-2 pr-4">Cumpărare</th>
                         <th className="pb-2 pr-4">Vânzare</th>
                         <th className="pb-2">Ordin</th>
