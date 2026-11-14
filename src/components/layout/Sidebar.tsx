@@ -38,7 +38,8 @@ import {
     Sparkles,
     FileSignature,
     FolderOpen,
-    ShieldCheck
+    ShieldCheck,
+    Activity
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
@@ -53,6 +54,7 @@ type NavEntry = NavLeaf | NavSection;
 
 const navEntries: NavEntry[] = [
     { name: 'Overview', href: '/', icon: Globe },
+    { name: 'Bot Act.', href: '/bot-act', icon: Activity },
     {
         section: 'Bitcoin',
         sectionKey: 'btc',

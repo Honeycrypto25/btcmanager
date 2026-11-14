@@ -1,30 +1,10 @@
 import "server-only";
 import { db } from "@/lib/db";
 
-export type DayStatus = "ok" | "warn" | "error" | "missed" | "pending" | "nodata";
-
-export interface UptimeDay {
-    date: string; // yyyy-mm-dd (UTC)
-    status: DayStatus;
-    source: "log" | "lots" | "none"; // "lots" = estimated from the lot history (before logging started)
-    note?: string;
-}
-
-export interface BotUptime {
-    bot: string;
-    label: string;
-    enabled: boolean;
-    trackedSince: string | null; // first day with a real run log
-    days: UptimeDay[]; // last 30 days, oldest first
-    pct7: number | null;
-    pct30: number | null;
-    counted7: number;
-    counted30: number;
-}
+import { computeUptime, type BotUptime } from "@/lib/bot-uptime-calc";
 
 const DAY = 86_400_000;
-const CRON_GRACE_HOUR_UTC = 11; // crons fire 09:00–09:50 UTC; after this, a missing run is a miss
-const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+export type { BotUptime, UptimeDay, DayStatus } from "@/lib/bot-uptime-calc";
 
 async function lotDatesFor(bot: string, userId: string, settingsId?: string): Promise<Date[]> {
     if (bot === "SOL") return (await db.solanaLot.findMany({ where: { userId, status: { not: "FAILED" } }, select: { boughtAt: true } })).map((l) => l.boughtAt);
@@ -45,7 +25,6 @@ async function lotDatesFor(bot: string, userId: string, settingsId?: string): Pr
 export async function getBotUptime(opts: { userId: string; bot: string; label: string; enabled: boolean; intervalHours: number; settingsId?: string }): Promise<BotUptime> {
     const { userId, bot, label, enabled, intervalHours, settingsId } = opts;
     const now = new Date();
-    const todayKey = dayKey(now);
     const from = new Date(now.getTime() - 29 * DAY);
     from.setUTCHours(0, 0, 0, 0);
 
@@ -55,45 +34,16 @@ export async function getBotUptime(opts: { userId: string; bot: string; label: s
         lotDatesFor(bot, userId, settingsId),
     ]);
 
-    const trackedSince = firstRun ? dayKey(firstRun.runAt) : null;
-    const latestRunByDay = new Map<string, (typeof runs)[number]>();
-    for (const r of runs) latestRunByDay.set(dayKey(r.runAt), r); // asc order → last wins
-    const lotDays = new Set(lotDates.map(dayKey));
-    const firstLotDay = lotDates.length ? dayKey(new Date(Math.min(...lotDates.map((d) => d.getTime())))) : null;
-    const expectsDaily = intervalHours <= 24;
-
-    const days: UptimeDay[] = [];
-    for (let i = 0; i < 30; i++) {
-        const key = dayKey(new Date(from.getTime() + i * DAY));
-        const run = latestRunByDay.get(key);
-        if (run) {
-            days.push({ date: key, status: run.status === "error" ? "error" : run.status === "warn" ? "warn" : "ok", source: "log", note: run.message ?? undefined });
-            continue;
-        }
-        if (lotDays.has(key)) {
-            days.push({ date: key, status: "ok", source: trackedSince && key >= trackedSince ? "log" : "lots", note: "ciclu cu cumpărare/vânzare înregistrat" });
-            continue;
-        }
-        const logging = trackedSince !== null && key >= trackedSince;
-        if (key === todayKey && now.getUTCHours() < CRON_GRACE_HOUR_UTC) {
-            days.push({ date: key, status: "pending", source: "none", note: "încă nu a rulat azi" });
-        } else if (logging) {
-            days.push({ date: key, status: enabled ? "missed" : "nodata", source: "log", note: enabled ? "nicio rulare înregistrată" : "bot dezactivat" });
-        } else if (enabled && expectsDaily && firstLotDay && key > firstLotDay) {
-            days.push({ date: key, status: "missed", source: "lots", note: "estimat: nicio achiziție în ziua asta" });
-        } else {
-            days.push({ date: key, status: "nodata", source: "none" });
-        }
-    }
-
-    const pct = (slice: UptimeDay[]) => {
-        const counted = slice.filter((d) => d.status === "ok" || d.status === "warn" || d.status === "error" || d.status === "missed");
-        const ok = counted.filter((d) => d.status === "ok").length;
-        return { pct: counted.length ? (ok / counted.length) * 100 : null, counted: counted.length };
-    };
-    const p7 = pct(days.slice(-7));
-    const p30 = pct(days);
-    return { bot, label, enabled, trackedSince, days, pct7: p7.pct, pct30: p30.pct, counted7: p7.counted, counted30: p30.counted };
+    return computeUptime({
+        now,
+        bot,
+        label,
+        enabled,
+        intervalHours,
+        runs: runs.map((r) => ({ runAt: r.runAt, status: r.status, message: r.message })),
+        firstRunAt: firstRun?.runAt ?? null,
+        lotDates,
+    });
 }
 
 const LABELS = { SOL: "Solana (SOL)", BASE: "Base (ETH)", BNB: "BNB", EVA: "EVA" } as const;

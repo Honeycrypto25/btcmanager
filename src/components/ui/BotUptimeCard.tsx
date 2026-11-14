@@ -19,6 +19,8 @@ export interface BotUptimeDTO {
     pct30: number | null;
     counted7: number;
     counted30: number;
+    est7?: boolean;
+    est30?: boolean;
 }
 
 const COLOR: Record<UptimeDayDTO["status"], string> = {
@@ -38,13 +40,13 @@ const LABEL: Record<UptimeDayDTO["status"], string> = {
     nodata: "fără date",
 };
 
-function pctColor(p: number | null) {
+export function pctColor(p: number | null) {
     if (p === null) return "text-muted";
     return p >= 99 ? "text-emerald-300" : p >= 90 ? "text-amber-300" : "text-red-400";
 }
-const fmtPct = (p: number | null) => (p === null ? "—" : `${p >= 99.95 ? 100 : p.toFixed(1)}%`);
+export const fmtPct = (p: number | null, est = false) => (p === null ? "—" : `${est ? "~" : ""}${p >= 99.95 ? 100 : p.toFixed(1)}%`);
 
-function Strip({ days, tall }: { days: UptimeDayDTO[]; tall?: boolean }) {
+export function Strip({ days, tall }: { days: UptimeDayDTO[]; tall?: boolean }) {
     return (
         <div className="flex gap-[3px]">
             {days.map((d) => (
@@ -78,14 +80,14 @@ export function BotUptimeCard({ uptime }: { uptime: BotUptimeDTO }) {
                 <div>
                     <div className="mb-1.5 flex items-baseline justify-between">
                         <span className="text-[11px] font-medium uppercase tracking-wider text-faint">Ultimele 7 zile</span>
-                        <span className={`font-mono text-lg ${pctColor(uptime.pct7)}`}>{fmtPct(uptime.pct7)}</span>
+                        <span className={`font-mono text-lg ${pctColor(uptime.pct7)}`}>{fmtPct(uptime.pct7, uptime.est7)}</span>
                     </div>
                     <Strip days={last7} tall />
                 </div>
                 <div>
                     <div className="mb-1.5 flex items-baseline justify-between">
                         <span className="text-[11px] font-medium uppercase tracking-wider text-faint">Ultimele 30 de zile</span>
-                        <span className={`font-mono text-lg ${pctColor(uptime.pct30)}`}>{fmtPct(uptime.pct30)}</span>
+                        <span className={`font-mono text-lg ${pctColor(uptime.pct30)}`}>{fmtPct(uptime.pct30, uptime.est30)}</span>
                     </div>
                     <Strip days={uptime.days} tall />
                     <div className="mt-1 flex justify-between text-[10px] text-faint">
@@ -96,6 +98,7 @@ export function BotUptimeCard({ uptime }: { uptime: BotUptimeDTO }) {
             </div>
 
             <p className="mt-3 text-[11px] text-muted">
+                {uptime.est30 ? "Procentul marcat cu ~ este o estimare din istoricul de loturi (jurnalul real nu are încă zile în interval). " : ""}
                 {uptime.counted30 > 0 ? `${uptime.counted30 - issues} din ${uptime.counted30} zile evaluate au mers fără probleme.` : "Încă nu sunt date suficiente."}{" "}
                 {uptime.trackedSince
                     ? `Jurnalul real al rulărilor începe pe ${uptime.trackedSince}; zilele mai vechi (bare mai șterse) sunt estimate din istoricul de loturi.`
