@@ -81,9 +81,9 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={data}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" minTickGap={24} />
+                                <XAxis dataKey="t" tickFormatter={(t) => format(new Date(Number(t)), "d MMM")} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" minTickGap={24} />
                                 <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
-                                <Tooltip contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} formatter={(v, _name, item) => {
+                                <Tooltip contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} labelFormatter={(t) => format(new Date(Number(t)), "d MMM, HH:mm")} formatter={(v, _name, item) => {
                                         // Target / executed prices also show the % over the lot's own buy price.
                                         const buy = Number((item?.payload as { buyPrice?: number } | undefined)?.buyPrice);
                                         const val = Number(v);

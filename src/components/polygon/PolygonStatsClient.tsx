@@ -280,7 +280,9 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
             .filter((lot) => lot.status === "OPEN")
             .sort((a, b) => new Date(a.soldAt).getTime() - new Date(b.soldAt).getTime())
             .map((lot) => ({
+                id: lot.id, // unique x key — lots sold the same day would otherwise share one tooltip
                 date: `${format(new Date(lot.soldAt), "d MMM")}${tokenFilter === "all" ? ` · ${symbolBySettingsId.get(lot.settingsId) ?? "?"}` : ""}`,
+                time: format(new Date(lot.soldAt), "HH:mm"),
                 settingsId: lot.settingsId,
                 sellPrice: Number(lot.sellPriceUsd),
                 targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
@@ -594,10 +596,14 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                     <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={openLotsChartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                            <XAxis dataKey="id" tickFormatter={(id) => openLotsChartData.find((r) => r.id === id)?.date ?? ""} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
                             <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                                labelFormatter={(id) => {
+                                    const r = openLotsChartData.find((x) => x.id === id);
+                                    return r ? `${r.date}, ${r.time}` : "";
+                                }}
                                 formatter={(v, _name, item) => {
                                     // The buy-back target also shows its % under the lot's own sell price.
                                     const sell = Number((item?.payload as { sellPrice?: number } | undefined)?.sellPrice);
