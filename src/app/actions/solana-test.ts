@@ -1,9 +1,9 @@
 "use server";
 
 import { requireAdmin } from "@/lib/permissions";
-import { testAirdrop, testBalances, testLimitOrder, testSigning, testSwap, testTransfer, type TestNet, type TestResult } from "@/lib/solana/v3/test-ops";
+import { testAirdrop, testBalances, testLimitOrder, testMessageSigning, testSellOrder, testSigning, testSwap, testTokenTransfer, testTransfer, testUltraSwap, type TestNet, type TestResult } from "@/lib/solana/v3/test-ops";
 
-export type SolanaTestId = "signing" | "balances-devnet" | "airdrop" | "transfer-devnet" | "balances-mainnet" | "transfer-mainnet" | "swap" | "limit-order";
+export type SolanaTestId = "signing" | "balances-devnet" | "airdrop" | "transfer-devnet" | "balances-mainnet" | "transfer-mainnet" | "swap" | "limit-order" | "sell-order" | "ultra-swap" | "token-transfer" | "message-signing";
 
 /** Runs one test of the @solana/web3.js v3 bench with the dedicated test wallet. Admin only. */
 export async function runSolanaTest(id: SolanaTestId): Promise<TestResult> {
@@ -26,6 +26,14 @@ export async function runSolanaTest(id: SolanaTestId): Promise<TestResult> {
             return testSwap(1);
         case "limit-order":
             return testLimitOrder();
+        case "sell-order":
+            return testSellOrder();
+        case "ultra-swap":
+            return testUltraSwap(1);
+        case "token-transfer":
+            return testTokenTransfer();
+        case "message-signing":
+            return testMessageSigning();
         default:
             return { ok: false, lines: ["Test necunoscut."] };
     }

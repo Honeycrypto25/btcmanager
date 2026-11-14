@@ -4,6 +4,8 @@ import "server-only";
 // (SOLANA_TEST_PRIVATE_KEY). The live bot keeps using v1 and its own wallet, untouched.
 import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js-v3";
 import bs58 from "bs58";
+import { createPrivateKey, sign as ed25519Sign } from "node:crypto";
+import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddress } from "./spl";
 import { JUPITER_API_BASE, MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "../constants";
 
 export type TestNet = "devnet" | "mainnet";
@@ -68,6 +70,32 @@ async function sendAndConfirm(connection: Connection, raw: Uint8Array, lastValid
     }
 }
 
+/** Reads back the network fee actually paid (RPC replicas can lag, so retry briefly) — the bot records this per trade. */
+async function readFeeLamports(connection: Connection, signature: string): Promise<bigint | null> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const info = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }).catch(() => null);
+        if (info?.meta) return BigInt(info.meta.fee);
+        if (attempt < 4) await sleep(500 * (attempt + 1));
+    }
+    return null;
+}
+const feeLine = (fee: bigint | null) => (fee === null ? "Taxa nu a putut fi citită din tranzacție (RPC întârziat)." : `Taxă citită din tranzacție: ${fee.toString()} lamports (${(Number(fee) / LAMPORTS).toFixed(6)} SOL)`);
+
+/** v3 errors come as "Solana error #N; Decode this error by running ... '<base64 context>'" — unpack the context so the cause is readable. */
+function readableError(err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err);
+    const m = msg.match(/Solana error #(\d+);[\s\S]*?'([A-Za-z0-9+/=]+)'/);
+    if (!m) return msg;
+    try {
+        const ctx = new URLSearchParams(Buffer.from(m[2], "base64").toString("utf8"));
+        const parts = [ctx.get("statusCode") ? `HTTP ${ctx.get("statusCode")}` : null, ctx.get("message")].filter(Boolean);
+        const extra = [...ctx.entries()].filter(([k]) => !["__code", "headers", "statusCode", "message"].includes(k)).map(([k, v]) => `${k}=${v}`);
+        return `Eroare Solana #${m[1]}: ${[...parts, ...extra].join(" · ") || "fără detalii"}`;
+    } catch {
+        return msg;
+    }
+}
+
 async function run(fn: (log: (s: string) => void) => Promise<void>): Promise<TestResult> {
     const lines: string[] = [];
     const t0 = Date.now();
@@ -76,7 +104,7 @@ async function run(fn: (log: (s: string) => void) => Promise<void>): Promise<Tes
         lines.push(`✓ Reușit în ${((Date.now() - t0) / 1000).toFixed(1)}s`);
         return { ok: true, lines };
     } catch (err) {
-        lines.push(`✗ ${err instanceof Error ? err.message : String(err)}`);
+        lines.push(`✗ ${readableError(err)}`);
         return { ok: false, lines };
     }
 }
@@ -154,6 +182,7 @@ export function testTransfer(net: TestNet): Promise<TestResult> {
         await tx.sign([kp]);
         const sig = await sendAndConfirm(connection, tx.serialize(), lastValidBlockHeight);
         log(`Confirmat: ${explorer(sig, net)}`);
+        log(feeLine(await readFeeLamports(connection, sig)));
         const after = await connection.getBalance(kp.publicKey);
         log(`Sold după ${(Number(after) / LAMPORTS).toFixed(6)} SOL (taxă ${(Number(before - after) / LAMPORTS).toFixed(6)} SOL)`);
     });
@@ -202,17 +231,58 @@ export function testSwap(amountUsd = 1): Promise<TestResult> {
         const last = lastValidBlockHeight !== undefined ? BigInt(lastValidBlockHeight) : BigInt(await connection.getBlockHeight("confirmed")) + 150n;
         const sig = await sendAndConfirm(connection, tx.serialize(), last);
         log(`Swap confirmat: ${explorer(sig, "mainnet")}`);
+        log(feeLine(await readFeeLamports(connection, sig)));
     });
 }
 
+/** Places a Jupiter Trigger V1 order and cancels it right away (same calls the bot uses for buy and sell orders). */
+async function placeAndCancel(kp: Keypair, log: (s: string) => void, order: { inputMint: string; outputMint: string; makingAmount: string; takingAmount: string }) {
+    const owner = kp.publicKey.toBase58();
+    const signAndExecute = async (transaction: string, requestId: string) => {
+        const tx = VersionedTransaction.deserialize(b64ToBytes(transaction));
+        await tx.sign([kp]);
+        const r = await jup<{ signature: string; status: string; error?: string }>(`/trigger/v1/execute`, {
+            method: "POST",
+            body: JSON.stringify({ signedTransaction: bytesToB64(tx.serialize()), requestId }),
+        });
+        if (r.status !== "Success") throw new Error(`Jupiter execute: ${r.error ?? r.status}`);
+        return r.signature;
+    };
+
+    const created = await jup<{ order: string; transaction: string; requestId: string }>(`/trigger/v1/createOrder`, {
+        method: "POST",
+        body: JSON.stringify({
+            inputMint: order.inputMint,
+            outputMint: order.outputMint,
+            maker: owner,
+            payer: owner,
+            params: { makingAmount: order.makingAmount, takingAmount: order.takingAmount },
+            computeUnitPrice: "auto",
+        }),
+    });
+    const placeSig = await signAndExecute(created.transaction, created.requestId);
+    log(`Ordin plasat (${created.order}): ${explorer(placeSig, "mainnet")}`);
+
+    try {
+        await sleep(3000);
+        const crafted = await jup<{ transaction: string; requestId: string }>(`/trigger/v1/cancelOrder`, {
+            method: "POST",
+            body: JSON.stringify({ maker: owner, order: created.order, computeUnitPrice: "auto" }),
+        });
+        const cancelSig = await signAndExecute(crafted.transaction, crafted.requestId);
+        log(`Ordin anulat, fondurile returnate: ${explorer(cancelSig, "mainnet")}`);
+    } catch (err) {
+        throw new Error(`Ordinul ${created.order} a fost PLASAT, dar anularea a eșuat: ${err instanceof Error ? err.message : String(err)}. Anulează-l manual pe jup.ag (cu walletul de test).`);
+    }
+}
+
 /**
- * 6. Mainnet: place a limit BUY (USDC -> SOL) far below the market so it can't fill, then cancel it.
+ * 8. Mainnet: place a limit BUY (USDC -> SOL) far below the market so it can't fill, then cancel it.
  * Jupiter escrows the USDC on create and returns it on cancel — only network fees are spent.
  */
 export function testLimitOrder(): Promise<TestResult> {
     return run(async (log) => {
         const kp = await loadTestKeypair();
-        const owner = kp.publicKey.toBase58();
         const connection = new Connection(rpcUrl("mainnet"), "confirmed");
         const amountUsd = MIN_TRIGGER_ORDER_USD;
         const usdc = await usdcBalance(connection, kp.publicKey);
@@ -220,46 +290,135 @@ export function testLimitOrder(): Promise<TestResult> {
         const price = await solPrice();
         const limit = price * 0.5;
         log(`Preț SOL $${price.toFixed(2)} → ordin limit de cumpărare $${amountUsd} la $${limit.toFixed(2)} (−50%, nu se poate executa)`);
-
-        const signAndExecute = async (transaction: string, requestId: string) => {
-            const tx = VersionedTransaction.deserialize(b64ToBytes(transaction));
-            await tx.sign([kp]);
-            const r = await jup<{ signature: string; status: string; error?: string }>(`/trigger/v1/execute`, {
-                method: "POST",
-                body: JSON.stringify({ signedTransaction: bytesToB64(tx.serialize()), requestId }),
-            });
-            if (r.status !== "Success") throw new Error(`Jupiter execute: ${r.error ?? r.status}`);
-            return r.signature;
-        };
-
-        const created = await jup<{ order: string; transaction: string; requestId: string }>(`/trigger/v1/createOrder`, {
-            method: "POST",
-            body: JSON.stringify({
-                inputMint: USDC_MINT,
-                outputMint: SOL_MINT,
-                maker: owner,
-                payer: owner,
-                params: {
-                    makingAmount: String(Math.round(amountUsd * 10 ** USDC_DECIMALS)),
-                    takingAmount: String(Math.round((amountUsd / limit) * 10 ** SOL_DECIMALS)),
-                },
-                computeUnitPrice: "auto",
-            }),
+        await placeAndCancel(kp, log, {
+            inputMint: USDC_MINT,
+            outputMint: SOL_MINT,
+            makingAmount: String(Math.round(amountUsd * 10 ** USDC_DECIMALS)),
+            takingAmount: String(Math.round((amountUsd / limit) * 10 ** SOL_DECIMALS)),
         });
-        const placeSig = await signAndExecute(created.transaction, created.requestId);
-        log(`Ordin plasat (${created.order}): ${explorer(placeSig, "mainnet")}`);
+    });
+}
 
-        try {
-            await sleep(3000);
-            const crafted = await jup<{ transaction: string; requestId: string }>(`/trigger/v1/cancelOrder`, {
-                method: "POST",
-                body: JSON.stringify({ maker: owner, order: created.order, computeUnitPrice: "auto" }),
-            });
-            const cancelSig = await signAndExecute(crafted.transaction, crafted.requestId);
-            log(`Ordin anulat, USDC returnați: ${explorer(cancelSig, "mainnet")}`);
-        } catch (err) {
-            throw new Error(`Ordinul ${created.order} a fost PLASAT, dar anularea a eșuat: ${err instanceof Error ? err.message : String(err)}. Anulează-l manual pe jup.ag (cu walletul de test).`);
+/**
+ * 9. Mainnet: place a take-profit SELL (SOL -> USDC) at double the market price, then cancel it —
+ * the order the bot places after every buy. Needs ~$5.5 of SOL in the test wallet.
+ */
+export function testSellOrder(): Promise<TestResult> {
+    return run(async (log) => {
+        const kp = await loadTestKeypair();
+        const connection = new Connection(rpcUrl("mainnet"), "confirmed");
+        const price = await solPrice();
+        const sellUsd = MIN_TRIGGER_ORDER_USD * 1.04; // small margin over Jupiter's $5 minimum
+        const solToSell = sellUsd / price;
+        const sol = Number(await connection.getBalance(kp.publicKey)) / LAMPORTS;
+        const needed = solToSell + 0.006; // + fees and temporary account rent
+        if (sol < needed) throw new Error(`Walletul de test are ${sol.toFixed(4)} SOL; pentru ordinul de vânzare de $${sellUsd.toFixed(2)} trebuie ~${needed.toFixed(4)} SOL (se întorc la anulare). Mai trimite ~${(needed - sol).toFixed(4)} SOL.`);
+        const target = price * 2;
+        log(`Preț SOL $${price.toFixed(2)} → ordin de vânzare ${solToSell.toFixed(4)} SOL la $${target.toFixed(2)} (+100%, nu se poate executa)`);
+        await placeAndCancel(kp, log, {
+            inputMint: SOL_MINT,
+            outputMint: USDC_MINT,
+            makingAmount: String(Math.round(solToSell * 10 ** SOL_DECIMALS)),
+            takingAmount: String(Math.round(solToSell * target * 10 ** USDC_DECIMALS)),
+        });
+    });
+}
+
+/** 10. Mainnet: swap $1 USDC -> SOL through Jupiter ULTRA (the API the EVA bot buys with). */
+export function testUltraSwap(amountUsd = 1): Promise<TestResult> {
+    return run(async (log) => {
+        const kp = await loadTestKeypair();
+        const connection = new Connection(rpcUrl("mainnet"), "confirmed");
+        const usdc = await usdcBalance(connection, kp.publicKey);
+        if (usdc < amountUsd) throw new Error(`Walletul de test are ${usdc.toFixed(2)} USDC; trebuie cel puțin $${amountUsd}.`);
+        const qs = new URLSearchParams({ inputMint: USDC_MINT, outputMint: SOL_MINT, amount: String(Math.round(amountUsd * 10 ** USDC_DECIMALS)), taker: kp.publicKey.toBase58() });
+        const res = await fetch(`https://lite-api.jup.ag/ultra/v1/order?${qs.toString()}`, { cache: "no-store" });
+        const order = (await res.json()) as { transaction?: string | null; requestId: string; outAmount?: string; error?: string };
+        if (!res.ok || !order.transaction) throw new Error(`Jupiter Ultra nu a întors o tranzacție: ${order.error ?? res.status}`);
+        log(`Ordin Ultra: $${amountUsd} USDC → ~${(Number(order.outAmount ?? 0) / 10 ** SOL_DECIMALS).toFixed(6)} SOL`);
+        const tx = VersionedTransaction.deserialize(b64ToBytes(order.transaction));
+        await tx.sign([kp]);
+        const exec = await fetch(`https://lite-api.jup.ag/ultra/v1/execute`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ signedTransaction: bytesToB64(tx.serialize()), requestId: order.requestId }),
+            cache: "no-store",
+        });
+        const executed = (await exec.json()) as { status?: string; signature?: string; error?: string; code?: number; outputAmountResult?: string };
+        if (executed.status !== "Success" || !executed.signature) throw new Error(`Swap-ul Ultra a eșuat: ${executed.error ?? "eroare necunoscută"} (cod ${executed.code ?? "?"})`);
+        log(`Swap Ultra confirmat: ${explorer(executed.signature, "mainnet")}`);
+        if (executed.outputAmountResult) log(`Primit efectiv: ${(Number(executed.outputAmountResult) / 10 ** SOL_DECIMALS).toFixed(6)} SOL`);
+        log(feeLine(await readFeeLamports(connection, executed.signature)));
+    });
+}
+
+/** 11. Mainnet: SPL token transfer — 0.01 USDC from the test wallet's token account to itself (the EVA sweep's instructions). */
+export function testTokenTransfer(): Promise<TestResult> {
+    return run(async (log) => {
+        const kp = await loadTestKeypair();
+        const connection = new Connection(rpcUrl("mainnet"), "confirmed");
+        const mint = new PublicKey(USDC_MINT);
+        const ata = await getAssociatedTokenAddress(mint, kp.publicKey);
+        log(`Cont de token USDC: ${ata.toBase58()}`);
+        const before = await usdcBalance(connection, kp.publicKey);
+        if (before < 0.01) throw new Error(`Walletul de test are ${before.toFixed(4)} USDC; trebuie cel puțin 0.01.`);
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        const msg = new TransactionMessage({
+            payerKey: kp.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [
+                createAssociatedTokenAccountIdempotentInstruction(kp.publicKey, ata, kp.publicKey, mint), // no-op: the account exists
+                createTransferCheckedInstruction(ata, mint, ata, kp.publicKey, 10_000n, USDC_DECIMALS),
+            ],
+        }).compileToV0Message();
+        const tx = new VersionedTransaction(msg);
+        await tx.sign([kp]);
+        const sig = await sendAndConfirm(connection, tx.serialize(), lastValidBlockHeight);
+        log(`Transfer de token confirmat: ${explorer(sig, "mainnet")}`);
+        log(feeLine(await readFeeLamports(connection, sig)));
+        const after = await usdcBalance(connection, kp.publicKey);
+        log(`USDC înainte ${before.toFixed(4)} · după ${after.toFixed(4)} (neschimbat: transfer către același cont)`);
+    });
+}
+
+/**
+ * 12. Mainnet, moves nothing: signs Jupiter Trigger V2's login challenge with the v3 keypair and gets the
+ * session token — the authentication the EVA bot's V2 orders depend on.
+ */
+export function testMessageSigning(): Promise<TestResult> {
+    return run(async (log) => {
+        const kp = await loadTestKeypair();
+        const sign = (message: string) => {
+            const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(kp.secretKey.slice(0, 32))]);
+            return new Uint8Array(ed25519Sign(null, Buffer.from(message, "utf8"), createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" })));
+        };
+        const probe = "evama test message";
+        const pub = await crypto.subtle.importKey("raw", new Uint8Array(kp.publicKey.toBytes()), { name: "Ed25519" }, false, ["verify"]);
+        if (!(await crypto.subtle.verify({ name: "Ed25519" }, pub, sign(probe), new TextEncoder().encode(probe)))) throw new Error("Semnătura mesajului NU se verifică.");
+        log("Mesaj semnat cu cheia v3 și semnătura verificată local.");
+
+        const apiKey = process.env.JUPITER_API_KEY;
+        if (!apiKey) {
+            log("JUPITER_API_KEY lipsește, deci autentificarea reală la Trigger V2 a fost sărită.");
+            return;
         }
+        const v2 = async <T>(path: string, body: unknown): Promise<T> => {
+            const res = await fetch(`${JUPITER_API_BASE}/trigger/v2${path}`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": apiKey }, body: JSON.stringify(body), cache: "no-store" });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`Jupiter Trigger V2 ${path} → ${res.status}: ${text.slice(0, 200)}`);
+            return JSON.parse(text) as T;
+        };
+        const walletPubkey = kp.publicKey.toBase58();
+        const { challenge } = await v2<{ challenge: string }>("/auth/challenge", { walletPubkey, type: "message" });
+        const signature = bs58.encode(sign(challenge));
+        let verified: { token?: string };
+        try {
+            verified = await v2<{ token?: string }>("/auth/verify", { type: "message", walletPubkey, signature });
+        } catch {
+            verified = await v2<{ token?: string }>("/auth/verify", { type: "message", walletPubkey, challenge, signature });
+        }
+        if (!verified.token) throw new Error("Trigger V2: autentificarea nu a întors un token.");
+        log(`Autentificare Jupiter Trigger V2 reușită (token de ${verified.token.length} caractere, nu e afișat).`);
     });
 }
 

@@ -24,6 +24,10 @@ const MAINNET: TestDef[] = [
     { id: "transfer-mainnet", title: "6. Transfer pe mainnet", detail: "Trimite 0.001 SOL de la walletul de test către el însuși.", cost: "Taxa de rețea (~0.000005 SOL)", confirm: "Trimit o tranzacție reală pe mainnet din walletul de test (0.001 SOL către el însuși). Continui?" },
     { id: "swap", title: "7. Swap Jupiter $1", detail: "Cumpără SOL de $1 USDC prin Jupiter, semnat cu biblioteca nouă.", cost: "$1 USDC devine SOL + taxe mici", confirm: "Fac un swap real de $1 USDC → SOL pe mainnet din walletul de test. Continui?" },
     { id: "limit-order", title: "8. Ordin limit: plasare + anulare", detail: "Plasează un ordin de cumpărare de $5 la −50% sub preț (nu se poate executa), apoi îl anulează. USDC se întorc la anulare.", cost: "Blochează temporar $5 USDC + taxe de rețea", confirm: "Plasez un ordin limit real de $5 pe mainnet din walletul de test și îl anulez imediat. Continui?" },
+    { id: "sell-order", title: "9. Ordin de vânzare: plasare + anulare", detail: "Plasează un ordin de vânzare SOL → USDC de ~$5 la +100% peste preț (nu se poate executa), apoi îl anulează. E ordinul pe care botul îl pune după fiecare cumpărare.", cost: "Blochează temporar ~0.07 SOL + taxe de rețea", confirm: "Plasez un ordin real de vânzare de ~$5 în SOL pe mainnet din walletul de test și îl anulez imediat. Continui?" },
+    { id: "ultra-swap", title: "10. Swap Jupiter Ultra $1", detail: "Cumpără SOL de $1 USDC prin Jupiter Ultra, API-ul cu care botul EVA cumpără.", cost: "$1 USDC devine SOL + taxe mici", confirm: "Fac un swap real de $1 USDC → SOL prin Jupiter Ultra din walletul de test. Continui?" },
+    { id: "token-transfer", title: "11. Transfer de token (USDC)", detail: "Trimite 0.01 USDC din contul de token al walletului de test către el însuși. Aceleași instrucțiuni ca la retragerea EVA în cold wallet.", cost: "Taxa de rețea; USDC rămân neschimbați", confirm: "Trimit o tranzacție reală de token pe mainnet (0.01 USDC către același cont). Continui?" },
+    { id: "message-signing", title: "12. Semnare de mesaj + autentificare Trigger V2", detail: "Semnează mesajul de autentificare Jupiter Trigger V2 și obține tokenul de sesiune. De asta depind ordinele EVA pe V2.", cost: "Gratuit, nu mută nimic" },
 ];
 
 type Run = { state: "running" } | { state: "done"; ok: boolean; lines: string[] };
@@ -127,7 +131,7 @@ export function SolanaTestClient({ wallet }: { wallet: { configured: boolean; ad
 
             <Card>
                 <h2 className="text-sm font-medium text-foreground">Mainnet · sume mici, din walletul de test</h2>
-                <p className="mb-1 text-xs text-muted">Jupiter există doar pe mainnet. Pune în walletul de test ~0.01 SOL pentru taxe și ~$6 USDC ($1 pentru swap, $5 se blochează temporar la ordinul limit).</p>
+                <p className="mb-1 text-xs text-muted">Jupiter există doar pe mainnet. Pune în walletul de test ~0.08 SOL (taxe + ordinul de vânzare de ~$5, care se întoarce la anulare) și ~$7 USDC ($1 pentru fiecare swap, $5 se blochează temporar la ordinul limit).</p>
                 {MAINNET.map((t) => (
                     <TestRow key={t.id} t={t} run={runs[t.id]} disabled={busy || !wallet.configured} onRun={() => start(t)} />
                 ))}
