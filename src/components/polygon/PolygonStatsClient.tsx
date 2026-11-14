@@ -1,5 +1,7 @@
 "use client";
 
+import { fmtLotDate, fmtLotDays, lotTiming } from "@/lib/lot-timing";
+import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -85,6 +87,7 @@ interface CurrentPriceDTO {
 }
 
 interface Props {
+    uptimes?: BotUptimeDTO[];
     tokenSettings: TokenSettingsDTO[];
     lots: LotDTO[];
     sweeps: SweepDTO[];
@@ -194,7 +197,7 @@ function Pager({
     );
 }
 
-export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, currentPrices }: Props) {
+export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, currentPrices, uptimes = [] }: Props) {
     const isAdmin = useIsAdmin();
     const [checking, setChecking] = useState(false);
     const [checkMessage, setCheckMessage] = useState<string | null>(null);
@@ -580,6 +583,10 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 <StatCard label="Total loturi" value={String(stats.totalLots)} icon={History} />
             </div>
 
+            {uptimes.map((u) => (
+                <BotUptimeCard key={u.bot} uptime={u} />
+            ))}
+
             {openLotsChartData.length > 0 && (
                 <Card>
                     <h2 className="mb-4 text-sm font-medium text-foreground">Preț de vânzare vs. țintă de răscumpărare, per lot (ordine active)</h2>
@@ -842,7 +849,7 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
             </div>
             {lots.length === 0 && <p className="text-sm text-muted py-4">Niciun lot cu statusul selectat.</p>}
             <div className="overflow-x-auto -mx-6">
-                <table className="w-full text-sm min-w-[1520px]">
+                <table className="w-full text-sm min-w-[1800px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
                             <th className="px-6 py-2 font-medium">Token</th>
@@ -856,6 +863,9 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
                             <th className="px-3 py-2 font-medium">%</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Răscumpărat</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Data</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Ordin plasat</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Executat</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Zile</th>
                             <th className="px-3 py-2 font-medium whitespace-nowrap">Vânzare</th>
                             <th className="px-3 py-2 font-medium">Ordin 1inch</th>
                             {isAdmin && <th className="px-3 py-2 font-medium">Acțiune</th>}
@@ -905,6 +915,16 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
                                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">
                                     {new Date(lot.soldAt).toLocaleDateString("ro-RO")}
                                 </td>
+                                {(() => {
+                                    const t = lotTiming(lot.buybackOrderCreatedAt, lot.status === "FILLED" ? lot.filledAt : null);
+                                    return (
+                                        <>
+                                            <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">{fmtLotDate(t.placed)}</td>
+                                            <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">{fmtLotDate(t.executed)}</td>
+                                            <td className="px-3 py-2.5 whitespace-nowrap font-num text-foreground">{fmtLotDays(t.days)}</td>
+                                        </>
+                                    );
+                                })()}
                                 <td className="px-3 py-2.5 whitespace-nowrap text-xs text-faint">
                                     {lot.sellTxHash ? <PolygonscanLink hash={lot.sellTxHash} /> : "—"}
                                 </td>

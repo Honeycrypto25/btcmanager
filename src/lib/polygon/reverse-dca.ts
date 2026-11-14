@@ -1,4 +1,5 @@
 import "server-only";
+import { logBotRun } from "@/lib/bot-runs";
 import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
 import type { PolygonTokenSettings } from "@prisma/client";
@@ -360,7 +361,9 @@ export async function runPolygonReverseDcaForAllSettings(): Promise<PolygonDcaRu
     const settingsRows = await db.polygonTokenSettings.findMany({ where: { enabled: true } });
     const results: PolygonDcaRunResult[] = [];
     for (const s of settingsRows) {
-        results.push(await runPolygonReverseDcaForSettings(s.id));
+        const r = await runPolygonReverseDcaForSettings(s.id);
+        results.push(r);
+        await logBotRun(s.userId, `POLYGON:${s.tokenSymbol}`, r);
     }
     return results;
 }

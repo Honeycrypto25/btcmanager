@@ -55,6 +55,7 @@ model User {
   solanaSettings       SolanaSettings?
   solanaLots           SolanaLot[]
   solanaBuyOrders      SolanaBuyOrder[]
+  botRuns              BotRun[]
   solanaSweeps         SolanaSweep[]
   evaSettings          EvaSettings?
   evaLots              EvaLot[]
@@ -1996,4 +1997,20 @@ model LendAlertState {
   updatedAt DateTime @updatedAt
 
   @@unique([owner, vaultId, nftId])
+}
+
+
+// One row per scheduled (cron) cycle of a bot, so the stats pages can show how
+// continuously each bot has actually been running (uptime strip, 7/30 days).
+// `bot` is "SOL" | "BASE" | "BNB" | "EVA" | "POLYGON:<SYMBOL>".
+model BotRun {
+  id      String   @id @default(cuid())
+  userId  String
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot     String
+  runAt   DateTime @default(now())
+  status  String // "ok" | "warn" (ran but could not act, e.g. low balance) | "error"
+  message String?  @db.Text
+
+  @@index([userId, bot, runAt])
 }

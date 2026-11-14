@@ -1,4 +1,5 @@
 import "server-only";
+import { logBotRun } from "@/lib/bot-runs";
 import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
 import { loadConnectedBotWallet, getUsdcBalance } from "./wallet";
@@ -372,7 +373,9 @@ export async function runEvmDcaForAllUsers(): Promise<EvmDcaRunResult[]> {
     const results: EvmDcaRunResult[] = [];
     for (const s of settingsRows) {
         if (s.enabled) {
-            results.push(await runEvmDcaForUser(s.userId));
+            const r = await runEvmDcaForUser(s.userId);
+            results.push(r);
+            await logBotRun(s.userId, "BASE", r);
         }
         if (s.sweepEnabled) {
             try {

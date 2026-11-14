@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Card } from "@/components/ui/core";
+import { ExpandableCard } from "@/components/ui/ExpandableCard";
 
 export interface HeatLot {
     t: number; // buy time, ms
@@ -226,20 +226,19 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
     };
 
     return (
-        <Card>
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                <div>
-                    <h2 className="text-sm font-medium text-foreground">Heatmap profituri · unde se vând ordinele active</h2>
-                    <p className="text-xs text-muted">
-                        Fiecare lot desenează o bandă la prețul lui țintă, de la data cumpărării până azi. Mai gros și mai fierbinte unde se adună mai mult profit. Bara din dreapta = profit pe nivel.{buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}
-                    </p>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted">
+        <ExpandableCard
+            title="Heatmap profituri · unde se vând ordinele active"
+            description={`Fiecare lot desenează o bandă la prețul lui țintă, de la data cumpărării până azi. Mai gros și mai fierbinte unde se adună mai mult profit. Bara din dreapta = profit pe nivel.${buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}`}
+            headerExtra={() => (
+                <div className="hidden items-center gap-2 text-xs text-muted sm:flex">
                     <span className="h-2 w-28 rounded-full" style={{ background: "linear-gradient(90deg,#1a246e,#583fd6,#d6479c,#ff9a4d,#ffe27a)" }} />
                     <span>0 → {fmtUsd(model.max)}</span>
                 </div>
-            </div>
-            <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="block h-[360px] w-full rounded-lg" />
+            )}
+        >
+            {(expanded) => (
+                <>
+            <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className={`block w-full rounded-lg ${expanded ? "min-h-[360px] flex-1" : "h-[360px]"}`} />
             <p className="mt-2 min-h-[1.25rem] text-xs text-muted">
                 {shown !== null
                     ? `${bandText(shown)} · ${count[shown]} ${count[shown] === 1 ? "ordin" : "ordine"} · profit ${fmtUsd(profile[shown])} (${((profile[shown] / total) * 100).toFixed(0)}% din total)`
@@ -264,6 +263,8 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
                     <p className="text-[11px] text-muted">{above !== undefined && currentPrice ? `+${(((above - currentPrice) / currentPrice) * 100).toFixed(1)}% față de curent` : "nicio țintă peste preț"}</p>
                 </div>
             </div>
-        </Card>
+                </>
+            )}
+        </ExpandableCard>
     );
 }

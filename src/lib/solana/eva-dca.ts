@@ -1,4 +1,5 @@
 import "server-only";
+import { logBotRun } from "@/lib/bot-runs";
 import type { Keypair } from "@solana/web3.js";
 import { db } from "@/lib/db";
 import { getSplTokenBalance, loadBotKeypair } from "./wallet";
@@ -557,7 +558,9 @@ export async function runEvaDcaForAllUsers(): Promise<DcaRunResult[]> {
     const results: DcaRunResult[] = [];
     for (const s of settingsRows) {
         if (s.enabled) {
-            results.push(await runEvaDcaForUser(s.userId));
+            const r = await runEvaDcaForUser(s.userId);
+            results.push(r);
+            await logBotRun(s.userId, "EVA", r);
         }
         if (s.sweepEnabled) {
             try {

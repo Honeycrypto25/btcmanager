@@ -19,6 +19,9 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw, Copy, Check } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { PriceRangeCard } from "@/components/ui/PriceRangeCard";
+import { LotPriceChart } from "@/components/ui/LotPriceChart";
+import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
+import { fmtLotDate, fmtLotDays, lotTiming } from "@/lib/lot-timing";
 import { ProfitHeatmap, type HeatLot } from "@/components/ui/ProfitHeatmap";
 import { formatUsd, formatUsdFee, statusMeta, PENDING_STATUSES, FINAL_STATUSES, type LotDTO, type SweepDTO } from "./shared";
 import { reconcileEvmOrdersNow } from "@/app/actions/evm";
@@ -52,6 +55,7 @@ export function EvmStatsClient({
     sweeps,
     fuelStatus,
     limitBuys,
+    uptime,
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
@@ -59,6 +63,7 @@ export function EvmStatsClient({
     sweeps: SweepDTO[];
     fuelStatus: FuelStatus | { error: string };
     limitBuys: LimitBuyDTO[];
+    uptime?: BotUptimeDTO;
 }) {
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -402,52 +407,16 @@ export function EvmStatsClient({
             </Card>
 
             {/* Charts */}
+            {uptime && <BotUptimeCard uptime={uptime} />}
             {openLotsChartData.length > 0 && <PriceRangeCard lots={openLotsChartData} currentPrice={wethPriceUsd} fmt={formatUsd} />}
             {(heatLots.length > 0) && <ProfitHeatmap lots={heatLots} buyOrders={openLimitBuys.map((o) => ({ t: new Date(o.createdAt).getTime(), price: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))} currentPrice={wethPriceUsd} fmt={formatUsd} fmtUsd={formatUsd} />}
 
-            {(openLotsChartData.length > 0 || openLimitBuys.length > 0) && (
-                <Card>
-                    <h2 className="mb-1 text-sm font-medium text-foreground">Preț de achiziție vs. țintă de vânzare, per lot (ordine active)</h2>
-                    {openLimitBuys.length > 0 && (
-                        <p className="mb-3 text-xs text-amber-400">
-                            Liniile galbene punctate = ordine limit de cumpărare active (nivelul la care se cumpără).
-                        </p>
-                    )}
-                    <ResponsiveContainer width="100%" height={280}>
-                        <ComposedChart data={openLotsChartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
-                            <Tooltip
-                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => formatUsd(Number(v))}
-                            />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            {wethPriceUsd && (
-                                <ReferenceLine
-                                    y={wethPriceUsd}
-                                    stroke="#e5e7eb"
-                                    strokeDasharray="2 3"
-                                    label={{ value: `Preț curent: ${formatUsd(wethPriceUsd)}`, position: "insideTopRight", fill: "#e5e7eb", fontSize: 11 }}
-                                />
-                            )}
-                            {openLimitBuys.map((o) => (
-                                <ReferenceLine
-                                    key={o.id}
-                                    y={Number(o.limitPriceUsd)}
-                                    stroke="#f59e0b"
-                                    strokeDasharray="6 4"
-                                    strokeWidth={1.5}
-                                    ifOverflow="extendDomain"
-                                    label={{ value: `Limit buy ${formatUsd(Number(o.limitPriceUsd))} · ${formatUsd(Number(o.amountUsd))}`, position: "insideBottomLeft", fill: "#f59e0b", fontSize: 11 }}
-                                />
-                            ))}
-                            <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
-                        </ComposedChart>
-                    </ResponsiveContainer>
-                </Card>
-            )}
+            <LotPriceChart
+                lots={allLots.map((l) => ({ t: new Date(l.boughtAt).getTime(), buyPrice: Number(l.buyPriceUsd), targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null, status: l.status }))}
+                currentPrice={wethPriceUsd}
+                fmt={formatUsd}
+                limitBuys={openLimitBuys.map((o) => ({ id: o.id, limitPriceUsd: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))}
+            />
 
             {chartData.length > 0 && (
                 <Card>
@@ -714,11 +683,14 @@ function CyclesTable({ lots: tableLots, currentPriceUsd, limitBuyLotIds }: { lot
                 />
             </div>
             {lots.length === 0 && <p className="text-sm text-muted py-4">Niciun lot cu statusul selectat.</p>}
-            <table className="w-full min-w-[1320px] text-left text-sm">
+            <table className="w-full min-w-[1620px] text-left text-sm">
                 <thead>
                     <tr className="text-xs uppercase tracking-wider text-faint">
                         <th className="pb-2 pr-4">Data</th>
                         <th className="pb-2 pr-4">Status</th>
+                        <th className="pb-2 pr-4 whitespace-nowrap">Ordin plasat</th>
+                        <th className="pb-2 pr-4 whitespace-nowrap">Executat</th>
+                        <th className="pb-2 pr-4 whitespace-nowrap">Zile</th>
                         <th className="pb-2 pr-4">Sumă</th>
                         <th className="pb-2 pr-4">WETH primit</th>
                         <th className="pb-2 pr-4">Preț cumpărare</th>
@@ -756,6 +728,16 @@ function CyclesTable({ lots: tableLots, currentPriceUsd, limitBuyLotIds }: { lot
                                         <Icon className="h-3 w-3" /> {meta.label}
                                     </span>
                                 </td>
+                                {(() => {
+                                    const t = lotTiming(lot.sellOrderCreatedAt, lot.status === "FILLED" ? lot.soldAt : null);
+                                    return (
+                                        <>
+                                            <td className="py-2 pr-4 whitespace-nowrap text-muted">{fmtLotDate(t.placed)}</td>
+                                            <td className="py-2 pr-4 whitespace-nowrap text-muted">{fmtLotDate(t.executed)}</td>
+                                            <td className="py-2 pr-4 whitespace-nowrap text-foreground">{fmtLotDays(t.days)}</td>
+                                        </>
+                                    );
+                                })()}
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyAmountUsd))}</td>
                                 <td className="py-2 pr-4 text-foreground">{Number(lot.wethAcquired).toFixed(5)}</td>
                                 <td className="py-2 pr-4 text-foreground">{formatUsd(Number(lot.buyPriceUsd))}</td>

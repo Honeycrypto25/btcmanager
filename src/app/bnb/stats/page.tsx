@@ -7,17 +7,20 @@ import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getBnbStats, listBnbLots, listBnbSweeps, getBnbFuelStatus } from "@/app/actions/bnb";
 import { BnbStatsClient } from "@/components/bnb/BnbStatsClient";
+import { getDcaBotUptime } from "@/lib/bot-uptime";
 import { getBnbPriceUsd } from "@/lib/bnb/oneinch";
 
 export default async function BnbStatsPage() {
     const session = await requireSectionAccess("bnb");
 
-    const [lots, stats, bnbPriceUsd, sweeps, fuelStatus] = await Promise.all([
+    const userId = (session.user as { id?: string } | undefined)?.id;
+    const [lots, stats, bnbPriceUsd, sweeps, fuelStatus, uptime] = await Promise.all([
         listBnbLots(),
         getBnbStats(),
         getBnbPriceUsd().catch(() => null),
         listBnbSweeps(),
         getBnbFuelStatus(),
+        userId ? getDcaBotUptime(userId, "BNB") : Promise.resolve(undefined),
     ]);
 
     return (
@@ -28,6 +31,7 @@ export default async function BnbStatsPage() {
                 bnbPriceUsd={bnbPriceUsd}
                 sweeps={JSON.parse(JSON.stringify(sweeps))}
                 fuelStatus={fuelStatus}
+                uptime={uptime}
             />
         </DashboardLayout>
     );

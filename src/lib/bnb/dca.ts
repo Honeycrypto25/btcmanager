@@ -1,4 +1,5 @@
 import "server-only";
+import { logBotRun } from "@/lib/bot-runs";
 import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
 import { loadConnectedBotWallet } from "./wallet";
@@ -333,7 +334,9 @@ export async function runBnbDcaForAllUsers(): Promise<BnbDcaRunResult[]> {
     const results: BnbDcaRunResult[] = [];
     for (const s of settingsRows) {
         if (s.enabled) {
-            results.push(await runBnbDcaForUser(s.userId));
+            const r = await runBnbDcaForUser(s.userId);
+            results.push(r);
+            await logBotRun(s.userId, "BNB", r);
         }
         if (s.sweepEnabled) {
             try {

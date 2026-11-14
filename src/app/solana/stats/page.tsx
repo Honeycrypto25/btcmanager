@@ -8,19 +8,21 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getSolanaStats, listSolanaLots, listSolanaSweeps, getSolanaFuelStatus } from "@/app/actions/solana";
 import { SolanaStatsClient } from "@/components/solana/SolanaStatsClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
+import { getDcaBotUptime } from "@/lib/bot-uptime";
 import { listSolanaLimitBuys } from "@/lib/solana/limit-buy";
 
 export default async function SolanaStatsPage() {
     const session = await requireSectionAccess("solana");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [lots, stats, solPriceUsd, sweeps, fuelStatus, limitBuys] = await Promise.all([
+    const [lots, stats, solPriceUsd, sweeps, fuelStatus, limitBuys, uptime] = await Promise.all([
         listSolanaLots(),
         getSolanaStats(),
         getSolPriceUsd().catch(() => null),
         listSolanaSweeps(),
         getSolanaFuelStatus(),
         userId ? listSolanaLimitBuys(userId) : Promise.resolve([]),
+        userId ? getDcaBotUptime(userId, "SOL") : Promise.resolve(undefined),
     ]);
 
     return (
@@ -32,6 +34,7 @@ export default async function SolanaStatsPage() {
                 sweeps={JSON.parse(JSON.stringify(sweeps))}
                 fuelStatus={fuelStatus}
                 limitBuys={JSON.parse(JSON.stringify(limitBuys))}
+                uptime={uptime}
             />
         </DashboardLayout>
     );
