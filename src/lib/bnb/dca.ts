@@ -2,7 +2,7 @@ import "server-only";
 import { logBotRun } from "@/lib/bot-runs";
 import { parseUnits, formatUnits, type Wallet } from "ethers";
 import { db } from "@/lib/db";
-import { loadConnectedBotWallet } from "./wallet";
+import { getUsdtBalance, loadConnectedBotWallet } from "./wallet";
 import { runBnbSweepForUser } from "./sweep";
 import {
     createTakeProfitSellOrder,
@@ -238,6 +238,11 @@ export async function runBnbDcaForUser(userId: string, opts: { force?: boolean }
 
         // 1) Buy: USDT -> WBNB
         const buyAmountUsd = Number(settings.buyAmountUsd);
+        // No fuel = a clean "skipped" (logged as such for the strike), not a reverted swap simulation.
+        const usdtBalance = await getUsdtBalance(settings.walletAddress).catch(() => null);
+        if (usdtBalance !== null && usdtBalance < buyAmountUsd) {
+            return { userId, action: "skipped", reason: `USDT insuficient: $${usdtBalance.toFixed(2)} în portofel, e nevoie de $${buyAmountUsd.toFixed(2)}` };
+        }
         const amountRaw = parseUnits(buyAmountUsd.toFixed(USDT_DECIMALS), USDT_DECIMALS);
         const { txHash: buyTxHash, feeBnb, dstAmountRaw } = await executeSwap(wallet, {
             srcToken: USDT_ADDRESS,

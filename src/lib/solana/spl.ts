@@ -1,6 +1,6 @@
 // Minimal SPL-token helpers on @solana/web3.js v3 — replaces the three @solana/spl-token functions the
 // bot uses (that package is pinned to web3.js v1). Byte-for-byte the same instructions.
-import { PublicKey, TransactionInstruction } from "@solana/web3.js-v3";
+import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 
 export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");

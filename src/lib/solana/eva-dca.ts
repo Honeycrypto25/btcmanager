@@ -2,7 +2,7 @@ import "server-only";
 import { logBotRun } from "@/lib/bot-runs";
 import type { Keypair } from "@solana/web3.js";
 import { db } from "@/lib/db";
-import { getSplTokenBalance, loadBotKeypair } from "./wallet";
+import { getSplTokenBalance, getUsdcBalance, loadBotKeypair } from "./wallet";
 import { runEvaSweepForUser } from "./eva-sweep";
 import {
     cancelTriggerV1Order,
@@ -131,7 +131,7 @@ interface ReconcileResult {
 
 /** Reconciles OPEN lots whose sell order lives on Trigger V2 (matched by order UUID in V2's order history). */
 async function reconcileV2Lots(lots: Awaited<ReturnType<typeof db.evaLot.findMany>>, result: ReconcileResult): Promise<void> {
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     const token = await getTriggerV2Token(keypair);
     const [active, past] = await Promise.all([getTriggerV2Orders(token, "active"), getTriggerV2Orders(token, "past")]);
     const byId = new Map([...past, ...active].map((o) => [o.id, o]));
@@ -409,7 +409,7 @@ export async function runEvaDcaForUser(userId: string, opts: { force?: boolean }
         // a fresh buy, so load it up front — independent of whether a new
         // buy is due today. Same env var as the SOL module — this bot
         // reuses that wallet, it does not have its own key.
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         if (keypair.publicKey.toBase58() !== settings.walletAddress) {
             throw new Error("SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
         }
@@ -441,6 +441,11 @@ export async function runEvaDcaForUser(userId: string, opts: { force?: boolean }
         // settings.slippageBps is not used here — Ultra manages its own
         // execution slippage.
         const buyAmountUsd = Number(settings.buyAmountUsd);
+        // No fuel = a clean "skipped" (logged as such for the strike), not a failed order.
+        const usdcBalance = await getUsdcBalance(settings.walletAddress).catch(() => null);
+        if (usdcBalance !== null && usdcBalance < buyAmountUsd) {
+            return { userId, action: "skipped", reason: `USDC insuficient: $${usdcBalance.toFixed(2)} în portofel, e nevoie de $${buyAmountUsd.toFixed(2)}` };
+        }
         const order = await getUltraOrder({
             inputMint: USDC_MINT,
             outputMint: EVA_MINT,
@@ -621,7 +626,7 @@ export async function migrateEvaLotToV2(userId: string, lotId: string): Promise<
     const plannedAmount = Number(lot.sellAmountEvaPlanned); // what the V1 order holds
     let evaAmount = plannedAmount; // what the V2 order will hold (may be topped up below)
 
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
         throw new Error("SOLANA_PRIVATE_KEY nu corespunde wallet-ului din setări — refuz să tranzacționez.");
     }
@@ -767,7 +772,7 @@ export async function diagnoseEvaV2(userId: string): Promise<string[]> {
     const out: string[] = [];
     const settings = await db.evaSettings.findUnique({ where: { userId } });
     if (!settings) return ["Setările botului EVA nu sunt configurate."];
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     const [price, token, lots] = await Promise.all([
         getTokenPriceUsd(EVA_MINT),
         getTriggerV2Token(keypair),
@@ -832,7 +837,7 @@ export async function setEvaV2Slippage(userId: string, lotId: string, slippageBp
     if (!lot || lot.status !== "OPEN" || lot.triggerVersion !== 2 || !lot.jupiterOrderKey) {
         throw new Error("Lotul nu are un ordin V2 deschis.");
     }
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     const token = await getTriggerV2Token(keypair);
     await updateTriggerV2OrderSlippage(token, lot.jupiterOrderKey, slippageBps);
     await db.evaLot.update({
@@ -862,7 +867,7 @@ export async function recreateEvaV2Order(userId: string, lotId: string, slippage
     if (!lot.targetPriceUsd || !lot.sellAmountEvaPlanned) throw new Error("Lotul nu are ținta sau suma planificată — nu pot recrea ordinul în siguranță.");
     const oldId = lot.jupiterOrderKey;
     const targetPriceUsd = Number(lot.targetPriceUsd);
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
         throw new Error("SOLANA_PRIVATE_KEY nu corespunde wallet-ului din setări — refuz să tranzacționez.");
     }

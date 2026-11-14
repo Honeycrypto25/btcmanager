@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/core";
-import { Strip, fmtPct, pctColor, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
+import { Strip, fmtPct, pctColor, strikeDetail, type BotUptimeDTO, type StrikeWindowDTO } from "@/components/ui/BotUptimeCard";
 
 export interface BotActivityDTO {
     bot: string;
@@ -50,15 +50,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     );
 }
 
-function Strike({ pct, counted, days, est }: { pct: number | null; counted: number; days: BotUptimeDTO["days"]; est?: boolean }) {
+function Strike({ w, days }: { w: StrikeWindowDTO; days: BotUptimeDTO["days"] }) {
     return (
         <div className="flex items-center gap-3 sm:w-[60%]">
             <div className="min-w-0 flex-1">
                 <Strip days={days} />
+                <div className="mt-1 text-[11px] text-muted">{strikeDetail(w)}</div>
             </div>
-            <span className={`w-16 shrink-0 text-right font-mono text-base ${pctColor(pct)}`} title={`${counted} zile evaluate${est ? " (estimat din loturi)" : ""}`}>
-                {fmtPct(pct, est)}
-            </span>
+            <span className={`w-16 shrink-0 text-right font-mono text-base ${pctColor(w.pct)}`}>{fmtPct(w.pct)}</span>
         </div>
     );
 }
@@ -168,13 +167,13 @@ export function BotActClient({ bots }: { bots: BotActivityDTO[] }) {
                                     {b.profit30d < 0 ? "−" : b.profit30d > 0 ? "+" : ""}${Math.abs(b.profit30d).toFixed(2)}
                                 </span>
                             </Row>
-                            <Row label="Strike 7 zile"><Strike pct={b.uptime.pct7} counted={b.uptime.counted7} est={b.uptime.est7} days={b.uptime.days.slice(-7)} /></Row>
-                            <Row label="Strike 30 de zile"><Strike pct={b.uptime.pct30} counted={b.uptime.counted30} est={b.uptime.est30} days={b.uptime.days} /></Row>
+                            <Row label="Strike 7 zile"><Strike w={b.uptime.w7} days={b.uptime.days.slice(-7)} /></Row>
+                            <Row label="Strike 30 de zile"><Strike w={b.uptime.w30} days={b.uptime.days} /></Row>
                         </Card>
                     );
                 })}
             </div>
-            <p className="text-xs text-muted">Strike = procentul de zile în care ciclul zilnic al botului a rulat fără probleme. Barele mai șterse sunt zile estimate din istoricul de loturi; procentul marcat cu ~ este estimat și devine exact după ce jurnalul real al rulărilor acoperă intervalul (primele înregistrări apar la următorul cron).</p>
+            <p className="text-xs text-muted">Strike = ordine executate din zilele în care botul avea combustibil și un ordin de plasat. Verde = executat · verde șters = niciun ordin scadent · galben = fără combustibil · roșu = ordin eșuat sau bot oprit · gri = fără date (înainte de jurnalul rulărilor, pornit pe 14 nov. 2026, se știe doar dacă s-a executat un ordin). Zilele galbene și gri nu intră în procent.</p>
         </div>
     );
 }

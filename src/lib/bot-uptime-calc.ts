@@ -1,10 +1,26 @@
-export type DayStatus = "ok" | "warn" | "error" | "missed" | "pending" | "nodata";
+/**
+ * ok      = an order was executed that day (buy, or sell for the Polygon bots)
+ * idle    = the cycle ran, but no order was due (interval not elapsed)
+ * warn    = the cycle ran, an order was due, but there was no fuel (insufficient balance)
+ * error   = the cycle ran with fuel available, but the order failed
+ * missed  = the daily cycle did not run at all
+ * nodata  = unknown (before the run log started, or bot disabled)
+ */
+export type DayStatus = "ok" | "idle" | "warn" | "error" | "missed" | "pending" | "nodata";
 
 export interface UptimeDay {
     date: string; // yyyy-mm-dd (UTC)
     status: DayStatus;
-    source: "log" | "lots" | "none"; // "lots" = estimated from the lot history (before logging started)
+    source: "log" | "lots" | "none"; // "lots" = known only from the lot history (before logging started)
     note?: string;
+}
+
+export interface StrikeWindow {
+    pct: number | null; // executed / opportunities, null when there were no opportunities
+    executed: number; // days with an executed order
+    opportunities: number; // days the bot had fuel and an order due: executed + error + missed
+    noFuel: number; // days an order was due but the balance was insufficient (not counted)
+    unknown: number; // days with no information (not counted)
 }
 
 export interface BotUptime {
@@ -13,12 +29,8 @@ export interface BotUptime {
     enabled: boolean;
     trackedSince: string | null; // first day with a real run log
     days: UptimeDay[]; // last 30 days, oldest first
-    pct7: number | null;
-    pct30: number | null;
-    counted7: number;
-    counted30: number;
-    est7: boolean; // true = the % comes only from lot-history estimates (no real log days in the window)
-    est30: boolean;
+    w7: StrikeWindow;
+    w30: StrikeWindow;
 }
 
 const DAY = 86_400_000;
@@ -34,9 +46,9 @@ export interface UptimeInput {
     lotDates: Date[];
 }
 
-/** Pure computation of the 30-day strip + 7/30-day percentages (no DB access). */
+/** Pure computation of the 30-day strip + 7/30-day strike: executed orders ÷ days the bot had fuel and an order due. */
 export function computeUptime(input: UptimeInput & { bot: string; label: string }): BotUptime {
-    const { now, enabled, intervalHours, runs, firstRunAt, lotDates, bot, label } = input;
+    const { now, enabled, runs, firstRunAt, lotDates, bot, label } = input;
     const todayKey = dayKey(now);
     const from = new Date(now.getTime() - 29 * DAY);
     from.setUTCHours(0, 0, 0, 0);
@@ -44,43 +56,38 @@ export function computeUptime(input: UptimeInput & { bot: string; label: string 
     const latestRunByDay = new Map<string, (typeof runs)[number]>();
     for (const r of runs) latestRunByDay.set(dayKey(r.runAt), r); // asc order → last wins
     const lotDays = new Set(lotDates.map(dayKey));
-    const firstLotDay = lotDates.length ? dayKey(new Date(Math.min(...lotDates.map((d) => d.getTime())))) : null;
-    const expectsDaily = intervalHours <= 24;
 
     const days: UptimeDay[] = [];
     for (let i = 0; i < 30; i++) {
         const key = dayKey(new Date(from.getTime() + i * DAY));
         const run = latestRunByDay.get(key);
-        if (run) {
-            days.push({ date: key, status: run.status === "error" ? "error" : run.status === "warn" ? "warn" : "ok", source: "log", note: run.message ?? undefined });
-            continue;
-        }
+        const tracked = trackedSince !== null && key >= trackedSince;
+        // A lot created that day is proof an order was executed, whatever the last run of the day logged.
         if (lotDays.has(key)) {
-            days.push({ date: key, status: "ok", source: trackedSince && key >= trackedSince ? "log" : "lots", note: "ciclu cu cumpărare/vânzare înregistrat" });
+            days.push({ date: key, status: "ok", source: tracked ? "log" : "lots", note: "ordin executat" });
             continue;
         }
-        const logging = trackedSince !== null && key >= trackedSince;
+        if (run) {
+            const routine = run.status === "ok" && /^next (buy|sell) due/i.test(run.message ?? "");
+            const status: DayStatus = run.status === "error" ? "error" : run.status === "warn" ? "warn" : routine ? "idle" : "ok";
+            days.push({ date: key, status, source: "log", note: run.message ?? undefined });
+            continue;
+        }
         if (key === todayKey && now.getUTCHours() < CRON_GRACE_HOUR_UTC) {
             days.push({ date: key, status: "pending", source: "none", note: "încă nu a rulat azi" });
-        } else if (logging) {
+        } else if (tracked) {
             days.push({ date: key, status: enabled ? "missed" : "nodata", source: "log", note: enabled ? "nicio rulare înregistrată" : "bot dezactivat" });
-        } else if (enabled && expectsDaily && firstLotDay && key > firstLotDay) {
-            days.push({ date: key, status: "missed", source: "lots", note: "estimat: nicio achiziție în ziua asta" });
         } else {
-            days.push({ date: key, status: "nodata", source: "none" });
+            // Before the run log existed there is no way to tell "no fuel" from "failed" from "not due".
+            days.push({ date: key, status: "nodata", source: "none", note: "înainte de jurnalul rulărilor — nu se știe dacă botul avea combustibil" });
         }
     }
 
-    // The % uses real log days when the window has any; only otherwise does it fall back to the
-    // lot-history estimate (flagged `est`), since estimates can't tell a miss from a deliberate skip.
-    const pct = (slice: UptimeDay[]) => {
-        const isCounted = (d: UptimeDay) => d.status === "ok" || d.status === "warn" || d.status === "error" || d.status === "missed";
-        const real = slice.filter((d) => isCounted(d) && d.source === "log");
-        const used = real.length > 0 ? real : slice.filter(isCounted);
-        const ok = used.filter((d) => d.status === "ok").length;
-        return { pct: used.length ? (ok / used.length) * 100 : null, counted: used.length, est: real.length === 0 && used.length > 0 };
+    const win = (slice: UptimeDay[]): StrikeWindow => {
+        const n = (st: DayStatus) => slice.filter((d) => d.status === st).length;
+        const executed = n("ok");
+        const opportunities = executed + n("error") + n("missed");
+        return { pct: opportunities ? (executed / opportunities) * 100 : null, executed, opportunities, noFuel: n("warn"), unknown: n("nodata") };
     };
-    const p7 = pct(days.slice(-7));
-    const p30 = pct(days);
-    return { bot, label, enabled, trackedSince, days, pct7: p7.pct, pct30: p30.pct, counted7: p7.counted, counted30: p30.counted, est7: p7.est, est30: p30.est };
+    return { bot, label, enabled, trackedSince, days, w7: win(days.slice(-7)), w30: win(days) };
 }

@@ -264,15 +264,17 @@ export async function runEvmDcaForUser(userId: string, opts: { force?: boolean }
         // escrow, so without this check an automatic buy could spend it and
         // leave the limit order unable to fill.
         const reservedUsdc = await getReservedUsdc(userId);
-        if (reservedUsdc > 0) {
-            const usdcBalance = await getUsdcBalance(settings.walletAddress);
-            if (usdcBalance - reservedUsdc < Number(settings.buyAmountUsd)) {
-                return {
-                    userId,
-                    action: "skipped",
-                    reason: `USDC liber insuficient: $${usdcBalance.toFixed(2)} în portofel, $${reservedUsdc.toFixed(2)} rezervați pentru ordine limit de cumpărare`,
-                };
-            }
+        // With nothing reserved a failed balance read just falls through to the swap, as before.
+        const usdcBalance = reservedUsdc > 0 ? await getUsdcBalance(settings.walletAddress) : await getUsdcBalance(settings.walletAddress).catch(() => null);
+        if (usdcBalance !== null && usdcBalance - reservedUsdc < Number(settings.buyAmountUsd)) {
+            return {
+                userId,
+                action: "skipped",
+                reason:
+                    reservedUsdc > 0
+                        ? `USDC liber insuficient: $${usdcBalance.toFixed(2)} în portofel, $${reservedUsdc.toFixed(2)} rezervați pentru ordine limit de cumpărare`
+                        : `USDC insuficient: $${usdcBalance.toFixed(2)} în portofel, e nevoie de $${Number(settings.buyAmountUsd).toFixed(2)}`,
+            };
         }
 
         // 1) Buy: USDC -> WETH

@@ -44,7 +44,7 @@ export async function getEvaSettings() {
 export async function getBotWalletAddress(): Promise<{ address: string } | { error: string }> {
     await requireUserId();
     try {
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         return { address: keypair.publicKey.toBase58() };
     } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -64,7 +64,7 @@ export async function upsertEvaSettings(input: EvaSettingsInput) {
     if (input.sweepMinBalanceEva < 0) throw new Error("Minimul păstrat la retragere nu poate fi negativ.");
 
     // Derived from the env var, not user input — see getBotWalletAddress(). Same wallet as the SOL module.
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     const walletAddress = keypair.publicKey.toBase58();
 
     const settings = await db.evaSettings.upsert({
@@ -123,7 +123,7 @@ export async function getEvaFuelStatus(): Promise<FuelStatus | { error: string }
     const settings = await db.evaSettings.findUnique({ where: { userId } });
     if (!settings) return { error: "Configurează mai întâi setările botului." };
     try {
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         const usdcBalance = await getUsdcBalance(keypair.publicKey.toBase58());
         const buyAmountUsd = Number(settings.buyAmountUsd);
         const intervalHours = settings.intervalHours;

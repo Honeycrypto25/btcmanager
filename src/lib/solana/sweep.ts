@@ -1,5 +1,6 @@
 import "server-only";
-import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
+import { signSendAndConfirm } from "./tx";
 import { db } from "@/lib/db";
 import { priceForSweep } from "@/lib/sweep-price";
 import { getSolPriceUsd } from "./jupiter";
@@ -79,7 +80,7 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
         return { action: "error", reason: error };
     }
 
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
         const error = "SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to sweep.";
         await db.solanaSettings.update({
@@ -91,7 +92,7 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
 
     const connection = new Connection(getRpcUrl(), "confirmed");
     const balanceLamports = await connection.getBalance(keypair.publicKey, "confirmed");
-    const balanceSol = balanceLamports / LAMPORTS_PER_SOL;
+    const balanceSol = Number(balanceLamports) / LAMPORTS_PER_SOL;
 
     const minBalance = Number(settings.sweepMinBalanceSol);
     const excess = balanceSol - minBalance;
@@ -113,23 +114,12 @@ export async function runSolanaSweepForUser(userId: string, force = false): Prom
     const lamportsToSend = Math.round(amountSol * LAMPORTS_PER_SOL);
 
     try {
-        const tx = new Transaction().add(
-            SystemProgram.transfer({
-                fromPubkey: keypair.publicKey,
-                toPubkey: destination,
-                lamports: lamportsToSend,
-            })
+        const signature = await signSendAndConfirm(
+            connection,
+            keypair,
+            [SystemProgram.transfer({ fromPubkey: keypair.publicKey, toPubkey: destination, lamports: BigInt(lamportsToSend) })],
+            "Transfer"
         );
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = keypair.publicKey;
-        tx.sign(keypair);
-
-        const signature = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3, skipPreflight: true });
-        const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-        if (confirmation.value.err) {
-            throw new Error(`Transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
-        }
 
         const priceUsd = await priceForSweep(getSolPriceUsd);
         await db.$transaction([

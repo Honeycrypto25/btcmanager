@@ -13,7 +13,7 @@ import { USDC_MINT } from "./constants";
  * wallet. The key lives only in this env var (set in Vercel Project
  * Settings → Environment Variables); it is never written to the database.
  */
-export function loadBotKeypair(): Keypair {
+export async function loadBotKeypair(): Promise<Keypair> {
     const raw = process.env.SOLANA_PRIVATE_KEY;
     if (!raw) {
         throw new Error(
@@ -22,7 +22,7 @@ export function loadBotKeypair(): Keypair {
     }
     try {
         const secretKey = bs58.decode(raw.trim());
-        return Keypair.fromSecretKey(secretKey);
+        return await Keypair.fromSecretKey(secretKey);
     } catch {
         throw new Error("SOLANA_PRIVATE_KEY is not a valid base58-encoded Solana secret key.");
     }

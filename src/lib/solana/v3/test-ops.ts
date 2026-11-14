@@ -1,11 +1,11 @@
 import "server-only";
 // Test bench for the @solana/web3.js v1 -> v3 upgrade. Everything here runs on the NEW library
-// (installed side by side as "@solana/web3.js-v3") and ONLY with the dedicated test wallet
+// (installed side by side as "@solana/web3.js") and ONLY with the dedicated test wallet
 // (SOLANA_TEST_PRIVATE_KEY). The live bot keeps using v1 and its own wallet, untouched.
-import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js-v3";
+import { Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { createPrivateKey, sign as ed25519Sign } from "node:crypto";
-import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddress } from "./spl";
+import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddress } from "../spl";
 import { JUPITER_API_BASE, MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "../constants";
 
 export type TestNet = "devnet" | "mainnet";

@@ -1,10 +1,11 @@
 import "server-only";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { signSendAndConfirm } from "./tx";
 import {
     createAssociatedTokenAccountIdempotentInstruction,
     createTransferCheckedInstruction,
     getAssociatedTokenAddress,
-} from "@solana/spl-token";
+} from "./spl";
 import { db } from "@/lib/db";
 import { priceForSweep } from "@/lib/sweep-price";
 import { getTokenPriceUsd } from "./jupiter";
@@ -97,7 +98,7 @@ export async function runEvaSweepForUser(userId: string, force = false): Promise
         return { action: "error", reason: error };
     }
 
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
         const error = "SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to sweep.";
         await db.evaSettings.update({
@@ -138,23 +139,18 @@ export async function runEvaSweepForUser(userId: string, force = false): Promise
         const sourceAta = await getAssociatedTokenAddress(mint, keypair.publicKey);
         const destinationAta = await getAssociatedTokenAddress(mint, destination);
 
-        const tx = new Transaction().add(
-            // Idempotent: a no-op if the destination already has an EVA
-            // token account, otherwise creates one — paid for by the bot
-            // wallet, since the cold wallet may never have held EVA before.
-            createAssociatedTokenAccountIdempotentInstruction(keypair.publicKey, destinationAta, destination, mint),
-            createTransferCheckedInstruction(sourceAta, mint, destinationAta, keypair.publicKey, amountRaw, EVA_DECIMALS)
+        const signature = await signSendAndConfirm(
+            connection,
+            keypair,
+            [
+                // Idempotent: a no-op if the destination already has an EVA
+                // token account, otherwise creates one — paid for by the bot
+                // wallet, since the cold wallet may never have held EVA before.
+                createAssociatedTokenAccountIdempotentInstruction(keypair.publicKey, destinationAta, destination, mint),
+                createTransferCheckedInstruction(sourceAta, mint, destinationAta, keypair.publicKey, amountRaw, EVA_DECIMALS),
+            ],
+            "Transfer"
         );
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = keypair.publicKey;
-        tx.sign(keypair);
-
-        const signature = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3, skipPreflight: true });
-        const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-        if (confirmation.value.err) {
-            throw new Error(`Transfer failed on-chain: ${JSON.stringify(confirmation.value.err)} (${signature})`);
-        }
 
         const priceUsd = await priceForSweep(() => getTokenPriceUsd(EVA_MINT));
         await db.$transaction([

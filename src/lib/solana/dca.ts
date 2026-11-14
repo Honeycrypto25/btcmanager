@@ -2,7 +2,7 @@ import "server-only";
 import { logBotRun } from "@/lib/bot-runs";
 import type { Keypair } from "@solana/web3.js";
 import { db } from "@/lib/db";
-import { loadBotKeypair } from "./wallet";
+import { getUsdcBalance, loadBotKeypair } from "./wallet";
 import { runSolanaSweepForUser } from "./sweep";
 import {
     createTriggerSellOrder,
@@ -146,6 +146,16 @@ export async function reconcileSolanaOrdersForUser(userId: string): Promise<Reco
     if (!settings) return { checked: 0, filled: 0, cancelled: 0 };
     const buys = await reconcileSolanaLimitBuys(userId, settings.walletAddress);
     const sells = await reconcileOpenLots(userId, settings.walletAddress);
+    // A limit buy that just filled is now a lot without a take-profit order: place it right away
+    // (same code path as the daily run) instead of leaving it "în curs" until the next cron.
+    if ((await db.solanaLot.count({ where: { userId, status: "PENDING_SELL_ORDER" } })) > 0) {
+        try {
+            const keypair = await loadBotKeypair();
+            if (keypair.publicKey.toBase58() === settings.walletAddress) await retryPendingSellOrders(userId, settings, keypair);
+        } catch (err) {
+            console.error("reconcileSolanaOrdersForUser: placing pending sell orders failed", err);
+        }
+    }
     return { checked: sells.checked + buys.checked, filled: sells.filled + buys.filled, cancelled: sells.cancelled + buys.cancelled };
 }
 
@@ -238,7 +248,7 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
         // Keypair is needed both for retrying any stuck sell order and for
         // a fresh buy, so load it up front — independent of whether a new
         // buy is due today.
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         if (keypair.publicKey.toBase58() !== settings.walletAddress) {
             throw new Error("SOLANA_PRIVATE_KEY does not match the wallet address configured in settings — refusing to trade.");
         }
@@ -264,6 +274,12 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
 
         // 1) Buy: USDC -> SOL
         const buyAmountUsd = Number(settings.buyAmountUsd);
+        // No fuel = a clean "skipped" (logged as such for the strike), not a failed swap. If the balance
+        // can't be read, carry on and let the swap itself decide, as before.
+        const usdcBalance = await getUsdcBalance(settings.walletAddress).catch(() => null);
+        if (usdcBalance !== null && usdcBalance < buyAmountUsd) {
+            return { userId, action: "skipped", reason: `USDC insuficient: $${usdcBalance.toFixed(2)} în portofel, e nevoie de $${buyAmountUsd.toFixed(2)}` };
+        }
         // Up to 3 attempts, each with a fresh quote. A retry only happens after
         // the previous tx definitively expired without landing (SwapExpiredError),
         // so a double buy is not possible.

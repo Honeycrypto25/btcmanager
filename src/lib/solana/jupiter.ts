@@ -2,6 +2,7 @@ import "server-only";
 import { Connection, VersionedTransaction, Keypair } from "@solana/web3.js";
 import { createPrivateKey, sign as ed25519Sign } from "crypto";
 import bs58 from "bs58";
+import { readFeeLamports, sendRawAndConfirm, TransactionExpiredError } from "./tx";
 import { JUPITER_API_BASE, SOL_MINT } from "./constants";
 import { getRpcUrl } from "./wallet";
 
@@ -104,55 +105,24 @@ export async function executeSwap(quoteResponse: QuoteResponse, keypair: Keypair
     });
 
     const tx = VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
-    tx.sign([keypair]);
+    await tx.sign([keypair]);
     const raw = tx.serialize();
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const lastValidBlockHeight = jupLastValid ?? (await connection.getBlockHeight("confirmed")) + 150;
-    const signature = await connection.sendRawTransaction(raw, { maxRetries: 0, skipPreflight: true });
+    const lastValidBlockHeight = jupLastValid !== undefined && jupLastValid !== null ? BigInt(jupLastValid) : BigInt(await connection.getBlockHeight("confirmed")) + 150n;
 
-    const statusOf = async () => {
-        const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-        return value[0];
-    };
-
-    let landed = false;
-    for (;;) {
-        const st = await statusOf().catch(() => null);
-        if (st) {
-            if (st.err) throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(st.err)} (${signature})`);
-            if (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") {
-                landed = true;
-                break;
-            }
-        }
-        const height = await connection.getBlockHeight("confirmed").catch(() => 0);
-        if (height > lastValidBlockHeight) break;
-        await connection.sendRawTransaction(raw, { maxRetries: 0, skipPreflight: true }).catch(() => undefined);
-        await sleep(2000);
+    let signature: string;
+    try {
+        signature = await sendRawAndConfirm(connection, raw, lastValidBlockHeight, "Swap transaction");
+    } catch (err) {
+        if (err instanceof TransactionExpiredError) throw new SwapExpiredError(err.signature);
+        throw err;
     }
-
-    if (!landed) {
-        // Final check after expiry: it may have landed in the last moments.
-        await sleep(2000);
-        const st = await statusOf().catch(() => null);
-        if (st && !st.err && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) landed = true;
-        else if (st?.err) throw new Error(`Swap transaction failed on-chain: ${JSON.stringify(st.err)} (${signature})`);
-    }
-    if (!landed) throw new SwapExpiredError(signature);
 
     // Read back the actual network fee paid (base fee + any priority fee), for
-    // accurate cost tracking. RPC read replicas can lag, so retry briefly
+    // accurate cost tracking. RPC read replicas can lag, so this retries briefly
     // rather than silently recording a $0 fee.
-    let feeLamports = 0;
-    for (let attempt = 0; attempt < 5; attempt++) {
-        const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
-        if (txInfo?.meta) {
-            feeLamports = txInfo.meta.fee;
-            break;
-        }
-        if (attempt < 4) await sleep(500 * (attempt + 1));
-    }
+    const feeLamports = await readFeeLamports(connection, signature);
 
     return { signature, feeLamports };
 }
@@ -225,7 +195,7 @@ export async function executeUltraOrder(
     keypair: Keypair
 ): Promise<{ signature: string; outAmountRaw: string; feeLamports: number }> {
     const tx = VersionedTransaction.deserialize(Buffer.from(order.transaction as string, "base64"));
-    tx.sign([keypair]);
+    await tx.sign([keypair]);
     const signedTransaction = Buffer.from(tx.serialize()).toString("base64");
 
     const executed = await jupiterFetch<UltraExecuteResponse>(`${ULTRA_API_BASE}/execute`, {
@@ -242,15 +212,7 @@ export async function executeUltraOrder(
     // response doesn't include the network fee, so read it back the same
     // retry-tolerant way as executeSwap does.
     const connection = new Connection(getRpcUrl(), "confirmed");
-    let feeLamports = 0;
-    for (let attempt = 0; attempt < 5; attempt++) {
-        const txInfo = await connection.getTransaction(executed.signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
-        if (txInfo?.meta) {
-            feeLamports = txInfo.meta.fee;
-            break;
-        }
-        if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-    }
+    const feeLamports = await readFeeLamports(connection, executed.signature);
 
     return {
         signature: executed.signature,
@@ -291,7 +253,7 @@ export async function createTriggerSellOrder(params: {
     });
 
     const tx = VersionedTransaction.deserialize(Buffer.from(created.transaction, "base64"));
-    tx.sign([params.keypair]);
+    await tx.sign([params.keypair]);
     const signedTransaction = Buffer.from(tx.serialize()).toString("base64");
 
     const executed = await jupiterFetch<{ signature: string; status: string; error?: string }>(
@@ -446,7 +408,7 @@ export async function cancelTriggerV1Order(params: { keypair: Keypair; orderKey:
         body: JSON.stringify({ maker, order: params.orderKey, computeUnitPrice: "auto" }),
     });
     const tx = VersionedTransaction.deserialize(Buffer.from(crafted.transaction, "base64"));
-    tx.sign([params.keypair]);
+    await tx.sign([params.keypair]);
     const executed = await jupiterFetch<{ signature: string; status: string; error?: string }>(`${JUPITER_API_BASE}/trigger/v1/execute`, {
         method: "POST",
         body: JSON.stringify({ signedTransaction: Buffer.from(tx.serialize()).toString("base64"), requestId: crafted.requestId }),
@@ -573,7 +535,7 @@ export async function createTriggerV2SellOrder(params: {
         },
     });
     const tx = VersionedTransaction.deserialize(Buffer.from(deposit.transaction, "base64"));
-    tx.sign([params.keypair]);
+    await tx.sign([params.keypair]);
 
     const order = await v2Fetch<{ id: string; txSignature: string; depositConfirmed?: boolean }>("/orders/price", {
         method: "POST",
@@ -650,7 +612,7 @@ export async function cancelTriggerV2Order(params: { keypair: Keypair; token: st
         token: params.token,
     });
     const tx = VersionedTransaction.deserialize(Buffer.from(cancel.transaction, "base64"));
-    tx.sign([params.keypair]);
+    await tx.sign([params.keypair]);
     return v2Fetch<{ id: string; txSignature?: string }>(`/orders/price/confirm-cancel/${params.orderId}`, {
         method: "POST",
         token: params.token,

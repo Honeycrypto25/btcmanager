@@ -52,7 +52,7 @@ export async function getSolanaDcaReportData(): Promise<DcaReportAsset | null> {
 
     let daysOfFuel: number | null = null;
     try {
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         const usdcBalance = await getSolanaUsdcBalance(keypair.publicKey.toBase58());
         const buyAmountUsd = Number(settings.buyAmountUsd);
         if (buyAmountUsd > 0) {
@@ -181,7 +181,7 @@ export async function getEvaDcaReportData(): Promise<DcaReportAsset | null> {
 
     let daysOfFuel: number | null = null;
     try {
-        const keypair = loadBotKeypair();
+        const keypair = await loadBotKeypair();
         const usdcBalance = await getSolanaUsdcBalance(keypair.publicKey.toBase58());
         const buyAmountUsd = Number(settings.buyAmountUsd);
         if (buyAmountUsd > 0) {

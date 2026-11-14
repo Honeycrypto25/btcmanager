@@ -30,7 +30,7 @@ export async function createSolanaLimitBuy(
 
     const settings = await db.solanaSettings.findUnique({ where: { userId } });
     if (!settings) throw new Error("Salvează întâi setările botului.");
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     if (keypair.publicKey.toBase58() !== settings.walletAddress) {
         throw new Error("SOLANA_PRIVATE_KEY nu corespunde wallet-ului din setări — refuz să tranzacționez.");
     }
@@ -72,7 +72,7 @@ export async function cancelSolanaLimitBuy(userId: string, id: string, note = "A
     if (!order) throw new Error("Ordinul nu există.");
     if (order.status !== "OPEN") throw new Error("Ordinul nu mai e activ.");
 
-    const keypair = loadBotKeypair();
+    const keypair = await loadBotKeypair();
     try {
         await cancelTriggerV1Order({ keypair, orderKey: order.jupiterOrderKey });
     } catch (e) {
