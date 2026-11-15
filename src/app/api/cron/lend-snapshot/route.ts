@@ -6,6 +6,7 @@ import { getLendPositions } from "@/lib/solana/jupiter-lend";
 import { recordLendSnapshots } from "@/lib/solana/lend-snapshots";
 import { lendCapLtv } from "@/lib/solana/lend-config";
 import { checkLendAlerts } from "@/lib/email/lend-alert";
+import { snapshotAlchemyUsage } from "@/lib/api-usage-report";
 
 /**
  * Daily (Hobby-plan cron limit, see vercel.json): records the Jupiter Lend
@@ -20,6 +21,9 @@ export async function GET(req: NextRequest) {
     if (!process.env.CRON_SECRET || authHeader !== expected) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Runs after all the bot crons: store yesterday's + today's Alchemy usage (the free plan only returns the last days).
+    await snapshotAlchemyUsage().catch((err) => console.error("snapshotAlchemyUsage failed", err));
 
     const lend = await getLendPositions();
     if (lend.error) return NextResponse.json({ ok: false, error: lend.error });

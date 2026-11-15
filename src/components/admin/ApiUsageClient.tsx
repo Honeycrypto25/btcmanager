@@ -122,14 +122,21 @@ export function ApiUsageClient({ report }: { report: ApiUsageReport }) {
                         Lipsește <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs">ALCHEMY_ACCESS_KEY</code> în Vercel. E o cheie de acces creată în contul Alchemy (nu cheia aplicației, cea care începe cu
                         <code className="mx-1 rounded bg-white/[0.06] px-1.5 py-0.5 text-xs">alch_</code>), cu drept de citire a consumului.
                     </p>
-                ) : alchemy.error ? (
+                ) : alchemy.error && alchemy.days.length === 0 ? (
                     <p className="text-sm text-red-300">Nu am putut citi consumul: {alchemy.error}</p>
                 ) : (
                     <>
+                        {alchemy.error && <p className="mb-3 text-xs text-amber-300">Ultima citire de la Alchemy a eșuat ({alchemy.error}); mai jos sunt zilele deja salvate.</p>}
                         <Quota used={alchemy.monthTotal} limit={alchemy.limit} unit="CU" pace={alchemy.monthlyPace || undefined} />
                         <div className="mt-4">
                             <DailyBars data={alchemy.days.map((d) => ({ label: shortDay(d.day), CU: d.cu }))} series={["CU"]} />
                         </div>
+                        {alchemy.recordedSince && alchemy.recordedSince > alchemy.monthStart && (
+                            <p className="mt-3 text-[11px] text-muted">
+                                Pe planul gratuit Alchemy dă doar ultimele zile, așa că platforma le salvează zilnic începând cu {alchemy.recordedSince}. Totalul lunii curente include doar zilele de după această dată; cifra
+                                completă a lunii e în contul Alchemy.
+                            </p>
+                        )}
                     </>
                 )}
             </Card>

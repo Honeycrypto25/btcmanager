@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 
 const DAY = 86_400_000;
@@ -39,6 +40,8 @@ export interface ApiUsageReport {
         monthTotal: number;
         limit: number;
         monthlyPace: number;
+        recordedSince: string | null; // first day stored — Alchemy's free plan only returns the last couple of days
+        monthStart: string;
     };
 }
 
@@ -74,7 +77,7 @@ function summarize(rows: Row[], now: Date, seriesOf: (bucket: string) => string,
     const paceBase = full.length ? full : days.slice(-1);
     return {
         days,
-        series: [...series].sort(),
+        series: [...series].sort((a, b) => (a === "Swap API" ? -1 : b === "Swap API" ? 1 : a.localeCompare(b))),
         today: days[days.length - 1].total,
         last7: sum(days.slice(-7)),
         last30: sum(days),
@@ -93,31 +96,65 @@ function oneInchCycle(now: Date): { start: Date; end: Date } {
     return { start, end: new Date(next.getTime() - DAY) };
 }
 
-/** Official compute-unit usage from Alchemy's Admin API (needs ALCHEMY_ACCESS_KEY — an access key, not the app API key). */
-async function loadAlchemy(now: Date): Promise<ApiUsageReport["alchemy"]> {
-    const base = { configured: false, error: null as string | null, days: [] as { day: string; cu: number }[], monthTotal: 0, limit: ALCHEMY_LIMIT, monthlyPace: 0 };
-    const key = process.env.ALCHEMY_ACCESS_KEY;
-    if (!key) return base;
-    try {
-        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+/**
+ * Reads the official compute-unit usage from Alchemy's Admin API (needs ALCHEMY_ACCESS_KEY — an access
+ * key with the Usage API permission, not the app API key) and stores each day in ApiUsageDaily.
+ * The free plan only returns the last couple of days, so the month is rebuilt from what was stored:
+ * the page load and the daily cron both call this, which keeps every day covered.
+ */
+// Alchemy rate-limits "distinct usage queries", so the same query (fixed start/end of day) is reused and
+// its result cached for 30 minutes. A failed read throws, which keeps it out of the cache.
+const fetchAlchemyDays = unstable_cache(
+    async (startIso: string, endIso: string): Promise<{ day: string; cu: number }[]> => {
         const res = await fetch("https://admin-api.alchemy.com/v1/usage/time-series", {
             method: "POST",
-            headers: { Authorization: `Bearer ${key.trim()}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ startTime: monthStart.toISOString(), granularity: "day" }),
+            headers: { Authorization: `Bearer ${(process.env.ALCHEMY_ACCESS_KEY ?? "").trim()}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ startTime: startIso, endTime: endIso, granularity: "day" }),
             cache: "no-store",
             signal: AbortSignal.timeout(10_000),
         });
         const text = await res.text();
-        if (!res.ok) return { ...base, configured: true, error: `Alchemy a răspuns ${res.status}: ${text.slice(0, 200)}` };
+        if (!res.ok) throw new Error(res.status === 429 ? "Alchemy limitează citirile de consum (429) — reîncearcă peste câteva minute" : `Alchemy a răspuns ${res.status}: ${text.slice(0, 200)}`);
         const json = JSON.parse(text) as { data?: { data?: { startTime: string; amount: string }[] } };
-        const days = (json.data?.data ?? []).map((b) => ({ day: b.startTime.slice(0, 10), cu: Number(b.amount) || 0 })).sort((a, b) => a.day.localeCompare(b.day));
-        const monthTotal = days.reduce((a, d) => a + d.cu, 0);
-        const full = days.filter((d) => d.day < dayKey(now)).slice(-7);
-        const monthlyPace = full.length ? Math.round((full.reduce((a, d) => a + d.cu, 0) / full.length) * 30) : 0;
-        return { configured: true, error: null, days, monthTotal, limit: ALCHEMY_LIMIT, monthlyPace };
+        return (json.data?.data ?? []).map((b) => ({ day: b.startTime.slice(0, 10), cu: Math.round(Number(b.amount) || 0) }));
+    },
+    ["alchemy-usage-days"],
+    { revalidate: 1800 },
+);
+
+export async function snapshotAlchemyUsage(now = new Date()): Promise<{ configured: boolean; error: string | null }> {
+    if (!process.env.ALCHEMY_ACCESS_KEY) return { configured: false, error: null };
+    try {
+        const y = now.getUTCFullYear();
+        const m = now.getUTCMonth();
+        const monthStart = new Date(Date.UTC(y, m, 1));
+        const endOfToday = new Date(Date.UTC(y, m, now.getUTCDate(), 23, 59, 59, 999));
+        for (const b of await fetchAlchemyDays(monthStart.toISOString(), endOfToday.toISOString())) {
+            const day = new Date(`${b.day}T00:00:00.000Z`);
+            await db.apiUsageDaily.upsert({
+                where: { provider_bucket_day: { provider: "alchemy", bucket: "cu", day } },
+                create: { provider: "alchemy", bucket: "cu", day, count: b.cu },
+                update: { count: b.cu }, // the latest reading of a day replaces the earlier (partial) one
+            });
+        }
+        return { configured: true, error: null };
     } catch (err) {
-        return { ...base, configured: true, error: err instanceof Error ? err.message : String(err) };
+        return { configured: true, error: err instanceof Error ? err.message : String(err) };
     }
+}
+
+async function loadAlchemy(now: Date): Promise<ApiUsageReport["alchemy"]> {
+    const snap = await snapshotAlchemyUsage(now);
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const [rows, first] = await Promise.all([
+        db.apiUsageDaily.findMany({ where: { provider: "alchemy", day: { gte: monthStart } }, orderBy: { day: "asc" } }),
+        db.apiUsageDaily.findFirst({ where: { provider: "alchemy" }, orderBy: { day: "asc" }, select: { day: true } }),
+    ]);
+    const days = rows.map((r) => ({ day: dayKey(r.day), cu: r.count }));
+    const monthTotal = days.reduce((a, d) => a + d.cu, 0);
+    const full = days.filter((d) => d.day < dayKey(now)).slice(-7);
+    const monthlyPace = full.length ? Math.round((full.reduce((a, d) => a + d.cu, 0) / full.length) * 30) : 0;
+    return { ...snap, days, monthTotal, limit: ALCHEMY_LIMIT, monthlyPace, recordedSince: first ? dayKey(first.day) : null, monthStart: dayKey(monthStart) };
 }
 
 export async function getApiUsageReport(): Promise<ApiUsageReport> {
