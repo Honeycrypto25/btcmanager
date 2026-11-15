@@ -477,12 +477,20 @@ export default function AdminPageClient() {
                         Manage your account security and platform extensions.
                     </p>
                 </div>
-                <a
-                    href="/admin/solana-test"
-                    className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
-                >
-                    Test Solana · web3.js v3 →
-                </a>
+                <div className="flex flex-wrap gap-2">
+                    <a
+                        href="/admin/api-usage"
+                        className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                    >
+                        Consum API →
+                    </a>
+                    <a
+                        href="/admin/solana-test"
+                        className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
+                    >
+                        Test Solana · web3.js v3 →
+                    </a>
+                </div>
             </div>
 
             {/* Tabs */}

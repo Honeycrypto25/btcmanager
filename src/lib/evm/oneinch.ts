@@ -1,3 +1,4 @@
+import { countingOneInchConnector, oneInchBucket, trackApiCall } from "@/lib/api-usage";
 import "server-only";
 import { Contract, MaxUint256, parseUnits, formatUnits, type Wallet } from "ethers";
 import {
@@ -34,11 +35,12 @@ function apiKey(): string {
 }
 
 function sdk(): Sdk {
-    return new Sdk({ authKey: apiKey(), networkId: BASE_CHAIN_ID, httpConnector: new FetchProviderConnector() });
+    return new Sdk({ authKey: apiKey(), networkId: BASE_CHAIN_ID, httpConnector: countingOneInchConnector(new FetchProviderConnector()) });
 }
 
 async function oneinchFetch<T>(url: string): Promise<T> {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey()}`, Accept: "application/json" } });
+    await trackApiCall("1inch", oneInchBucket(url), res.status);
     const body = await res.json();
     if (!res.ok) {
         throw new Error(`1inch API error (${res.status}) on ${url}: ${JSON.stringify(body)}`);
@@ -234,7 +236,7 @@ export async function cancelLimitOrder(wallet: Wallet, orderHash: string): Promi
 }
 
 function api(): Api {
-    return new Api({ authKey: apiKey(), networkId: BASE_CHAIN_ID, httpConnector: new FetchProviderConnector() });
+    return new Api({ authKey: apiKey(), networkId: BASE_CHAIN_ID, httpConnector: countingOneInchConnector(new FetchProviderConnector()) });
 }
 
 /**

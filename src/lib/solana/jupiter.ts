@@ -1,4 +1,5 @@
 import "server-only";
+import { jupiterBucket, trackApiCall } from "@/lib/api-usage";
 import { Connection, VersionedTransaction, Keypair } from "@solana/web3.js";
 import { createPrivateKey, sign as ed25519Sign } from "crypto";
 import bs58 from "bs58";
@@ -23,11 +24,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * when present; gives up after 5 tries.
  */
 async function fetchWithRateLimitRetry(url: string, init: RequestInit): Promise<Response> {
+    const bucket = jupiterBucket(url);
     let res = await fetch(url, init);
+    await trackApiCall("jupiter", bucket, res.status);
     for (let attempt = 1; res.status === 429 && attempt <= 5; attempt++) {
         const retryAfter = Number(res.headers.get("retry-after"));
         await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1200 * attempt);
         res = await fetch(url, init);
+        await trackApiCall("jupiter", bucket, res.status);
     }
     return res;
 }

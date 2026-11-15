@@ -1,4 +1,5 @@
 import "server-only";
+import { trackApiCall } from "@/lib/api-usage";
 import { JUPITER_API_BASE } from "./constants";
 import { getPriceLevelHistory } from "./lend-price-history";
 import { readLendSnapshots, recordLendSnapshots } from "./lend-snapshots";
@@ -192,6 +193,7 @@ export async function getLendPositions(): Promise<LendData> {
             cache: "no-store",
             signal: AbortSignal.timeout(10000),
         });
+        await trackApiCall("jupiter", "lend", res.status);
         if (!res.ok) throw new Error(`Jupiter Lend a răspuns ${res.status}`);
         const raw = (await res.json()) as RawPosition[];
         const positions = (Array.isArray(raw) ? raw : [])

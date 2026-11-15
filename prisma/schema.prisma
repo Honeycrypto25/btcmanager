@@ -2014,3 +2014,18 @@ model BotRun {
 
   @@index([userId, bot, runAt])
 }
+
+// One row per provider + bucket + UTC day: how many requests the platform itself sent to an external
+// API (1inch, Jupiter). Written by trackApiCall (src/lib/api-usage.ts), shown in Admin → Consum API.
+model ApiUsageDaily {
+  id       String   @id @default(cuid())
+  provider String // "1inch" | "jupiter"
+  bucket   String // e.g. "swap:8453", "orderbook:137", "trigger"
+  day      DateTime @db.Date
+  count    Int      @default(0)
+  limited  Int      @default(0) // responses with HTTP 429
+  errors   Int      @default(0) // other failed requests
+
+  @@unique([provider, bucket, day])
+  @@index([day])
+}
