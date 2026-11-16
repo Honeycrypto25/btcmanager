@@ -30,6 +30,7 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
 import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 import type { LimitBuyDTO } from "./EvmLimitBuyCard";
+import { Last30Stats } from "@/components/ui/Last30Stats";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -375,6 +376,26 @@ export function EvmStatsClient({
                 <StatCard label="WETH deținut" value={`${stats.wethHeld.toFixed(5)} WETH`} />
                 <StatCard label="Ordine active" value={String(stats.openOrders)} />
             </div>
+
+            <Last30Stats
+                lots={allLots.map((l) => ({
+                    status: l.status,
+                    boughtAt: l.boughtAt,
+                    buyAmountUsd: Number(l.buyAmountUsd),
+                    buyPriceUsd: Number(l.buyPriceUsd),
+                    buyFeeUsd: Number(l.buyFeeUsd),
+                    soldAt: l.soldAt,
+                    sellProceedsUsd: Number(l.sellProceedsUsd ?? 0),
+                    realizedPnlUsd: Number(l.realizedPnlUsd ?? 0),
+                    sellFeeUsd: Number(l.sellFeeUsd ?? 0),
+                    targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null,
+                    tokensOnOrder: Number(l.sellAmountWethPlanned ?? l.wethRemaining),
+                }))}
+                currentPrice={wethPriceUsd}
+                fmtUsd={formatUsd}
+                fmtFee={formatUsdFee}
+                fmtPrice={formatUsd}
+            />
 
             {/* Fuel — how many more buy cycles the current USDC balance can fund */}
             <Card>

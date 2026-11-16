@@ -141,13 +141,14 @@ const STATUS_FILTER_OPTIONS: { value: LotDTO["status"]; label: string }[] = [
     { value: "FAILED", label: "Eșuat" },
 ];
 
-function StatCard({ label, value, icon: Icon, valueColor }: { label: string; value: string; icon: React.ElementType; valueColor?: string }) {
+function StatCard({ label, value, icon: Icon, valueColor, hint }: { label: string; value: string; icon: React.ElementType; valueColor?: string; hint?: string }) {
     return (
         <Card className="p-5 space-y-2">
             <div className="flex items-center gap-2 text-faint text-xs uppercase tracking-wider">
                 <Icon className="w-3.5 h-3.5" /> {label}
             </div>
             <p className={cn("text-2xl font-num font-medium text-foreground", valueColor)}>{value}</p>
+            {hint && <p className="text-[11px] text-muted">{hint}</p>}
         </Card>
     );
 }
@@ -268,6 +269,39 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
         }
         return { totalSoldUsd, totalReinvestedUsd, totalRealizedProfitUsd, totalReacquiredCount, openBuybackOrders, totalLots: lots.length };
     }, [lots]);
+
+    // Last 30 days + what the active buy-back orders hold — from allLots (only the token chip applies),
+    // so the row stays the same whatever status/date filter is on.
+    const stats30 = useMemo(() => {
+        const since = Date.now() - 30 * 86_400_000;
+        const base = tokenFilter === "all" ? allLots : allLots.filter((l) => l.settingsId === tokenFilter);
+        let soldUsd = 0;
+        let reinvestedUsd = 0;
+        let profitUsd = 0;
+        let sales = 0;
+        let reacquired = 0;
+        let reacquiredUsd = 0;
+        let activeUsd = 0;
+        let active = 0;
+        for (const lot of base) {
+            if (lot.status === "FAILED") continue;
+            if (new Date(lot.soldAt).getTime() >= since) {
+                soldUsd += Number(lot.usdcReceived);
+                reinvestedUsd += Number(lot.usdcToBuyback);
+                profitUsd += Number(lot.usdcProfit);
+                sales++;
+            }
+            if (lot.status === "FILLED" && lot.filledAt && new Date(lot.filledAt).getTime() >= since) {
+                reacquired++;
+                reacquiredUsd += Number(lot.usdcSpent ?? lot.usdcToBuyback);
+            }
+            if (lot.status === "OPEN") {
+                activeUsd += Number(lot.usdcToBuyback);
+                active++;
+            }
+        }
+        return { soldUsd, reinvestedUsd, profitUsd, sales, reacquired, reacquiredUsd, activeUsd, active };
+    }, [allLots, tokenFilter]);
 
     // Just the currently-active buy-back orders — deliberately built from
     // allLots (only respecting the token chip, not status/date), so a lot
@@ -584,6 +618,28 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 <StatCard label="Ordine active" value={String(stats.openBuybackOrders)} icon={ListChecks} />
                 <StatCard label="Răscumpărări finalizate" value={String(stats.totalReacquiredCount)} icon={RefreshCcw} />
                 <StatCard label="Total loturi" value={String(stats.totalLots)} icon={History} />
+            </div>
+
+            <div>
+                <p className="mb-2 text-xs text-faint">Ultimele 30 de zile · toate loturile{tokenFilter === "all" ? "" : " tokenului ales"}, indiferent de filtrele de status și dată</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <StatCard label="Vândut · 30 zile" value={fmtUsd(stats30.soldUsd)} icon={TrendingUp} hint={`${stats30.sales} ${stats30.sales === 1 ? "vânzare" : "vânzări"}`} />
+                    <StatCard label="Reinvestit în ordine · 30 zile" value={fmtUsd(stats30.reinvestedUsd)} icon={RefreshCcw} />
+                    <StatCard label="Profit realizat · 30 zile" value={fmtUsd(stats30.profitUsd)} icon={PiggyBank} valueColor="text-accent" />
+                    <StatCard
+                        label="Răscumpărări finalizate · 30 zile"
+                        value={String(stats30.reacquired)}
+                        icon={RefreshCcw}
+                        hint={stats30.reacquired > 0 ? `${fmtUsd(stats30.reacquiredUsd)} cheltuiți` : undefined}
+                    />
+                    <StatCard label="Vânzări · 30 zile" value={String(stats30.sales)} icon={History} />
+                    <StatCard
+                        label="Valoarea ordinelor active"
+                        value={stats30.active > 0 ? fmtUsd(stats30.activeUsd) : "—"}
+                        icon={ListChecks}
+                        hint={stats30.active > 0 ? `USDC în ${stats30.active} ${stats30.active === 1 ? "ordin" : "ordine"} de răscumpărare` : "niciun ordin activ"}
+                    />
+                </div>
             </div>
 
             {uptimes.map((u) => (
