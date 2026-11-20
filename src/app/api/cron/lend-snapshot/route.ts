@@ -7,6 +7,7 @@ import { recordLendSnapshots } from "@/lib/solana/lend-snapshots";
 import { lendCapLtv } from "@/lib/solana/lend-config";
 import { checkLendAlerts } from "@/lib/email/lend-alert";
 import { snapshotAlchemyUsage } from "@/lib/api-usage-report";
+import { refreshDailyPrices } from "@/lib/price-history";
 
 /**
  * Daily (Hobby-plan cron limit, see vercel.json): records the Jupiter Lend
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest) {
 
     // Runs after all the bot crons: store yesterday's + today's Alchemy usage (the free plan only returns the last days).
     await snapshotAlchemyUsage().catch((err) => console.error("snapshotAlchemyUsage failed", err));
+    // The daily price check: closes yesterday (09:50 UTC) and re-checks the last 3 closed days, logging corrections.
+    await refreshDailyPrices("SOL", undefined, Date.now(), true).catch((err) => console.error("refreshDailyPrices failed", err));
 
     const lend = await getLendPositions();
     if (lend.error) return NextResponse.json({ ok: false, error: lend.error });

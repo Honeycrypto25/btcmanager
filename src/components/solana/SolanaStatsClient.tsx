@@ -31,6 +31,8 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFilter";
 import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 import { Last30Stats } from "@/components/ui/Last30Stats";
+import { BuyTimingCard } from "./BuyTimingCard";
+import type { PriceHistory } from "@/lib/price-history";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
 
@@ -58,6 +60,8 @@ export function SolanaStatsClient({
     fuelStatus,
     limitBuys = [],
     uptime,
+    daily = null,
+    limitLots = {},
 }: {
     lots: LotDTO[];
     stats: unknown; // kept out of use below — everything is recomputed from the (filterable) lot list instead, so the numbers on this page always match what's filtered in.
@@ -66,6 +70,8 @@ export function SolanaStatsClient({
     fuelStatus: FuelStatus | { error: string };
     limitBuys?: SolanaLimitBuyDTO[];
     uptime?: BotUptimeDTO;
+    daily?: PriceHistory | { error: string } | null;
+    limitLots?: Record<string, boolean>; // lot id → bought by a limit order (true = automatic dip)
 }) {
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
@@ -439,6 +445,21 @@ export function SolanaStatsClient({
                 currentPrice={solPriceUsd}
                 fmt={formatUsd}
                 limitBuys={openLimitBuys.map((o) => ({ id: o.id, limitPriceUsd: Number(o.limitPriceUsd), amountUsd: Number(o.amountUsd) }))}
+            />
+
+            <BuyTimingCard
+                lots={allLots
+                    .filter((l) => l.status !== "FAILED")
+                    .map((l) => ({
+                        id: l.id,
+                        boughtAt: l.boughtAt,
+                        buyPriceUsd: Number(l.buyPriceUsd),
+                        buyAmountUsd: Number(l.buyAmountUsd),
+                        via: l.id in limitLots ? (limitLots[l.id] ? "limit-auto" : "limit") : "dca",
+                    }))}
+                history={daily && "sources" in daily ? daily : null}
+                error={daily && "error" in daily ? daily.error : null}
+                fmt={formatUsd}
             />
 
             {chartData.length > 0 && (

@@ -2029,3 +2029,44 @@ model ApiUsageDaily {
   @@unique([provider, bucket, day])
   @@index([day])
 }
+
+// Daily UTC high/low per asset and per source (Coinbase and Binance are both stored), so the page does not
+// refetch history on every visit. Every 6 hours today and the last 3 closed days are re-checked; a change to a day that was
+// already final is logged in PriceCorrection.
+model PriceDaily {
+  id          String    @id @default(cuid())
+  symbol      String // e.g. "SOL"
+  source      String // "Coinbase" | "Binance"
+  day         DateTime  @db.Date
+  open        Float
+  high        Float
+  low         Float
+  close       Float
+  finalizedAt DateTime? // first time the row was written after its day had ended
+  checkedAt   DateTime // last time the source was asked about this day
+  rechecks    Int       @default(0) // times the day was asked again after it was final
+  corrections Int       @default(0) // of those, how many came back with different values
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([symbol, source, day])
+  @@index([symbol, day])
+}
+
+// A closed, already-final day whose values changed at the source on a later check.
+model PriceCorrection {
+  id         String   @id @default(cuid())
+  symbol     String
+  source     String
+  day        DateTime @db.Date
+  oldOpen    Float
+  oldHigh    Float
+  oldLow     Float
+  oldClose   Float
+  newOpen    Float
+  newHigh    Float
+  newLow     Float
+  newClose   Float
+  detectedAt DateTime @default(now())
+
+  @@index([symbol, detectedAt])
+}

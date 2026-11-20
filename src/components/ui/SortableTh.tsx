@@ -39,10 +39,10 @@ export function useSort<T>(rows: T[], accessors: Record<string, Accessor<T>>, in
 }
 
 /** Table header cell that sorts its column on click. */
-export function SortTh({ label, k, sort, onSort, className }: { label: string; k: string; sort: SortState; onSort: (k: string) => void; className?: string }) {
+export function SortTh({ label, k, sort, onSort, className, title }: { label: string; k: string; sort: SortState; onSort: (k: string) => void; className?: string; title?: string }) {
     const active = sort.key === k;
     return (
-        <th className={className} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+        <th className={className} title={title} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
             <button type="button" onClick={() => onSort(k)} className={`group inline-flex cursor-pointer select-none items-center gap-1 whitespace-nowrap uppercase tracking-[inherit] transition-colors hover:text-foreground ${active ? "text-foreground" : ""}`}>
                 {label}
                 <span className={`text-[9px] leading-none ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`}>{active && sort.dir === "asc" ? "▲" : "▼"}</span>
