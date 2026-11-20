@@ -25,6 +25,7 @@ export interface LotDTO {
     solRemaining: string;
     lastCheckedAt: string | null;
     notes: string | null;
+    origin?: string | null; // "auto" | "manual" | "limit" | "limit-auto"; null = before origins were recorded
 }
 
 export interface SettingsDTO {

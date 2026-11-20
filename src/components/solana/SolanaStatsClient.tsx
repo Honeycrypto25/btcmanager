@@ -455,7 +455,14 @@ export function SolanaStatsClient({
                         boughtAt: l.boughtAt,
                         buyPriceUsd: Number(l.buyPriceUsd),
                         buyAmountUsd: Number(l.buyAmountUsd),
-                        via: l.id in limitLots ? (limitLots[l.id] ? "limit-auto" : "limit") : "dca",
+                        via:
+                            l.origin === "auto" || l.origin === "manual" || l.origin === "limit" || l.origin === "limit-auto"
+                                ? l.origin
+                                : l.id in limitLots
+                                  ? limitLots[l.id]
+                                      ? "limit-auto"
+                                      : "limit"
+                                  : "unknown",
                     }))}
                 history={daily && "sources" in daily ? daily : null}
                 error={daily && "error" in daily ? daily.error : null}

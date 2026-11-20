@@ -25,6 +25,14 @@ function SourceTag({ name }: { name: string }) {
 const accTone = (p: number | null) => (p === null ? "text-muted" : p >= 99.5 ? "text-emerald-300" : p >= 95 ? "text-amber-300" : "text-red-300");
 const fmtAcc = (p: number | null) => (p === null ? "—" : `${p >= 99.95 ? 100 : p.toFixed(1)}%`);
 
+const VIA_LABEL: Record<TimingLot["via"], string> = {
+    auto: "DCA automat",
+    manual: "Manual",
+    limit: "Limit",
+    "limit-auto": "Limit (dip)",
+    unknown: "DCA / manual",
+};
+
 const FIELDS = [
     ["low", "minim"],
     ["high", "maxim"],
@@ -222,7 +230,7 @@ export function BuyTimingCard({ lots, history, error: loadError, fmt }: Props) {
                                     <thead>
                                         <tr className="border-b border-white/[0.06] text-left text-[11px] uppercase tracking-wider text-faint">
                                             <SortTh label="Data" k="date" title="Data și ora cumpărării, ora ta locală. Ziua folosită pentru minim și maxim e cea UTC." sort={sort} onSort={toggle} className="py-2 pr-4 font-medium" />
-                                            <th className="py-2 pr-4 font-medium" title="DCA / manual = cumpărarea zilnică a botului sau una pornită de tine; Limit (dip) = ordin limit automat la scădere; Limit = ordin limit pus manual.">
+                                            <th className="py-2 pr-4 font-medium" title="DCA automat = cumpărarea zilnică a botului; Manual = pornită de tine din butoane; Limit (dip) = ordin limit automat la scădere; Limit = ordin limit pus manual; DCA / manual = cumpărare mai veche, de dinainte să se salveze originea.">
                                                 Tip
                                             </th>
                                             <SortTh label="Preț cumpărare" k="price" title="Prețul mediu plătit pe 1 SOL la această cumpărare." sort={sort} onSort={toggle} className="py-2 pr-4 font-medium" />
@@ -240,7 +248,7 @@ export function BuyTimingCard({ lots, history, error: loadError, fmt }: Props) {
                                                     {format(new Date(r.t), "d MMM yyyy, HH:mm")}
                                                     {r.partial && <span className="ml-1.5 rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-faint">zi în curs</span>}
                                                 </td>
-                                                <td className="whitespace-nowrap py-2 pr-4 text-xs text-muted">{r.via === "limit-auto" ? "Limit (dip)" : r.via === "limit" ? "Limit" : "DCA / manual"}</td>
+                                                <td className="whitespace-nowrap py-2 pr-4 text-xs text-muted"><span className={r.via === "manual" ? "text-sky-300" : r.via === "limit" || r.via === "limit-auto" ? "text-violet-300" : undefined}>{VIA_LABEL[r.via]}</span></td>
                                                 <td className="py-2 pr-4 font-mono text-foreground">{fmt(r.buyPriceUsd)}</td>
                                                 <td className="py-2 pr-4 font-mono text-muted">{r.low === null ? "—" : fmt(r.low)}</td>
                                                 <td className="py-2 pr-4 font-mono text-muted">{r.high === null ? "—" : fmt(r.high)}</td>
@@ -346,7 +354,7 @@ export function BuyTimingCard({ lots, history, error: loadError, fmt }: Props) {
                                 ["Cea mai bună · cea mai slabă", "Cea mai mică și cea mai mare poziție în zi dintre toate cumpărările."],
                                 ["Săptămânal / Lunar / Anual", "Graficul grupează cumpărările pe săptămâni (luni–duminică), luni sau ani; tabelul arată ordinele din perioada aleasă."],
                                 ["Zi în curs", "Cumpărare de azi sau de ieri înainte de 09:50 UTC: minimul și maximul zilei nu sunt încă finale și se actualizează o dată la 6 ore."],
-                                ["Tip", "DCA / manual = cumpărarea zilnică a botului sau una pornită de tine; Limit (dip) = ordin limit automat la scădere; Limit = ordin limit pus manual."],
+                                ["Tip", "DCA automat = cumpărarea zilnică a botului; Manual = pornită de tine din butoanele „Rulează acum” sau „Forțează cumpărarea”; Limit (dip) = ordin limit automat la scădere; Limit = ordin limit pus manual. DCA / manual = cumpărare de dinainte de 20 nov. 2026, când originea nu se salva încă."],
                                 ["Sub minim", "Botul cumpără prin Jupiter, iar minimul vine de la bursă; rar, prețul plătit iese puțin sub minim. Atunci poziția apare 0% și peste minim ușor negativ."],
                             ].map(([term, text]) => (
                                 <div key={term}>

@@ -235,8 +235,9 @@ async function retryPendingSellOrders(
  * immediately. A forced buy is an EXTRA purchase: it deliberately leaves
  * `lastRunAt` alone so the regular schedule is not pushed back.
  */
-export async function runSolanaDcaForUser(userId: string, opts: { force?: boolean } = {}): Promise<DcaRunResult> {
+export async function runSolanaDcaForUser(userId: string, opts: { force?: boolean; origin?: "auto" | "manual" } = {}): Promise<DcaRunResult> {
     const force = opts.force === true;
+    const origin = opts.origin ?? "manual"; // only the cron passes "auto"
     const settings = await db.solanaSettings.findUnique({ where: { userId } });
     if (!settings || !settings.enabled) return { userId, action: "skipped", reason: "disabled" };
 
@@ -316,6 +317,7 @@ export async function runSolanaDcaForUser(userId: string, opts: { force?: boolea
                 buyFeeUsd,
                 buyTxSignature,
                 solRemaining: solAcquired,
+                origin,
             },
         });
 
@@ -397,7 +399,7 @@ export async function runSolanaDcaForAllUsers(): Promise<DcaRunResult[]> {
     const results: DcaRunResult[] = [];
     for (const s of settingsRows) {
         if (s.enabled) {
-            const r = await runSolanaDcaForUser(s.userId);
+            const r = await runSolanaDcaForUser(s.userId, { origin: "auto" });
             results.push(r);
             await logBotRun(s.userId, "SOL", r);
         }

@@ -16,7 +16,9 @@ export interface TimingLot {
     boughtAt: string; // ISO
     buyPriceUsd: number;
     buyAmountUsd: number;
-    via: "dca" | "limit" | "limit-auto"; // daily DCA / manual buy, or a filled limit buy order (automatic dip order)
+    /** auto = daily cron, manual = Run now / Buy now button, limit / limit-auto = limit buy order (automatic dip),
+     *  unknown = older buy from the DCA bot, from before the origin was recorded (auto or manual). */
+    via: "auto" | "manual" | "limit" | "limit-auto" | "unknown";
 }
 
 export interface TimingRow extends TimingLot {

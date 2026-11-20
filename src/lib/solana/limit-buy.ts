@@ -144,6 +144,7 @@ export async function reconcileSolanaLimitBuys(userId: string, walletAddress: st
                         boughtAt,
                         solRemaining: solNet,
                         notes: o.auto ? "Cumpărat prin ordin limit automat (dip)." : "Cumpărat prin ordin limit.",
+                        origin: o.auto ? "limit-auto" : "limit",
                     },
                 });
                 await tx.solanaBuyOrder.update({ where: { id: o.id }, data: { lotId: lot.id } });
