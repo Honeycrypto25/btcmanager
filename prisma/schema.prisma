@@ -57,6 +57,7 @@ model User {
   solanaBuyOrders      SolanaBuyOrder[]
   botRuns              BotRun[]
   solanaSweeps         SolanaSweep[]
+  solanaLendRepays     SolanaLendRepay[]
   evaSettings          EvaSettings?
   evaLots              EvaLot[]
   evaSweeps            EvaSweep[]
@@ -1056,6 +1057,21 @@ model SolanaSweep {
   priceUsd          Decimal? @db.Decimal(20, 8)
 
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// A payment of a Jupiter Lend loan made from the platform (loans page → "Plătește din împrumut"), paid with the bot's
+// USDC. Lets the loan transactions page mark which "Rambursare" rows started here.
+model SolanaLendRepay {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  txSignature String   @unique
+  amountUsdc  Decimal  @db.Decimal(20, 6)
+  vaultId     Int
+  positionId  Int
+  createdAt   DateTime @default(now())
 
   @@index([userId, createdAt])
 }

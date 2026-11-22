@@ -198,5 +198,17 @@ export async function prepareLendRepay(connection: Connection, keypair: Keypair,
     const op = await fetchOperateInstructions({ signer: keypair.publicKey.toBase58(), owner: args.owner, vaultId: args.vaultId, positionId: args.positionId, colAmount: "0", debtAmount: `-${args.usdcUnits.toString()}` });
     if (op.nftId != null && op.nftId !== args.positionId) throw new Error(`Jupiter a returnat poziția #${op.nftId}, nu #${args.positionId} — nu plătesc.`);
     const tables = await loadTables(connection, op.addressLookupTableAddresses ?? []);
-    return buildAndSimulate(connection, keypair, op.instructions.map(toInstruction), tables, "direct");
+    // The operate instruction always expects the signer's token account for the COLLATERAL token (wSOL here) to
+    // exist, even when only repaying (error 3012 AccountNotInitialized otherwise). So the wSOL account is created
+    // first (idempotent) and closed again at the end, which gives its rent back — the wallet ends up as it was.
+    const signer = keypair.publicKey;
+    const wsol = new PublicKey(SOL_MINT);
+    const ata = await getAssociatedTokenAddress(wsol, signer);
+    return buildAndSimulate(
+        connection,
+        keypair,
+        [createAssociatedTokenAccountIdempotentInstruction(signer, ata, signer, wsol), ...op.instructions.map(toInstruction), closeAccount(ata, signer, signer)],
+        tables,
+        "wrapped",
+    );
 }

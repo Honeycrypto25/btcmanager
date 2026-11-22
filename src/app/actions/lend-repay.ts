@@ -1,6 +1,9 @@
 "use server";
 
 import { Connection } from "@solana/web3.js";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { requireAdmin } from "@/lib/permissions";
 import { listSweepLendPositions, prepareLendRepay, sendPreparedDeposit, type DepositSimulation } from "@/lib/solana/lend-deposit";
@@ -44,7 +47,15 @@ export async function repayLendLoan(input: { vaultId: number; positionId: number
         if (!prepared.simulation.ok) return { ok: false, message: `Simularea plății a eșuat (nu s-a trimis nimic): ${prepared.simulation.error}`, simulation: prepared.simulation };
         if (input.dryRun) return { ok: true, message: `Simulare reușită pentru ${amount} USDC (${prepared.simulation.unitsConsumed ?? "?"} unități de calcul). Nu s-a trimis nimic.`, simulation: prepared.simulation };
 
+        const session = await getServerSession(authOptions);
+        const userId = (session?.user as { id?: string } | undefined)?.id;
         const signature = await sendPreparedDeposit(connection, prepared, "Plată împrumut");
+        // Remember it came from here (the loan transactions page marks these). Never fails the payment itself.
+        if (userId) {
+            await db.solanaLendRepay
+                .create({ data: { userId, txSignature: signature, amountUsdc: amount, vaultId: input.vaultId, positionId: input.positionId } })
+                .catch((e) => console.error("lend repay: could not record the payment", e));
+        }
         revalidatePath("/cold-wallet/imprumuturi");
         revalidatePath("/cold-wallet/imprumuturi/tranzactii");
         return { ok: true, message: `Plătit ${amount} USDC în împrumutul #${pos.id}.`, signature };

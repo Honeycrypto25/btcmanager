@@ -83,14 +83,20 @@ const solShort = (v: number, sym = "SOL") => {
     return `${t > 0 || v === 0 ? t : Number(v.toFixed(3))} ${sym}`;
 };
 
+/** A loan payment that was started from the platform (loans page → "Plătește din împrumut"). */
+export interface PlatformRepay {
+    amountUsdc: number;
+}
+
 const GREEN = "#52c98a";
 const AMBER = "#e8bc70";
 const GRID = "rgba(255,255,255,0.06)";
 const AXIS = "rgba(255,255,255,0.3)";
 
-export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, highlightSig }: { lend: LendOverview; sweeps?: Record<string, SweepDeposit>; initialSweepOnly?: boolean; highlightSig?: string }) {
+export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepOnly = false, highlightSig }: { lend: LendOverview; sweeps?: Record<string, SweepDeposit>; repays?: Record<string, PlatformRepay>; initialSweepOnly?: boolean; highlightSig?: string }) {
     const [type, setType] = useState<string>("all");
     const [sweepOnly, setSweepOnly] = useState(initialSweepOnly);
+    const [repayOnly, setRepayOnly] = useState(false);
     const [page, setPageRaw] = useState(1);
     const [touchedPage, setTouchedPage] = useState(false);
     const setPage = (n: number) => {
@@ -105,7 +111,9 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
     const types = useMemo(() => Array.from(new Set(rows.map((r) => r.type))), [rows]);
     const isSweep = (r: Row) => Boolean(sweeps[r.signature]);
     const sweepRows = useMemo(() => rows.filter(isSweep), [rows, sweeps]); // eslint-disable-line react-hooks/exhaustive-deps
-    const filtered = rows.filter((r) => (type === "all" || r.type === type) && (!sweepOnly || isSweep(r)));
+    const isRepay = (r: Row) => Boolean(repays[r.signature]);
+    const repayCount = rows.filter(isRepay).length;
+    const filtered = rows.filter((r) => (type === "all" || r.type === type) && (!sweepOnly || isSweep(r)) && (!repayOnly || isRepay(r)));
     const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
     // Opened from the sweep history with ?tx=…: jump to the page that holds that transaction.
     const hiIndex = highlightSig ? filtered.findIndex((r) => r.signature === highlightSig) : -1;
@@ -266,6 +274,21 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
                         >
                             Din retragerea lunară ({sweepRows.length})
                         </button>
+                        <button
+                            type="button"
+                            aria-pressed={repayOnly}
+                            onClick={() => {
+                                setRepayOnly(!repayOnly);
+                                setPageRaw(1);
+                                setTouchedPage(true);
+                            }}
+                            className={cn(
+                                "min-h-[32px] rounded-full border px-3 text-xs transition-colors",
+                                repayOnly ? "border-sky-400/50 bg-sky-400/10 text-sky-200" : "border-white/10 bg-white/[0.03] text-muted hover:border-white/20"
+                            )}
+                        >
+                            Plătite din platformă ({repayCount})
+                        </button>
                     </div>
                 </div>
 
@@ -293,6 +316,9 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
                                             <span className="ml-1.5 inline-block whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">
                                                 din retragerea lunară{sweeps[r.signature].manual ? " (manual)" : ""}
                                             </span>
+                                        )}
+                                        {repays[r.signature] && (
+                                            <span className="ml-1.5 inline-block whitespace-nowrap rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[11px] text-sky-200">plătit din platformă</span>
                                         )}
                                     </td>
                                     <td className="whitespace-nowrap py-2.5 pr-4 text-xs text-muted">
