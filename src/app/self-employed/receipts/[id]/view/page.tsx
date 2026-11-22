@@ -1,10 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import React from "react";
-import { getServerSession } from "next-auth";
-import { redirect, notFound } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
+import { notFound } from "next/navigation";
+import { requireSectionAccess } from "@/lib/permissions";
 import { getReceipt } from "@/app/actions/receipts";
 import { ReceiptImageViewer } from "@/components/self-employed/ReceiptImageViewer";
 

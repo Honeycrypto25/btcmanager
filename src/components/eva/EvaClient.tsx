@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Sparkles, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
 import { upsertEvaSettings, runEvaDcaNow, runEvaDcaForceNow, runEvaSweepNow, type EvaSettingsInput } from "@/app/actions/eva";
-import { formatUsd, formatPrice, type SettingsDTO } from "./shared";
+import { formatPrice, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 /** Vercel Cron for /api/cron/eva-dca runs daily at 09:40 UTC (see vercel.json) — this just mirrors that schedule for display. */

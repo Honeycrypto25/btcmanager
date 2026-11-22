@@ -1,16 +1,12 @@
 import React from 'react';
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { requireSectionAccess } from "@/lib/permissions";
-import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, Button } from "@/components/ui/core";
 import {
   TrendingUp,
   TrendingDown,
   Bitcoin,
-  Wallet,
-  Scale
+  Scale,
 } from "lucide-react";
 import { getCurrentBtcPrice } from "@/lib/btc";
 import { db } from "@/lib/db";

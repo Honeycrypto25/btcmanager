@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { cachedPageData, sessionUserId } from "@/lib/page-cache";
+import { cachedPageData } from "@/lib/page-cache";
 import { getBotActivity } from "@/lib/bot-activity";
 import { BotActClient, type BotActivityDTO } from "@/components/bot-act/BotActClient";
 

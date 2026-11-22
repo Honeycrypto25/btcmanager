@@ -5,13 +5,11 @@ import { db } from "@/lib/db";
 import { getUsdcBalance, loadBotKeypair } from "./wallet";
 import { runSolanaSweepForUser } from "./sweep";
 import {
-    createTriggerSellOrder,
-    executeSwap,
-    SwapExpiredError,
-    getActiveTriggerOrders,
-    getHistoricalTriggerOrder,
-    getSolPriceUsd,
-    getSwapQuote,
+createTriggerSellOrder,
+executeSwap,
+SwapExpiredError,
+getActiveTriggerOrders,
+getHistoricalTriggerOrder,getSwapQuote
 } from "./jupiter";
 import { MIN_TRIGGER_ORDER_USD, SOL_DECIMALS, SOL_MINT, USDC_DECIMALS, USDC_MINT } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
@@ -412,14 +410,4 @@ export async function runSolanaDcaForAllUsers(): Promise<DcaRunResult[]> {
         }
     }
     return results;
-}
-
-/** Current SOL price + a quick portfolio-level snapshot, for the settings page. */
-export async function getSolanaQuickStats(userId: string) {
-    const [settings, lots, price] = await Promise.all([
-        db.solanaSettings.findUnique({ where: { userId } }),
-        db.solanaLot.findMany({ where: { userId }, orderBy: { boughtAt: "desc" } }),
-        getSolPriceUsd().catch(() => null),
-    ]);
-    return { settings, lots, solPriceUsd: price };
 }

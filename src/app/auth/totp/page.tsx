@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Smartphone, Loader2, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Loader2, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { Button, Card } from '@/components/ui/core';
 import axios from 'axios';
 

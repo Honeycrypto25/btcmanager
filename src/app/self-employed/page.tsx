@@ -1,10 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import React from "react";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
+import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getSelfEmployedSummary } from "@/app/actions/self-employed";
 import { getCurrentUkTaxYear, listRecentUkTaxYears } from "@/lib/tax/uk-tax-year";

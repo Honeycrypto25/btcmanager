@@ -82,10 +82,3 @@ export async function listDocuments(filter?: { category?: string; vehicleId?: st
         orderBy: { createdAt: "desc" },
     });
 }
-
-export async function getDocument(id: string) {
-    const userId = await requireUserId();
-    const document = await db.document.findUnique({ where: { id } });
-    if (!document || document.userId !== userId) throw new Error("Not found");
-    return document;
-}

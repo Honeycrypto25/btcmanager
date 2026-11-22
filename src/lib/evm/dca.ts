@@ -6,11 +6,10 @@ import { loadConnectedBotWallet, getUsdcBalance } from "./wallet";
 import { runEvmSweepForUser } from "./sweep";
 import { reconcileEvmLimitBuys, getReservedUsdc } from "./limit-buy";
 import {
-    createTakeProfitSellOrder,
-    executeSwap,
-    getActiveOrders,
-    getOrderByHash,
-    getWethPriceUsd,
+createTakeProfitSellOrder,
+executeSwap,
+getActiveOrders,
+getOrderByHash
 } from "./oneinch";
 import { MIN_LIMIT_ORDER_USD, USDC_ADDRESS, USDC_DECIMALS, WETH_ADDRESS, WETH_DECIMALS } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
@@ -388,14 +387,4 @@ export async function runEvmDcaForAllUsers(): Promise<EvmDcaRunResult[]> {
         }
     }
     return results;
-}
-
-/** Current WETH price + a quick portfolio-level snapshot, for the settings page. */
-export async function getEvmQuickStats(userId: string) {
-    const [settings, lots, price] = await Promise.all([
-        db.evmSettings.findUnique({ where: { userId } }),
-        db.evmLot.findMany({ where: { userId }, orderBy: { boughtAt: "desc" } }),
-        getWethPriceUsd().catch(() => null),
-    ]);
-    return { settings, lots, wethPriceUsd: price };
 }

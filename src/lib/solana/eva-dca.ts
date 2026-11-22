@@ -5,32 +5,32 @@ import { db } from "@/lib/db";
 import { getSplTokenBalance, getUsdcBalance, loadBotKeypair } from "./wallet";
 import { runEvaSweepForUser } from "./eva-sweep";
 import {
-    cancelTriggerV1Order,
-    cancelTriggerV2Order,
-    createTriggerSellOrder,
-    createTriggerV2SellOrder,
-    ensureTriggerV2Vault,
-    executeUltraOrder,
-    getTriggerV2Orders,
-    updateTriggerV2OrderSlippage,
-    getTriggerV2Token,
-    getActiveTriggerOrders,
-    getHistoricalTriggerOrder,
-    getTokenPriceUsd,
-    getUltraOrder,
+cancelTriggerV1Order,
+cancelTriggerV2Order,
+createTriggerSellOrder,
+createTriggerV2SellOrder,
+ensureTriggerV2Vault,
+executeUltraOrder,
+getTriggerV2Orders,
+updateTriggerV2OrderSlippage,
+getTriggerV2Token,
+getActiveTriggerOrders,
+getHistoricalTriggerOrder,
+getTokenPriceUsd,
+getUltraOrder,
 } from "./jupiter";
 import {
-    EVA_DECIMALS,
-    EVA_MINT,
-    EVA_V2_SELL_SLIPPAGE_BPS,
-    MIN_TRIGGER_ORDER_USD,
-    MIN_TRIGGER_V2_ORDER_USD,
-    MIN_TRIGGER_V2_TARGET_USD,
-    SOL_DECIMALS,
-    SOL_MINT,
-    TRIGGER_V2_ORDER_TTL_DAYS,
-    USDC_DECIMALS,
-    USDC_MINT,
+EVA_DECIMALS,
+EVA_MINT,
+EVA_V2_SELL_SLIPPAGE_BPS,
+MIN_TRIGGER_ORDER_USD,
+MIN_TRIGGER_V2_ORDER_USD,
+MIN_TRIGGER_V2_TARGET_USD,
+SOL_DECIMALS,
+SOL_MINT,
+TRIGGER_V2_ORDER_TTL_DAYS,
+USDC_DECIMALS,
+USDC_MINT,
 } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
 
@@ -577,17 +577,6 @@ export async function runEvaDcaForAllUsers(): Promise<DcaRunResult[]> {
     }
     return results;
 }
-
-/** Current EVA price + a quick portfolio-level snapshot, for the settings page. */
-export async function getEvaQuickStats(userId: string) {
-    const [settings, lots, price] = await Promise.all([
-        db.evaSettings.findUnique({ where: { userId } }),
-        db.evaLot.findMany({ where: { userId }, orderBy: { boughtAt: "desc" } }),
-        getTokenPriceUsd(EVA_MINT).catch(() => null),
-    ]);
-    return { settings, lots, evaPriceUsd: price };
-}
-
 
 // --- Migration of stuck V1 sell orders to Trigger V2 ---
 

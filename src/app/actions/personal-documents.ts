@@ -35,16 +35,6 @@ export async function listPersonalDocuments() {
     });
 }
 
-export async function getPersonalDocument(id: string) {
-    const userId = await requireUserId();
-    const document = await db.personalDocument.findUnique({
-        where: { id },
-        include: { versions: { orderBy: { createdAt: "desc" } } },
-    });
-    if (!document || document.userId !== userId) throw new Error("Not found");
-    return document;
-}
-
 /** Distinct person names already used, for the "person" field's
  * autocomplete — no fixed family-member list, per the user's choice. */
 export async function listKnownPersons(): Promise<string[]> {

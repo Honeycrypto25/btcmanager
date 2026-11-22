@@ -4,18 +4,14 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { FuelBars } from "./FuelBars";
 import {
-    ComposedChart,
-    Line,
-    Bar,
-    BarChart,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ReferenceLine,
-    ResponsiveContainer,
-    LabelList,
+ComposedChart,Bar,
+BarChart,
+XAxis,
+YAxis,
+CartesianGrid,
+Tooltip,
+Legend,ResponsiveContainer,
+LabelList
 } from "recharts";
 import { ChartGradients, cg, LABEL_STYLE } from "@/components/ui/chart-gradients";
 import { format, formatDistanceToNow } from "date-fns";
@@ -37,6 +33,7 @@ import { Last30Stats } from "@/components/ui/Last30Stats";
 import { BuyTimingCard } from "./BuyTimingCard";
 import { AmountAdviceCard } from "@/components/ui/AmountAdviceCard";
 import { NearestOrdersCards } from "@/components/ui/NearestOrdersCards";
+import { Compare30Card, split30 } from "@/components/ui/Compare30Card";
 import type { PriceHistory } from "@/lib/price-history";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
@@ -438,6 +435,25 @@ export function SolanaStatsClient({
                 fmtPrice={formatUsd}
             />
 
+            {(() => {
+                const real = allLots.filter((l) => l.status !== "FAILED");
+                const profit = split30(real.map((l) => ({ t: l.soldAt ? new Date(l.soldAt).getTime() : null, v: Number(l.realizedPnlUsd ?? 0) })), nowMs);
+                const sold = split30(real.map((l) => ({ t: l.soldAt ? new Date(l.soldAt).getTime() : null, v: Number(l.sellProceedsUsd ?? 0) })), nowMs);
+                const cycles = split30(real.map((l) => ({ t: new Date(l.boughtAt).getTime(), v: 1 })), nowMs);
+                const fills = split30(real.map((l) => ({ t: l.soldAt ? new Date(l.soldAt).getTime() : null, v: 1 })), nowMs);
+                return (
+                    <Compare30Card
+                        note="Profitul și totalul vândut se numără în ziua în care s-a executat vânzarea; ciclurile, după data cumpărării."
+                        rows={[
+                            { label: "Profit realizat", ...profit, fmt: formatUsd },
+                            { label: "Total vândut", ...sold, fmt: formatUsd },
+                            { label: "Cicluri deschise", ...cycles, fmt: (n) => String(n) },
+                            { label: "Vânzări finalizate", ...fills, fmt: (n) => String(n) },
+                        ]}
+                    />
+                );
+            })()}
+
             {solPriceUsd != null && (
                 <NearestOrdersCards
                     title="Ordine apropiate de execuție"
@@ -459,7 +475,7 @@ export function SolanaStatsClient({
                                     from: buy,
                                     target,
                                     current: solPriceUsd,
-                                    lastLabel: "Profit la țintă",
+                                    lastLabel: "Profit",
                                     lastValue: formatUsd(amt * (target - buy)),
                                 },
                             };

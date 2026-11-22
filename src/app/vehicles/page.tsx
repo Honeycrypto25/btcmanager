@@ -1,10 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import React from "react";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
+import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listVehicles, getVehicleOverallStatus } from "@/app/actions/vehicles";
 import { VehiclesClient } from "@/components/vehicles/VehiclesClient";

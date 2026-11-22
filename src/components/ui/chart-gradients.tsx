@@ -1,4 +1,3 @@
-import React from "react";
 
 /** Named bar gradients shared by all charts (lighter top → slightly faded bottom). Use as fill="url(#cg-<name>)". */
 export const CG_COLORS = {
@@ -27,8 +26,6 @@ export function ChartGradients({ names }: { names: CgName[] }) {
     );
 }
 
-export const GRID_STROKE = "rgba(255,255,255,0.06)";
-export const AXIS_STROKE = "rgba(255,255,255,0.3)";
 export const LABEL_STYLE = { fill: "rgba(255,255,255,0.75)", fontSize: 11, fontFamily: "ui-monospace, monospace" } as const;
 
 /** One gradient for an arbitrary color; reference it as url(#<id>). */

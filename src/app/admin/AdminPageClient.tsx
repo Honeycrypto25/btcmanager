@@ -5,31 +5,29 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, Button, cn } from "@/components/ui/core";
 import { ShareLinksTab } from "@/components/admin/ShareLinksTab";
 import {
-    ShieldCheck,
-    Key,
-    Smartphone,
-    Trash2,
-    Plus,
-    Loader2,
-    CheckCircle2,
-    AlertCircle,
-    Puzzle,
-    ChevronRight,
-    RefreshCw,
-    Link2,
-    BarChart3,
-    Mail,
-    Send,
-    Users,
-    UserX,
-    History,
-    XCircle,
-    Package,
-    Copy,
-    Check,
-    MonitorSmartphone,
-    KeyRound,
-    Share2
+ShieldCheck,
+Key,
+Smartphone,Plus,
+Loader2,
+CheckCircle2,
+AlertCircle,
+Puzzle,
+ChevronRight,
+RefreshCw,
+Link2,
+BarChart3,
+Mail,
+Send,
+Users,
+UserX,
+History,
+XCircle,
+Package,
+Copy,
+Check,
+MonitorSmartphone,
+KeyRound,
+Share2
 } from "lucide-react";
 import axios from 'axios';
 import { listEmailLogs, type EmailLogRow } from "@/app/actions/email-log";
@@ -1158,9 +1156,21 @@ export default function AdminPageClient() {
                         )}
                     </Card>
 
-                    {envGroups.map((group) => (
-                        <Card key={group.label} className="p-6 md:p-8 space-y-4">
-                            <h3 className="text-sm font-medium text-foreground">{group.label}</h3>
+                    {envGroups.map((group, gi) => (
+                        <React.Fragment key={group.label}>
+                        {(gi === 0 || envGroups[gi - 1].category !== group.category) && (
+                            <div className="flex items-center gap-3 pt-2">
+                                <span className="h-px w-6 bg-primary/70" />
+                                <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{group.category}</h2>
+                            </div>
+                        )}
+                        <Card className="p-6 md:p-8 space-y-4">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <h3 className="text-sm font-medium text-foreground">{group.label}</h3>
+                                {group.vars.length > 0 && <span className="text-xs text-faint">{group.vars.filter((v) => v.set).length}/{group.vars.length} setate</span>}
+                            </div>
+                            {group.note && <p className="text-xs text-muted">{group.note}</p>}
+                            {group.vars.length > 0 && (
                             <div className="overflow-x-auto -mx-6 md:-mx-8">
                                 <table className="w-full text-sm">
                                     <thead>
@@ -1198,7 +1208,9 @@ export default function AdminPageClient() {
                                     </tbody>
                                 </table>
                             </div>
+                            )}
                         </Card>
+                        </React.Fragment>
                     ))}
                 </div>
             )}

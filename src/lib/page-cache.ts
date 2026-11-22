@@ -85,6 +85,3 @@ export function revalidatePath(path: string, type?: "layout" | "page"): void {
 export function sessionUserId(session: unknown): string {
     return ((session as { user?: { id?: string } } | null | undefined)?.user?.id ?? "") as string;
 }
-
-/** For tests only. */
-export const __pageCacheTest = { encode, decode, runAs: <T>(userId: string, fn: () => T) => cachedUser.run(userId, fn) };

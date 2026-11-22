@@ -1,9 +1,6 @@
 
 import React from 'react';
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { requireSectionAccess } from "@/lib/permissions";
-import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import AnalyticsClient from "./AnalyticsClient";

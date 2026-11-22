@@ -61,28 +61,6 @@ export async function updateGoalProgress(id: string, currentAmount: number) {
     return goal;
 }
 
-export async function updateGoal(id: string, input: GoalInput) {
-    await requireAdmin();
-    const userId = await requireUserId();
-    const existing = await db.financialGoal.findUnique({ where: { id } });
-    if (!existing || existing.userId !== userId) throw new Error("Not found");
-
-    const goal = await db.financialGoal.update({
-        where: { id },
-        data: {
-            title: input.title,
-            category: input.category || null,
-            targetAmount: input.targetAmount,
-            currentAmount: input.currentAmount ?? existing.currentAmount,
-            currency: input.currency || existing.currency,
-            targetDate: input.targetDate ? new Date(input.targetDate) : null,
-            notes: input.notes || null,
-        },
-    });
-    revalidatePath("/goals");
-    return goal;
-}
-
 export async function deleteGoal(id: string) {
     await requireAdmin();
     const userId = await requireUserId();

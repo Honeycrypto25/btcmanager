@@ -50,11 +50,3 @@ export function shouldSendReminderToday(daysUntilExpiry: number): boolean {
     if (daysUntilExpiry > 30) return false;
     return (30 - daysUntilExpiry) % 7 === 0;
 }
-
-/** Which cadence stage today's reminder (if any) belongs to — display-only,
- * used in the email subject/body. */
-export function reminderStageLabel(daysUntilExpiry: number): "expired" | "final-week" | "monthly" {
-    if (daysUntilExpiry < 0) return "expired";
-    if (daysUntilExpiry <= 7) return "final-week";
-    return "monthly";
-}

@@ -13,7 +13,7 @@ import {
     Area,
     ReferenceArea
 } from 'recharts'
-import { Settings, TrendingDown, AlertCircle, ChevronLeft, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Settings, TrendingDown, AlertCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
 // --- Data & Types ---

@@ -2,9 +2,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, ColorType, CrosshairMode, IChartApi, CandlestickSeries, createSeriesMarkers, LineStyle, Time, UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, IChartApi, CandlestickSeries, createSeriesMarkers, LineStyle, UTCTimestamp } from 'lightweight-charts';
 import { Card, cn } from "@/components/ui/core";
-import { Loader2, TrendingUp, AlertCircle, Calendar } from "lucide-react";
+import { Loader2, TrendingUp, AlertCircle } from "lucide-react";
 import { fetchBitcoinHistory } from '@/app/actions/bitcoin';
 
 interface Transaction {

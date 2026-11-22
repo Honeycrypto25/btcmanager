@@ -4,7 +4,6 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
     ComposedChart,
-    Line,
     Bar,
     BarChart,
     XAxis,
@@ -12,7 +11,6 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
-    ReferenceLine,
     ResponsiveContainer,
 } from "recharts";
 import { format, formatDistanceToNow } from "date-fns";

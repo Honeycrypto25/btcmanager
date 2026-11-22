@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, cn } from "@/components/ui/core";
 import { FuelBars } from "@/components/solana/FuelBars";
 

@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { cn } from "@/components/ui/core";
 
 export interface NearOrder {
@@ -19,7 +18,7 @@ export interface NearOrder {
  * The few open orders closest to executing, as cards: entry price → target, progress bar, and how far the current
  * price still is from the target. Same look as the open-order cards on the public share page.
  */
-export function NearestOrdersCards({ title, orders, fmt }: { title: string; orders: NearOrder[]; fmt: (n: number) => string }) {
+export function NearestOrdersCards({ title, orders, fmt, reverse = false }: { title: string; orders: NearOrder[]; fmt: (n: number) => string; reverse?: boolean }) {
     if (orders.length === 0) return null;
     return (
         <div>
@@ -48,8 +47,8 @@ export function NearestOrdersCards({ title, orders, fmt }: { title: string; orde
                             </div>
                             <div className="mt-2 flex justify-between text-xs text-muted">
                                 <span>{Math.round(progress * 100)}% din drum</span>
-                                <span className={cn(left != null && left <= 0 && "text-emerald-400")}>
-                                    {left == null ? "" : left > 0 ? `încă +${left.toFixed(1)}% până la țintă` : "ținta e atinsă"}
+                                <span className={cn(left != null && (reverse ? left >= 0 : left <= 0) && "text-emerald-400")}>
+                                    {left == null ? "" : reverse ? (left < 0 ? `încă −${Math.abs(left).toFixed(1)}% până la țintă` : "ținta e atinsă") : left > 0 ? `încă +${left.toFixed(1)}% până la țintă` : "ținta e atinsă"}
                                 </span>
                             </div>
                         </div>

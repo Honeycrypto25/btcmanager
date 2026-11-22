@@ -6,22 +6,24 @@ import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard"
 import { FuelBars } from "@/components/solana/FuelBars";
 import { ProfitHeatmap, type HeatLot } from "@/components/ui/ProfitHeatmap";
 import { LotPriceChart } from "@/components/ui/LotPriceChart";
+import { NearestOrdersCards } from "@/components/ui/NearestOrdersCards";
+import { Compare30Card, split30 } from "@/components/ui/Compare30Card";
 import { AmountAdviceCard } from "@/components/ui/AmountAdviceCard";
 import type { PolygonTokenFuel } from "@/app/actions/polygon";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-    ComposedChart,
-    Bar,
-    BarChart,
-    ReferenceLine,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    LabelList,
-    ResponsiveContainer,
+ComposedChart,
+Bar,
+BarChart,
+ReferenceLine,
+XAxis,
+YAxis,
+CartesianGrid,
+Tooltip,
+Legend,
+LabelList,
+ResponsiveContainer,
 } from "recharts";
 import { BarGrad, ChartGradients, cg, LABEL_STYLE } from "@/components/ui/chart-gradients";
 import { format } from "date-fns";
@@ -623,6 +625,54 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
                     />
                 </div>
             </div>
+
+            {(() => {
+                const tokLots = allLots.filter((l) => tokenSettings.some((t) => t.id === l.settingsId) && l.status !== "FAILED");
+                const filled = tokLots.filter((l) => l.status === "FILLED" && l.filledAt);
+                const profit = split30(filled.map((l) => ({ t: new Date(l.filledAt as string).getTime(), v: Number(l.usdcProfit) })), now);
+                const sold = split30(tokLots.map((l) => ({ t: new Date(l.soldAt).getTime(), v: Number(l.usdcReceived) })), now);
+                const cycles = split30(tokLots.map((l) => ({ t: new Date(l.soldAt).getTime(), v: 1 })), now);
+                const fills = split30(filled.map((l) => ({ t: new Date(l.filledAt as string).getTime(), v: 1 })), now);
+                const px = tokenSettings[0] ? priceBySettingsId.get(tokenSettings[0].id) ?? null : null;
+                const sym = tokenSettings[0]?.tokenSymbol ?? "";
+                const open = tokLots
+                    .filter((l) => l.status === "OPEN" && l.targetPriceUsd)
+                    .map((l) => {
+                        const target = Number(l.targetPriceUsd);
+                        const sellPx = Number(l.sellPriceUsd);
+                        const days = Math.floor((now - new Date(l.soldAt).getTime()) / 86_400_000);
+                        return {
+                            gap: px ? Math.abs(target / px - 1) : 0,
+                            o: {
+                                key: l.id,
+                                size: `${Number(l.tokenSold).toLocaleString("en-US", { maximumFractionDigits: 0 })} ${sym}`,
+                                ageLabel: days <= 0 ? "azi" : days === 1 ? "de 1 zi" : `de ${days} zile`,
+                                fromLabel: "Vândut la",
+                                from: sellPx,
+                                target,
+                                current: px,
+                                lastLabel: "Rezervat",
+                                lastValue: fmtUsd(Number(l.usdcToBuyback)),
+                            },
+                        };
+                    })
+                    .sort((a, b) => a.gap - b.gap)
+                    .map((x) => x.o);
+                return (
+                    <>
+                        <NearestOrdersCards reverse title={`Ordine active · ${open.length}`} orders={open} fmt={fmtUsd} />
+                        <Compare30Card
+                            note="Profitul se numără în ziua în care s-a executat răscumpărarea; vânzările și ciclurile, după data vânzării."
+                            rows={[
+                                { label: "Profit realizat", ...profit, fmt: fmtUsd },
+                                { label: "Total vândut", ...sold, fmt: fmtUsd },
+                                { label: "Cicluri deschise", ...cycles, fmt: (n) => String(n) },
+                                { label: "Răscumpărări finalizate", ...fills, fmt: (n) => String(n) },
+                            ]}
+                        />
+                    </>
+                );
+            })()}
 
             {uptimes.map((u) => (
                 <BotUptimeCard key={u.bot} uptime={u} />

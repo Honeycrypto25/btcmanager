@@ -11,6 +11,8 @@ export interface EnvVarRow {
 
 export interface EnvVarGroup {
     label: string;
+    category: string; // top-level heading the group is shown under
+    note?: string; // shown under the group title (e.g. why a group has no variables)
     vars: EnvVarRow[];
 }
 
@@ -28,9 +30,14 @@ export interface EnvVarGroup {
  * deployment can run without in practice — check the referenced file's own
  * comment if in doubt.
  */
-const CATALOG: { label: string; vars: { key: string; description: string; required: boolean }[] }[] = [
+const CAT_PLATFORM = "Platformă";
+const CAT_INVEST = "Investiții și boți";
+const CAT_FEATURES = "Funcționalități";
+
+const CATALOG: { label: string; category: string; note?: string; vars: { key: string; description: string; required: boolean }[] }[] = [
     {
         label: "Bază de date & autentificare",
+        category: CAT_PLATFORM,
         vars: [
             { key: "DATABASE_URL", description: "Connection string Postgres (Neon) — Prisma citește/scrie tot din aici.", required: true },
             { key: "NEXTAUTH_SECRET", description: "Secret pentru semnarea sesiunilor NextAuth.", required: true },
@@ -40,7 +47,17 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
         ],
     },
     {
+        label: "Bitcoin",
+        category: CAT_INVEST,
+        note: "Prețul Bitcoin vine implicit din Binance și Coinbase (fără cheie). Cheile de mai jos sunt surse suplimentare și sunt folosite doar pentru Bitcoin (preț curent și istoric).",
+        vars: [
+            { key: "CMC_API_KEY", description: "Cheie API CoinMarketCap — sursă pentru prețul Bitcoin.", required: false },
+            { key: "COINGECKO_API_KEY", description: "Cheie API CoinGecko — sursă pentru prețul și istoricul Bitcoin.", required: false },
+        ],
+    },
+    {
         label: "Trading 212",
+        category: CAT_INVEST,
         vars: [
             { key: "T212_API_KEY", description: "Cheia API a contului Trading212.", required: false },
             { key: "T212_API_SECRET", description: "Secretul API al contului Trading212.", required: false },
@@ -48,21 +65,31 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
         ],
     },
     {
-        label: "Solana (DCA + Eva)",
+        label: "Vanguard",
+        category: CAT_INVEST,
+        note: "Nu folosește variabile de mediu — nu are nicio cheie sau secret în Vercel.",
+        vars: [],
+    },
+    {
+        label: "Fidelity",
+        category: CAT_INVEST,
+        note: "Nu folosește variabile de mediu — nu are nicio cheie sau secret în Vercel.",
+        vars: [],
+    },
+    {
+        label: "Solana (DCA + EVA)",
+        category: CAT_INVEST,
         vars: [
             { key: "SOLANA_PRIVATE_KEY", description: "Cheia privată a portofelului bot (SOL + EVA — același portofel pentru amândouă).", required: false },
             { key: "SOLANA_RPC_URL", description: "Endpoint RPC Solana folosit de bot.", required: false },
-            { key: "SOLANA_SWEEP_DESTINATION", description: "Adresa cold-wallet unde se trimit retragerile lunare (SOL și EVA).", required: false },
+            { key: "SOLANA_SWEEP_DESTINATION", description: "Adresa cold-wallet unde se trimit retragerile lunare (SOL și EVA). Folosită și ca adresă implicită pentru Împrumuturi.", required: false },
             { key: "JUPITER_API_KEY", description: "Cheie API Jupiter (portal.jup.ag). Opțională pentru swap/V1, OBLIGATORIE pentru ordinele Trigger V2.", required: false },
-            { key: "JUPITER_LEND_WALLETS", description: "Opțional: adrese Solana (separate prin virgulă) ale căror împrumuturi Jupiter Lend apar pe Cold wallet. Lipsă = SOLANA_SWEEP_DESTINATION.", required: false },
-            { key: "LEND_MAX_LTV", description: "Opțional: plafonul tău de LTV pentru împrumuturi noi, în % (ex. 30). Pagina Împrumuturi arată cât mai poți împrumuta până la el. Lipsă = 30.", required: false },
-            { key: "LEND_ALERT_EMAIL", description: "Opțional: pornit implicit — trimite un e-mail când LTV-ul împrumutului Jupiter Lend trece de un nou pas (implicit din 5 în 5 puncte: 30%, 35%, 40%…). Verificat zilnic din cron și la deschiderea paginii Împrumuturi. \"0\" = oprit. Folosește RESEND_API_KEY și REPORT_EMAIL_TO.", required: false },
-            { key: "LEND_ALERT_STEP", description: "Opțional: pasul alertei de LTV, în puncte procentuale (implicit 5).", required: false },
             { key: "EVA_TRIGGER_VERSION", description: "\"2\" = ordinele noi de vânzare EVA se pun pe Jupiter Trigger V2; lipsă/\"1\" = V1 (implicit).", required: false },
         ],
     },
     {
-        label: "Base (EVM DCA)",
+        label: "ETH (Base)",
+        category: CAT_INVEST,
         vars: [
             { key: "BASE_PRIVATE_KEY", description: "Cheia privată a portofelului bot EVM — reutilizată și de BNB și de Polygon (o cheie EVM merge pe orice chain compatibil).", required: false },
             { key: "BASE_RPC_URL", description: "Endpoint RPC Base folosit de bot.", required: false },
@@ -71,13 +98,15 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
     },
     {
         label: "BNB Chain",
+        category: CAT_INVEST,
         vars: [
             { key: "BNB_RPC_URL", description: "Endpoint RPC BNB Chain folosit de bot.", required: false },
             { key: "BNB_SWEEP_DESTINATION", description: "Adresa cold-wallet pentru retragerile lunare de WBNB.", required: false },
         ],
     },
     {
-        label: "Polygon (reverse-DCA)",
+        label: "Polygon (GEODNET + MYST)",
+        category: CAT_INVEST,
         vars: [
             { key: "POLYGON_RPC_URL", description: "Endpoint RPC Polygon — implicit polygon-rpc.com dacă lipsește.", required: false },
             { key: "POLYGON_SWEEP_DESTINATION", description: "Adresa cold-wallet pentru retragerile lunare de USDC.", required: false },
@@ -85,14 +114,26 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
         ],
     },
     {
-        label: "Prețuri / date de piață",
+        label: "Împrumuturi (Jupiter Lend)",
+        category: CAT_FEATURES,
         vars: [
-            { key: "CMC_API_KEY", description: "Cheie API CoinMarketCap — sursă pentru prețuri.", required: false },
-            { key: "COINGECKO_API_KEY", description: "Cheie API CoinGecko — sursă alternativă/suplimentară de prețuri.", required: false },
+            { key: "JUPITER_LEND_WALLETS", description: "Opțional: adrese Solana (separate prin virgulă) ale căror împrumuturi Jupiter Lend apar pe Cold wallet. Lipsă = SOLANA_SWEEP_DESTINATION.", required: false },
+            { key: "LEND_MAX_LTV", description: "Opțional: plafonul tău de LTV pentru împrumuturi noi, în % (ex. 30). Pagina Împrumuturi arată cât mai poți împrumuta până la el. Lipsă = 30.", required: false },
+            { key: "LEND_ALERT_EMAIL", description: "Opțional: pornit implicit — trimite un e-mail când LTV-ul împrumutului Jupiter Lend trece de un nou pas (implicit din 5 în 5 puncte: 30%, 35%, 40%…). Verificat zilnic din cron și la deschiderea paginii Împrumuturi. \"0\" = oprit. Folosește RESEND_API_KEY și REPORT_EMAIL_TO.", required: false },
+            { key: "LEND_ALERT_STEP", description: "Opțional: pasul alertei de LTV, în puncte procentuale (implicit 5).", required: false },
+        ],
+    },
+    {
+        label: "Bancă (TrueLayer / Open Banking)",
+        category: CAT_FEATURES,
+        vars: [
+            { key: "TRUELAYER_CLIENT_ID", description: "Client ID TrueLayer — pentru importul tranzacțiilor bancare.", required: false },
+            { key: "TRUELAYER_CLIENT_SECRET", description: "Client secret TrueLayer.", required: false },
         ],
     },
     {
         label: "Email & rapoarte",
+        category: CAT_FEATURES,
         vars: [
             { key: "RESEND_API_KEY", description: "Cheia API Resend — fără ea, rapoartele săptămânale/lunare nu se trimit.", required: false },
             { key: "EMAIL_FROM", description: "Adresa \"from\" pentru emailurile tranzacționale (notificări de tranzacții etc.).", required: false },
@@ -102,6 +143,7 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
     },
     {
         label: "OCR chitanțe (Google Vision)",
+        category: CAT_FEATURES,
         vars: [
             { key: "GOOGLE_VISION_CLIENT_EMAIL", description: "Email-ul contului de service Google Cloud Vision.", required: false },
             { key: "GOOGLE_VISION_PRIVATE_KEY", description: "Cheia privată a contului de service Google Cloud Vision.", required: false },
@@ -109,11 +151,22 @@ const CATALOG: { label: string; vars: { key: string; description: string; requir
     },
     {
         label: "Stocare fișiere (Cloudflare R2)",
+        category: CAT_FEATURES,
         vars: [
             { key: "R2_ACCOUNT_ID", description: "ID-ul contului Cloudflare.", required: false },
             { key: "R2_ACCESS_KEY_ID", description: "Access key R2 (compatibil S3).", required: false },
             { key: "R2_SECRET_ACCESS_KEY", description: "Secret key R2 (compatibil S3).", required: false },
             { key: "R2_BUCKET_NAME", description: "Numele bucket-ului R2 unde se urcă fișierele (chitanțe, documente etc.).", required: false },
+        ],
+    },
+    {
+        label: "Monitorizare consum API (Alchemy, 1inch)",
+        category: CAT_FEATURES,
+        vars: [
+            { key: "ALCHEMY_ACCESS_KEY", description: "Cheie de acces Alchemy (Admin API) — fără ea, pagina de consum nu arată unitățile Alchemy folosite.", required: false },
+            { key: "ALCHEMY_MONTHLY_CU_LIMIT", description: "Opțional: plafonul lunar de compute units Alchemy (implicit 30.000.000).", required: false },
+            { key: "ONEINCH_MONTHLY_LIMIT", description: "Opțional: plafonul lunar de cereri 1inch (implicit 100.000).", required: false },
+            { key: "ONEINCH_CYCLE_START_DAY", description: "Opțional: ziua din lună în care începe ciclul de facturare 1inch (implicit 21).", required: false },
         ],
     },
 ];
@@ -128,6 +181,8 @@ export async function getEnvVarStatus(): Promise<EnvVarGroup[]> {
     await requireAdmin();
     return CATALOG.map((group) => ({
         label: group.label,
+        category: group.category,
+        note: group.note,
         vars: group.vars.map((v) => ({
             ...v,
             set: !!process.env[v.key] && process.env[v.key] !== "",

@@ -1,9 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
+import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBnbStats, listBnbLots, listBnbSweeps, getBnbFuelStatus } from "@/app/actions/bnb";

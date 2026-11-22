@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { Card, Button, cn } from "@/components/ui/core";
+import { Card, Button } from "@/components/ui/core";
 import { Plus, Trash2, X, Building2 } from "lucide-react";
 import { createInvoiceCompany, deleteInvoiceCompany, type InvoiceCompanyInput } from "@/app/actions/invoices";
 import { useIsAdmin } from "@/hooks/useIsAdmin";

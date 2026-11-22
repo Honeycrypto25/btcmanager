@@ -7,14 +7,14 @@ import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import {
-    computeFuelStats,
-    computeMaintenanceStatus,
-    computeFuelPurchaseBuckets,
-    computeDistanceBuckets,
-    computeAverageDistanceRates,
-    computePriceEvolution,
-    computeSupplierRanking,
-    type FuelPurchase,
+computeFuelStats,
+computeMaintenanceStatus,
+computeFuelPurchaseBuckets,
+computeDistanceBuckets,
+computeAverageDistanceRates,
+computePriceEvolution,
+computeSupplierRanking,
+type FuelPurchase,
 } from "@/lib/vehicles/stats";
 
 async function requireUserId(): Promise<string> {
@@ -56,30 +56,6 @@ export async function createVehicle(input: VehicleInput) {
         },
     });
     revalidatePath("/vehicles");
-    return vehicle;
-}
-
-export async function updateVehicle(id: string, input: VehicleInput) {
-    await requireAdmin();
-    const userId = await requireUserId();
-    const existing = await db.vehicle.findUnique({ where: { id } });
-    if (!existing || existing.userId !== userId) throw new Error("Not found");
-
-    const vehicle = await db.vehicle.update({
-        where: { id },
-        data: {
-            name: input.name,
-            make: input.make || null,
-            model: input.model || null,
-            year: input.year ?? null,
-            registrationNumber: input.registrationNumber || null,
-            fuelType: input.fuelType || null,
-            currentMileage: input.currentMileage ?? null,
-            notes: input.notes || null,
-        },
-    });
-    revalidatePath("/vehicles");
-    revalidatePath(`/vehicles/${id}`);
     return vehicle;
 }
 
@@ -165,12 +141,6 @@ export async function deleteFuelEntry(id: string) {
     if (!existing || existing.userId !== userId) throw new Error("Not found");
     await db.fuelEntry.delete({ where: { id } });
     revalidatePath(`/vehicles/${existing.vehicleId}`);
-}
-
-export async function listFuelEntries(vehicleId: string) {
-    const userId = await requireUserId();
-    await requireOwnedVehicle(userId, vehicleId);
-    return db.fuelEntry.findMany({ where: { userId, vehicleId }, orderBy: { date: "desc" } });
 }
 
 /** Shared entries+receipts merge used by both getFuelStats and

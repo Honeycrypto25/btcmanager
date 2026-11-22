@@ -9,7 +9,6 @@ export const USDC_DECIMALS = 6;
 // as SOL above. Mint + decimals confirmed via Jupiter's token API.
 export const EVA_MINT = "9jxs9w5YRnPfchbW8f8hwhBSTvedSSvntfxvpqbL1jVH";
 export const EVA_DECIMALS = 9;
-export const EVA_SYMBOL = "Eva";
 
 export const JUPITER_API_BASE = "https://api.jup.ag";
 

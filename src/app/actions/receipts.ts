@@ -234,19 +234,6 @@ export async function saveMerchantRule(matchText: string, merchantNormalized: st
     return rule;
 }
 
-export async function listMerchantRules() {
-    const userId = await requireUserId();
-    return db.merchantRule.findMany({ where: { userId }, orderBy: { merchantNormalized: "asc" } });
-}
-
-export async function deleteMerchantRule(id: string) {
-    await requireAdmin();
-    const userId = await requireUserId();
-    const existing = await db.merchantRule.findUnique({ where: { id } });
-    if (!existing || existing.userId !== userId) throw new Error("Not found");
-    await db.merchantRule.delete({ where: { id } });
-}
-
 // --- OCR (live via Google Cloud Vision, once GOOGLE_VISION_CLIENT_EMAIL /
 // GOOGLE_VISION_PRIVATE_KEY are configured — see lib/ocr/google-vision.ts)
 // / AI (still architecture-only — see runAnalyzeReceiptWithAI stub below) ---

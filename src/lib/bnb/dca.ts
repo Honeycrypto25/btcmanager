@@ -5,11 +5,10 @@ import { db } from "@/lib/db";
 import { getUsdtBalance, loadConnectedBotWallet } from "./wallet";
 import { runBnbSweepForUser } from "./sweep";
 import {
-    createTakeProfitSellOrder,
-    executeSwap,
-    getActiveOrders,
-    getOrderByHash,
-    getBnbPriceUsd,
+createTakeProfitSellOrder,
+executeSwap,
+getActiveOrders,
+getOrderByHash
 } from "./oneinch";
 import { MIN_LIMIT_ORDER_USD, USDT_ADDRESS, USDT_DECIMALS, WBNB_ADDRESS, WBNB_DECIMALS } from "./constants";
 import { notifyOrderPlaced, notifyOrderFilled } from "@/lib/email/tx-notify";
@@ -352,14 +351,4 @@ export async function runBnbDcaForAllUsers(): Promise<BnbDcaRunResult[]> {
         }
     }
     return results;
-}
-
-/** Current WBNB price + a quick portfolio-level snapshot, for the settings page. */
-export async function getBnbQuickStats(userId: string) {
-    const [settings, lots, price] = await Promise.all([
-        db.bnbSettings.findUnique({ where: { userId } }),
-        db.bnbLot.findMany({ where: { userId }, orderBy: { boughtAt: "desc" } }),
-        getBnbPriceUsd().catch(() => null),
-    ]);
-    return { settings, lots, bnbPriceUsd: price };
 }

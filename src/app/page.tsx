@@ -1,10 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import React from 'react';
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
-import { redirect } from "next/navigation";
+import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getOverviewData, getComparisonSeries, type ComparisonSeries } from "@/lib/overview-data";

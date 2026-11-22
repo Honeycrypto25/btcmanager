@@ -1,13 +1,11 @@
 import { db } from "@/lib/db";
 import {
-    getAccountInfo,
-    getAccountCash,
-    getPositions,
-    getPiesWithDetails,
-    getAllCashTransactions,
-    getAllOrders,
-    testConnection,
-    T212ApiError,
+getAccountInfo,
+getAccountCash,
+getPositions,
+getPiesWithDetails,
+getAllCashTransactions,
+getAllOrders,T212ApiError
 } from "@/lib/t212";
 
 function sleep(ms: number): Promise<void> {
@@ -253,5 +251,3 @@ export async function getT212ConnectionStatus() {
         lastTxSyncInfo: account?.lastTxSyncInfo ?? null,
     };
 }
-
-export { testConnection as testT212Credentials };

@@ -77,13 +77,6 @@ async function getAccessToken(creds: VisionCredentials): Promise<string> {
     return data.access_token;
 }
 
-/** Vision's images:annotate endpoint accepts common raster formats directly
- * — HEIC is not one of them, so HEIC receipts must go through their
- * already-generated JPEG/WebP preview instead (see actions/receipts.ts). */
-export function isVisionSupportedMimeType(mimeType: string): boolean {
-    return mimeType === "image/jpeg" || mimeType === "image/jpg" || mimeType === "image/png" || mimeType === "image/webp";
-}
-
 /** Runs TEXT_DETECTION on an image buffer and returns the full extracted
  * text, or null if nothing was found, credentials are missing, or the
  * request failed for any reason (never throws — callers treat null as

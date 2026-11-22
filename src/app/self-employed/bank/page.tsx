@@ -1,10 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import React from "react";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
+import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { listBankAccounts, listBankTransactions, listImportBatches, listReceiptsForManualMatch, listBankConnections } from "@/app/actions/bank";
 import { BankClient } from "@/components/self-employed/BankClient";
