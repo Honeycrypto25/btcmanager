@@ -27,13 +27,15 @@ interface Props {
     fmtUsd?: (n: number) => string;
     /** Open limit BUY orders, drawn as amber dashed lines. */
     limitBuys?: LotChartLimitBuy[];
+    /** Reverse-DCA: the lots are SALES and the target is a buy-back BELOW the sale price (the price must fall to it). */
+    reverse?: boolean;
 }
 
 /**
  * "Buy price vs. sell target, per lot" — active orders only in the normal view;
  * in the full-screen view a toggle also adds the finished (filled) orders.
  */
-export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] }: Props) {
+export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [], reverse = false }: Props) {
     const [showDone, setShowDone] = useState(false);
     const money = fmtUsd ?? fmt;
 
@@ -57,7 +59,7 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
 
     return (
         <ExpandableCard
-            title="Preț de achiziție vs. țintă de vânzare, per lot (ordine active)"
+            title={reverse ? "Preț de vânzare vs. țintă de răscumpărare, per lot (ordine active)" : "Preț de achiziție vs. țintă de vânzare, per lot (ordine active)"}
             description={
                 <>
                     {limitBuys.length > 0 && <span className="text-amber-400">Liniile galbene punctate = ordine limit de cumpărare active (nivelul la care se cumpără). </span>}
@@ -93,6 +95,7 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                                         // Active target: how far the current price still is from it.
                                         if (item?.dataKey === "targetPrice" && currentPrice && currentPrice > 0) {
                                             const left = (val / currentPrice - 1) * 100;
+                                            if (reverse) return left < 0 ? `${base} · încă −${Math.abs(left).toFixed(1)}% până la execuție` : `${base} · ținta e atinsă`;
                                             return left > 0 ? `${base} · încă +${left.toFixed(1)}% până la execuție` : `${base} · ținta e atinsă`;
                                         }
                                         return base;
@@ -118,9 +121,9 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                                         label={{ value: `Limit buy ${fmt(o.limitPriceUsd)} · ${money(o.amountUsd)}`, position: "insideBottomLeft", fill: "#f59e0b", fontSize: 11 }}
                                     />
                                 ))}
-                                <Line type="monotone" dataKey="buyPrice" name="Preț achiziție" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-                                <Line type="monotone" dataKey="targetPrice" name="Preț țintă (activ)" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} connectNulls />
-                                {withDone && <Line type="monotone" dataKey="donePrice" name="Preț vânzare (executat)" stroke="#9ca3af" strokeWidth={0} dot={{ r: 3.5, fill: "#9ca3af", stroke: "#9ca3af" }} activeDot={{ r: 5 }} />}
+                                <Line type="monotone" dataKey="buyPrice" name={reverse ? "Preț vânzare" : "Preț achiziție"} stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+                                <Line type="monotone" dataKey="targetPrice" name={reverse ? "Preț țintă răscumpărare (activ)" : "Preț țintă (activ)"} stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} connectNulls />
+                                {withDone && <Line type="monotone" dataKey="donePrice" name={reverse ? "Preț răscumpărare (executat)" : "Preț vânzare (executat)"} stroke="#9ca3af" strokeWidth={0} dot={{ r: 3.5, fill: "#9ca3af", stroke: "#9ca3af" }} activeDot={{ r: 5 }} />}
                             </ComposedChart>
                         </ResponsiveContainer>
                     </div>

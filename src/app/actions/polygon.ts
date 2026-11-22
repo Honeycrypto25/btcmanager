@@ -8,8 +8,9 @@ import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { runPolygonReverseDcaForSettings, reconcilePolygonOrdersForSettings, executeBuybackNow } from "@/lib/polygon/reverse-dca";
 import { runPolygonSweepForUser } from "@/lib/polygon/sweep";
-import { loadBotWallet, getUsdcBalance, getNativeBalance, getTokenMeta } from "@/lib/polygon/wallet";
-import { getTokenPriceUsd } from "@/lib/polygon/oneinch";
+import { loadBotWallet, getUsdcBalance, getNativeBalance, getTokenMeta, getTokenBalance } from "@/lib/polygon/wallet";
+import { projectBuys } from "@/lib/solana/fuel-schedule";
+import { getTokenPriceUsd, getNativePriceUsd } from "@/lib/polygon/oneinch";
 import { ALLOWED_TOKENS, MIN_LIMIT_ORDER_USD, USDC_ADDRESS } from "@/lib/polygon/constants";
 import type { PolygonTokenSettings } from "@prisma/client";
 
@@ -334,4 +335,59 @@ export async function getPolygonStats(): Promise<PolygonStats> {
         openBuybackOrders,
         totalLots: lots.length,
     };
+}
+
+
+export interface PolygonTokenFuel {
+    settingsId: string;
+    tokenSymbol: string;
+    tokenBalance: number; // tokens sitting in the bot wallet right now
+    priceUsd: number;
+    tokensPerCycle: number; // floor(sellAmountUsd / price) — what one cycle sells
+    sellAmountUsd: number;
+    intervalHours: number;
+    periodHours: number;
+    cyclesLeft: number;
+    daysRemaining: number;
+    projected: { label: string; usdc: number }[]; // "usdc" = token amount (shared FuelBars shape)
+}
+
+/**
+ * Reverse-DCA "fuel" = the token stock the wallet holds (each cycle sells a whole-token amount of it; the stock comes
+ * back when the buy-back order fills, and new tokens arrive from mining). Per token, plus the wallet's POL gas float.
+ * Gas is wallet-level — the page strips it for non-admin viewers.
+ */
+export async function getPolygonFuelStatus(): Promise<{ tokens: PolygonTokenFuel[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } }> {
+    const userId = await requireUserId();
+    const settingsRows = await db.polygonTokenSettings.findMany({ where: { userId } });
+    const now = Date.now();
+    const fmt = (t: number) => new Date(t).toLocaleDateString("ro-RO", { day: "numeric", month: "short", timeZone: "Europe/London" });
+    const tokens = (
+        await Promise.all(
+            settingsRows.map(async (s: PolygonTokenSettings): Promise<PolygonTokenFuel | null> => {
+                try {
+                    const [tokenBalance, priceUsd] = await Promise.all([
+                        getTokenBalance(s.tokenAddress, s.tokenDecimals, s.walletAddress),
+                        getTokenPriceUsd(s.tokenAddress, s.tokenDecimals, USDC_ADDRESS),
+                    ]);
+                    const sellAmountUsd = Number(s.sellAmountUsd);
+                    const tokensPerCycle = Math.max(0, Math.floor(sellAmountUsd / priceUsd));
+                    const plan = projectBuys({ lastRunAt: s.lastRunAt ? s.lastRunAt.getTime() : null, intervalHours: s.intervalHours, balance: tokenBalance, buyAmount: tokensPerCycle, now });
+                    const projected: { label: string; usdc: number }[] = [{ label: "Acum", usdc: tokenBalance }];
+                    plan.buyTimes.forEach((t, i) => projected.push({ label: fmt(t), usdc: Math.max(0, tokenBalance - (i + 1) * tokensPerCycle) }));
+                    const cyclesLeft = tokensPerCycle > 0 ? Math.floor(tokenBalance / tokensPerCycle + 1e-9) : 0;
+                    return { settingsId: s.id, tokenSymbol: s.tokenSymbol, tokenBalance, priceUsd, tokensPerCycle, sellAmountUsd, intervalHours: s.intervalHours, periodHours: plan.periodDays * 24, cyclesLeft, daysRemaining: plan.daysRemaining, projected };
+                } catch {
+                    return null;
+                }
+            }),
+        )
+    ).filter((t): t is PolygonTokenFuel => t !== null);
+    try {
+        const nativeBalance = await getNativeBalance(await loadBotWallet().getAddress());
+        const nativePriceUsd = await getNativePriceUsd(USDC_ADDRESS).catch(() => 0);
+        return { tokens, gas: { nativeBalance, nativePriceUsd } };
+    } catch (e) {
+        return { tokens, gas: { error: e instanceof Error ? e.message : String(e) } };
+    }
 }

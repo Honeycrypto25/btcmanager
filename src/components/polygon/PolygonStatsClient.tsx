@@ -3,13 +3,17 @@
 import { fmtLotDate, fmtLotDays, lotTiming } from "@/lib/lot-timing";
 import { SortTh, useSort } from "@/components/ui/SortableTh";
 import { BotUptimeCard, type BotUptimeDTO } from "@/components/ui/BotUptimeCard";
+import { FuelBars } from "@/components/solana/FuelBars";
+import { ProfitHeatmap, type HeatLot } from "@/components/ui/ProfitHeatmap";
+import { LotPriceChart } from "@/components/ui/LotPriceChart";
+import { AmountAdviceCard } from "@/components/ui/AmountAdviceCard";
+import type { PolygonTokenFuel } from "@/app/actions/polygon";
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import {
     ComposedChart,
     Bar,
     BarChart,
-    Line,
     ReferenceLine,
     XAxis,
     YAxis,
@@ -30,7 +34,6 @@ import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFi
 const PAGE_SIZE = 10;
 
 // One color per token's "Preț curent" reference line on the active-lots chart -- cycles if more than 3 tokens are ever added to ALLOWED_TOKENS.
-const REF_LINE_COLORS = ["#e5e7eb", "#60a5fa", "#f472b6"];
 
 // One color per token in the "Ordine pe lună" stacked bars.
 const ORDER_COLORS = ["#e8a13a", "#60a5fa", "#f472b6", "#a78bfa"];
@@ -61,6 +64,7 @@ interface LotDTO {
     buybackOrderCreatedAt: string | null;
     filledAt: string | null;
     notes: string | null;
+    sellFeeUsd?: string | null;
 }
 
 interface SweepDTO {
@@ -93,6 +97,7 @@ interface Props {
     tokenKey: string;
     tokenName: string;
     uptimes?: BotUptimeDTO[];
+    fuel?: { tokens: PolygonTokenFuel[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } | null } | null;
     tokenSettings: TokenSettingsDTO[];
     lots: LotDTO[];
     sweeps: SweepDTO[];
@@ -203,8 +208,9 @@ function Pager({
     );
 }
 
-export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: allLots, sweeps, currentPrices, uptimes = [] }: Props) {
+export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: allLots, sweeps, currentPrices, uptimes = [], fuel = null }: Props) {
     const isAdmin = useIsAdmin();
+    const [now] = useState(() => Date.now()); // fixed at mount — keeps render pure
     const [checking, setChecking] = useState(false);
     const [checkMessage, setCheckMessage] = useState<string | null>(null);
     const [checkWarnings, setCheckWarnings] = useState<string[]>([]);
@@ -278,7 +284,7 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
     // Last 30 days + what the active buy-back orders hold — from allLots (only the token chip applies),
     // so the row stays the same whatever status/date filter is on.
     const stats30 = useMemo(() => {
-        const since = Date.now() - 30 * 86_400_000;
+        const since = now - 30 * 86_400_000;
         const base = tokenFilter === "all" ? allLots : allLots.filter((l) => l.settingsId === tokenFilter);
         let soldUsd = 0;
         let reinvestedUsd = 0;
@@ -306,38 +312,7 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
             }
         }
         return { soldUsd, reinvestedUsd, profitUsd, sales, reacquired, reacquiredUsd, activeUsd, active };
-    }, [allLots, tokenFilter]);
-
-    // Just the currently-active buy-back orders — deliberately built from
-    // allLots (only respecting the token chip, not status/date), so a lot
-    // drops off this chart the moment it fills or cancels rather than
-    // lingering as a flat historical line. Mirrors the equivalent chart on
-    // the Base/BNB/EVM stats pages.
-    const openLotsChartData = useMemo(() => {
-        const base = tokenFilter === "all" ? allLots : allLots.filter((l) => l.settingsId === tokenFilter);
-        return base
-            .filter((lot) => lot.status === "OPEN")
-            .sort((a, b) => new Date(a.soldAt).getTime() - new Date(b.soldAt).getTime())
-            .map((lot) => ({
-                id: lot.id, // unique x key — lots sold the same day would otherwise share one tooltip
-                date: `${format(new Date(lot.soldAt), "d MMM")}${tokenFilter === "all" ? ` · ${symbolBySettingsId.get(lot.settingsId) ?? "?"}` : ""}`,
-                time: format(new Date(lot.soldAt), "HH:mm"),
-                settingsId: lot.settingsId,
-                sellPrice: Number(lot.sellPriceUsd),
-                targetPrice: lot.targetPriceUsd ? Number(lot.targetPriceUsd) : null,
-            }));
-    }, [allLots, tokenFilter, symbolBySettingsId]);
-
-    // Which tokens actually have an open lot in the chart above, each paired
-    // with its live price (when known) -- one "Preț curent" reference line
-    // per token, since (unlike Solana/Base/BNB/EVA, one token each) Polygon
-    // can have several open at once, at very different prices.
-    const openLotsTokenPrices = useMemo(() => {
-        const ids = new Set(openLotsChartData.map((r) => r.settingsId));
-        return [...ids]
-            .map((id) => ({ settingsId: id, symbol: symbolBySettingsId.get(id) ?? "?", priceUsd: priceBySettingsId.get(id) ?? null }))
-            .filter((t) => t.priceUsd !== null) as { settingsId: string; symbol: string; priceUsd: number }[];
-    }, [openLotsChartData, symbolBySettingsId, priceBySettingsId]);
+    }, [allLots, tokenFilter, now]);
 
     const chartData = useMemo(() => {
         const sorted = [...lots].sort((a, b) => new Date(a.soldAt).getTime() - new Date(b.soldAt).getTime());
@@ -653,48 +628,86 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
                 <BotUptimeCard key={u.bot} uptime={u} />
             ))}
 
-            {openLotsChartData.length > 0 && (
-                <Card>
-                    <h2 className="mb-4 text-sm font-medium text-foreground">Preț de vânzare vs. țintă de răscumpărare, per lot (ordine active)</h2>
-                    <ResponsiveContainer width="100%" height={280}>
-                        <ComposedChart data={openLotsChartData}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                            <XAxis dataKey="id" tickFormatter={(id) => openLotsChartData.find((r) => r.id === id)?.date ?? ""} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} tickLine={false} axisLine={false} />
-                            <Tooltip
-                                contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                labelFormatter={(id) => {
-                                    const r = openLotsChartData.find((x) => x.id === id);
-                                    return r ? `${r.date}, ${r.time}` : "";
-                                }}
-                                formatter={(v, _name, item) => {
-                                    // The buy-back target also shows its % under the lot's own sell price.
-                                    const sell = Number((item?.payload as { sellPrice?: number } | undefined)?.sellPrice);
-                                    const val = Number(v);
-                                    if (item?.dataKey !== "targetPrice" || !(sell > 0)) return fmtUsd(val);
-                                    const pct = (val / sell - 1) * 100;
-                                    return `${fmtUsd(val)} (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`;
-                                }}
+            {fuel && fuel.tokens.map((f) => {
+                const u = uptimes.find((x) => x.label === f.tokenSymbol);
+                const tokLots = allLots.filter((l) => l.settingsId === f.settingsId);
+                const nTok = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 }) + " " + f.tokenSymbol;
+                const nShort = (v: number) => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+                // Gas: average POL-denominated cost per day over the last 30 days vs. the POL left (admin only — wallet-level).
+                const gas = fuel.gas && "nativeBalance" in fuel.gas ? fuel.gas : null;
+                const gasLots = tokLots.filter((l) => new Date(l.soldAt).getTime() >= now - 30 * 86_400_000);
+                const firstLot = tokLots.reduce((m, l) => Math.min(m, new Date(l.soldAt).getTime()), now);
+                const gasDays = Math.max(1, Math.min(30, (now - firstLot) / 86_400_000));
+                const gasUsdPerDay = gasLots.reduce((a, l) => a + Number(l.sellFeeUsd ?? 0), 0) / gasDays;
+                const gasUsdLeft = gas ? gas.nativeBalance * gas.nativePriceUsd : 0;
+                return (
+                    <React.Fragment key={f.settingsId}>
+                        <Card>
+                            <h2 className="mb-1 text-sm font-medium text-foreground">Combustibil ({f.tokenSymbol})</h2>
+                            {f.tokensPerCycle <= 0 ? (
+                                <p className="text-sm text-muted">Suma pe ciclu este sub 1 {f.tokenSymbol} la prețul curent — crește suma pe ciclu în setări.</p>
+                            ) : f.tokenBalance < f.tokensPerCycle ? (
+                                <p className="text-sm text-muted">Portofelul are {nTok(f.tokenBalance)} (~{fmtUsd(f.tokenBalance * f.priceUsd)}), mai puțin decât o vânzare ({nTok(f.tokensPerCycle)}). Botul așteaptă să se acumuleze din minat sau din răscumpărări.</p>
+                            ) : (
+                                <>
+                                    <p className="mb-4 text-xs text-faint">
+                                        {nTok(f.tokenBalance)} (~{fmtUsd(f.tokenBalance * f.priceUsd)}) în portofel ÷ {nTok(f.tokensPerCycle)} per vânzare (~{fmtUsd(f.sellAmountUsd)}) = <span className="font-medium text-foreground">{f.cyclesLeft} vânzări</span> (≈{" "}
+                                        <span className="font-medium text-foreground">{f.daysRemaining} zile</span>). Stocul se reface când se execută ordinele de răscumpărare și crește din minat — barele arată doar scăderea fără aceste reveniri.
+                                    </p>
+                                    <FuelBars data={f.projected} buyAmountUsd={f.tokensPerCycle} height={240} fmt={nTok} fmtShort={nShort} unit={f.tokenSymbol} action="vânzarea" actionNoun="vânzare" afterLabel="după vânzare" />
+                                </>
+                            )}
+                            {gas && (
+                                <p className="mt-3 text-xs text-muted">
+                                    Gaz (POL, portofel comun): {gas.nativeBalance.toFixed(2)} POL (~{fmtUsd(gasUsdLeft)})
+                                    {gasUsdPerDay > 0 && gas.nativePriceUsd > 0 ? ` — la ritmul de ${fmtUsd(gasUsdPerDay)}/zi (doar vânzările acestui token) ajunge ~${Math.floor(gasUsdLeft / gasUsdPerDay)} zile` : ""}.
+                                </p>
+                            )}
+                        </Card>
+                        {f.tokensPerCycle > 0 && (
+                            <AmountAdviceCard
+                                lots={tokLots.map((l) => ({ boughtAt: new Date(l.soldAt).getTime(), spendUsd: Number(l.tokenSold) * f.priceUsd, soldAt: l.filledAt ? new Date(l.filledAt).getTime() : null, proceedsUsd: Number(l.tokenReacquired ?? 0) * f.priceUsd }))}
+                                balance={f.tokenBalance * f.priceUsd}
+                                buyAmount={f.tokensPerCycle * f.priceUsd}
+                                periodHours={f.periodHours}
+                                strikePct={u?.w30.pct ?? null}
+                                noFuel30={u?.w30.noFuel ?? 0}
+                                unit="USD în tokeni"
+                                balanceLabel="Stoc în portofel"
+                                words={{ out: "vânzări", back: "răscumpărări", stock: "stocul", topup: "în tokeni (minat sau transfer)" }}
+                                description={`Compară cât ${f.tokenSymbol} vinde botul pe zi cu cât revine prin răscumpărări (consum net) și cu stocul din portofel. Valorile sunt la prețul curent.`}
+                                note="Calculul nu se bazează pe minat: ia în considerare doar stocul din portofel și ce vinde și răscumpără botul. „Mărește” înseamnă o sumă mai mare pe vânzare."
                             />
-                            <Legend wrapperStyle={{ fontSize: 12 }} />
-                            {openLotsTokenPrices.map((t, i) => (
-                                <ReferenceLine
-                                    key={t.settingsId}
-                                    y={t.priceUsd}
-                                    stroke={REF_LINE_COLORS[i % REF_LINE_COLORS.length]}
-                                    strokeDasharray="2 3"
-                                    label={{ value: `${t.symbol} preț curent: ${fmtUsd(t.priceUsd)}`, position: "insideTopRight", fill: REF_LINE_COLORS[i % REF_LINE_COLORS.length], fontSize: 11 }}
-                                />
-                            ))}
-                            <Line type="monotone" dataKey="sellPrice" name="Preț vânzare" stroke="#e8bc70" strokeWidth={2.5} strokeLinecap="round" dot={{ r: 3.5, fill: "#0a0a0a", stroke: "#e8bc70", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#e8bc70", stroke: "#0a0a0a", strokeWidth: 2 }} />
-                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă răscump." stroke="#52c98a" strokeWidth={2.5} strokeLinecap="round" strokeDasharray="4 4" dot={{ r: 3.5, fill: "#0a0a0a", stroke: "#52c98a", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#52c98a", stroke: "#0a0a0a", strokeWidth: 2 }} />
-                        </ComposedChart>
-                    </ResponsiveContainer>
-                    {openLotsTokenPrices.length === 0 && (
-                        <p className="mt-2 text-[11px] text-faint">Prețul curent live e indisponibil momentan (1inch) — se afișează doar prețul de vânzare și cel țintă.</p>
-                    )}
-                </Card>
-            )}
+                        )}
+                    </React.Fragment>
+                );
+            })}
+
+
+            {tokenSettings[0] && (() => {
+                const px = priceBySettingsId.get(tokenSettings[0].id) ?? null;
+                const tokLots = allLots.filter((l) => tokenSettings.some((t) => t.id === l.settingsId));
+                const heat: HeatLot[] = tokLots
+                    .filter((l) => l.status === "OPEN" && l.targetPriceUsd)
+                    .map((l) => ({ t: new Date(l.soldAt).getTime(), buyPrice: Number(l.sellPriceUsd), targetPrice: Number(l.targetPriceUsd), profitUsd: Number(l.usdcToBuyback) }));
+                return (
+                    <>
+                        {heat.length > 0 && <ProfitHeatmap reverse lots={heat} currentPrice={px} fmt={fmtUsd} fmtUsd={fmtUsd} />}
+                        <LotPriceChart
+                            reverse
+                            lots={tokLots.map((l) => ({
+                                t: new Date(l.soldAt).getTime(),
+                                buyPrice: Number(l.sellPriceUsd),
+                                targetPrice: l.targetPriceUsd ? Number(l.targetPriceUsd) : null,
+                                status: l.status,
+                                soldPrice: l.tokenReacquired && l.usdcSpent && Number(l.tokenReacquired) > 0 ? Number(l.usdcSpent) / Number(l.tokenReacquired) : null,
+                            }))}
+                            currentPrice={px}
+                            fmt={fmtUsd}
+                        />
+                    </>
+                );
+            })()}
 
             {chartData.length > 0 && (
                 <Card>

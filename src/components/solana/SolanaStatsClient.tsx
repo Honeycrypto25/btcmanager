@@ -35,6 +35,7 @@ import { LotStatusFilter, useLotStatusFilter } from "@/components/ui/LotStatusFi
 import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 import { Last30Stats } from "@/components/ui/Last30Stats";
 import { BuyTimingCard } from "./BuyTimingCard";
+import { AmountAdviceCard } from "@/components/ui/AmountAdviceCard";
 import type { PriceHistory } from "@/lib/price-history";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
@@ -455,6 +456,17 @@ export function SolanaStatsClient({
                     </>
                 )}
             </Card>
+
+            {!("error" in fuelStatus) && (
+                <AmountAdviceCard
+                    lots={allLots.map((l) => ({ boughtAt: new Date(l.boughtAt).getTime(), spendUsd: Number(l.buyAmountUsd), soldAt: l.soldAt ? new Date(l.soldAt).getTime() : null, proceedsUsd: Number(l.sellProceedsUsd ?? 0) }))}
+                    balance={fuelStatus.usdcBalance}
+                    buyAmount={fuelStatus.buyAmountUsd}
+                    periodHours={fuelStatus.periodHours}
+                    strikePct={uptime?.w30.pct ?? null}
+                    noFuel30={uptime?.w30.noFuel ?? 0}
+                />
+            )}
 
             {/* Charts */}
             {uptime && <BotUptimeCard uptime={uptime} />}

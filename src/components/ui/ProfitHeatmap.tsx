@@ -23,6 +23,8 @@ interface Props {
     currentPrice: number | null;
     fmt: (n: number) => string; // price formatter
     fmtUsd: (n: number) => string; // dollar amounts
+    /** Reverse-DCA: bands sit at the buy-back targets (below the sale price); the weight is the USDC waiting to buy back at each level. */
+    reverse?: boolean;
 }
 
 const BINS = 44;
@@ -49,7 +51,7 @@ function ramp(v: number): string {
 const MONTHS = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Liquidity-heatmap look-alike for profits: where the open sell targets sit, hotter where more profit is waiting. */
-export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd }: Props) {
+export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd, reverse = false }: Props) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [hover, setHover] = useState<number | null>(null);
     const [now] = useState(() => Date.now());
@@ -213,7 +215,12 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
     if (!model) return null;
     const { pmin, bin, profile, count, best, pmaxProfile } = model;
     const total = lots.reduce((s, l) => s + l.profitUsd, 0);
-    const above = currentPrice ? lots.map((l) => l.targetPrice).filter((t) => t > currentPrice).sort((a, b) => a - b)[0] : undefined;
+    const above = currentPrice
+        ? reverse
+            ? lots.map((l) => l.targetPrice).filter((t) => t < currentPrice).sort((a, b) => b - a)[0]
+            : lots.map((l) => l.targetPrice).filter((t) => t > currentPrice).sort((a, b) => a - b)[0]
+        : undefined;
+    const what = reverse ? "USDC" : "profit";
     const bandText = (b: number) => `${fmt(pmin + b * bin)} – ${fmt(pmin + (b + 1) * bin)}`;
     const shown = hover !== null && profile[hover] > 0 ? hover : null;
 
@@ -227,8 +234,8 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
 
     return (
         <ExpandableCard
-            title="Heatmap profituri · unde se vând ordinele active"
-            description={`Fiecare lot desenează o bandă la prețul lui țintă, de la data cumpărării până azi. Mai gros și mai fierbinte unde se adună mai mult profit. Bara din dreapta = profit pe nivel.${buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}`}
+            title={reverse ? "Heatmap răscumpărări · unde se răscumpără ordinele active" : "Heatmap profituri · unde se vând ordinele active"}
+            description={`Fiecare lot desenează o bandă la prețul lui țintă, de la data ${reverse ? "vânzării" : "cumpărării"} până azi. Mai gros și mai fierbinte unde se adună mai mult ${reverse ? "USDC rezervat pentru răscumpărare" : "profit"}. Bara din dreapta = ${reverse ? "USDC" : "profit"} pe nivel.${buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}`}
             headerExtra={() => (
                 <div className="hidden items-center gap-2 text-xs text-muted sm:flex">
                     <span className="h-2 w-28 rounded-full" style={{ background: "linear-gradient(90deg,#1a246e,#583fd6,#d6479c,#ff9a4d,#ffe27a)" }} />
@@ -241,7 +248,7 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
             <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className={`block w-full rounded-lg ${expanded ? "min-h-[360px] flex-1" : "h-[360px]"}`} />
             <p className="mt-2 min-h-[1.25rem] text-xs text-muted">
                 {shown !== null
-                    ? `${bandText(shown)} · ${count[shown]} ${count[shown] === 1 ? "ordin" : "ordine"} · profit ${fmtUsd(profile[shown])} (${((profile[shown] / total) * 100).toFixed(0)}% din total)`
+                    ? `${bandText(shown)} · ${count[shown]} ${count[shown] === 1 ? "ordin" : "ordine"} · ${what} ${fmtUsd(profile[shown])} (${((profile[shown] / total) * 100).toFixed(0)}% din total)`
                     : "Treci cu mouse-ul peste grafic ca să vezi nivelul."}
             </p>
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -253,14 +260,14 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd 
                     </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Profit total la ținte</p>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">{reverse ? "USDC total la ținte" : "Profit total la ținte"}</p>
                     <p className="font-mono text-base text-emerald-300">{fmtUsd(total)}</p>
                     <p className="text-[11px] text-muted">{lots.length} ordine active</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Prima țintă peste prețul curent</p>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">{reverse ? "Prima țintă sub prețul curent" : "Prima țintă peste prețul curent"}</p>
                     <p className="font-mono text-base text-foreground">{above !== undefined && currentPrice ? fmt(above) : "—"}</p>
-                    <p className="text-[11px] text-muted">{above !== undefined && currentPrice ? `+${(((above - currentPrice) / currentPrice) * 100).toFixed(1)}% față de curent` : "nicio țintă peste preț"}</p>
+                    <p className="text-[11px] text-muted">{above !== undefined && currentPrice ? `${reverse ? "−" : "+"}${(Math.abs((above - currentPrice) / currentPrice) * 100).toFixed(1)}% față de curent` : reverse ? "nicio țintă sub preț" : "nicio țintă peste preț"}</p>
                 </div>
             </div>
                 </>

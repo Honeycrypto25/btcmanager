@@ -12,6 +12,7 @@ import {
     getPolygonUsdcBalance,
     getPolygonSweepSettings,
     getPolygonSweepDestinationInfo,
+    getPolygonFuelStatus,
 } from "@/app/actions/polygon";
 import { getPolygonUptimes } from "@/lib/bot-uptime";
 import { POLYGON_TOKEN_PAGES, type PolygonTokenKey } from "@/lib/polygon/constants";
@@ -66,7 +67,7 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
     const user = session.user as { id?: string; isAdmin?: boolean } | undefined;
     const isAdmin = user?.isAdmin === true;
 
-    const [allSettings, allLots, allSweeps, stats, allPrices, allUptimes] = await cachedPageData("polygon-stats", sessionUserId(session), () =>
+    const [allSettings, allLots, allSweeps, stats, allPrices, allUptimes, fuelAll] = await cachedPageData("polygon-stats", sessionUserId(session), () =>
         Promise.all([
             listPolygonTokenSettings(),
             listPolygonLots(),
@@ -74,6 +75,7 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
             getPolygonStats(),
             getPolygonCurrentPrices().catch(() => []),
             user?.id ? getPolygonUptimes(user.id) : Promise.resolve([]),
+            getPolygonFuelStatus().catch(() => null),
         ]),
     );
 
@@ -82,6 +84,8 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
     const lots = allLots.filter((l) => ids.has(l.settingsId));
     const currentPrices = allPrices.filter((p) => ids.has(p.settingsId));
     const uptimes = allUptimes.filter((u) => u.label === token.symbol);
+    // Token stock is the token's own number; POL gas is wallet-level, so only the admin gets it.
+    const fuel = fuelAll ? { tokens: fuelAll.tokens.filter((t) => ids.has(t.settingsId)), gas: isAdmin ? fuelAll.gas : null } : null;
 
     return (
         <DashboardLayout>
@@ -94,6 +98,7 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
                 stats={stats}
                 currentPrices={currentPrices}
                 uptimes={uptimes}
+                fuel={fuel}
             />
         </DashboardLayout>
     );
