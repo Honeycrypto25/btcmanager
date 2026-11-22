@@ -33,24 +33,82 @@ const BLUE = "#60a5fa";
 const AMBER = "#e8bc70";
 const usd = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Half-circle dial split between the two buckets (wallet vs pending), total in the middle. */
+/**
+ * Half-circle dial split between the two buckets (wallet vs pending), total in the middle: rounded gradient arcs
+ * with a soft glow, a fine tick scale and a short entrance sweep. Numbers are the same, only the look is richer.
+ */
 function Dial({ wallet, pending }: { wallet: number; pending: number }) {
+    const uid = React.useId().replace(/[^a-zA-Z0-9]/g, "");
+    const [ready, setReady] = React.useState(false);
+    React.useEffect(() => {
+        const t = requestAnimationFrame(() => setReady(true));
+        return () => cancelAnimationFrame(t);
+    }, []);
+
     const total = wallet + pending;
-    const r = 80;
+    const cx = 120;
+    const cy = 122;
+    const r = 90;
+    const sw = 15;
     const c = Math.PI * r; // half-circumference
+    const both = wallet > 0 && pending > 0;
+    const gap = both ? 5 : 0;
     const wl = total > 0 ? (wallet / total) * c : 0;
     const pl = total > 0 ? (pending / total) * c : 0;
-    const path = `M ${100 - r} 100 A ${r} ${r} 0 0 1 ${100 + r} 100`;
+    const path = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+    const d1 = Math.max(0.01, wl - gap / 2 - sw);
+    const d2 = Math.max(0.01, pl - gap / 2 - sw);
+    const s2 = wl + gap / 2 + sw / 2;
+    const pendPct = total > 0 ? Math.round((pending / total) * 100) : 0;
+
+    // Fine scale just inside the arc (21 ticks, every 5th longer).
+    const ticks = Array.from({ length: 21 }, (_, i) => {
+        const a = Math.PI - (i / 20) * Math.PI;
+        const long = i % 5 === 0;
+        const r1 = r - sw / 2 - 7;
+        const r2 = r1 - (long ? 7 : 3.5);
+        return { x1: (cx + r1 * Math.cos(a)).toFixed(2), y1: (cy - r1 * Math.sin(a)).toFixed(2), x2: (cx + r2 * Math.cos(a)).toFixed(2), y2: (cy - r2 * Math.sin(a)).toFixed(2), long };
+    });
+
     return (
-        <div className="relative mx-auto w-full max-w-[320px]">
-            <svg viewBox="0 0 200 112" className="w-full" role="img" aria-label="Portofel și pending">
-                <path d={path} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={20} strokeLinecap="round" />
-                {wl > 0 && <path d={path} fill="none" stroke={BLUE} strokeWidth={20} strokeDasharray={`${wl} ${c}`} strokeLinecap="butt" />}
-                {pl > 0 && <path d={path} fill="none" stroke={AMBER} strokeWidth={20} strokeDasharray={`${pl} ${c}`} strokeDashoffset={-wl} strokeLinecap="butt" />}
+        <div className="relative mx-auto w-full max-w-[340px]">
+            <svg viewBox="0 0 240 150" className="w-full overflow-visible" role="img" aria-label="Portofel și pending">
+                <defs>
+                    <linearGradient id={`${uid}b`} x1="0" y1="1" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#7cc4ff" />
+                    </linearGradient>
+                    <linearGradient id={`${uid}a`} x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#f6d98f" />
+                        <stop offset="100%" stopColor="#d49a3a" />
+                    </linearGradient>
+                    <filter id={`${uid}g`} x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="5" />
+                    </filter>
+                </defs>
+
+                {/* soft glow under the filled arcs */}
+                <g filter={`url(#${uid}g)`} opacity={0.35}>
+                    {wl > 0 && <path d={path} fill="none" stroke="#3b82f6" strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${ready ? d1 : 0.01} ${c * 2}`} strokeDashoffset={-sw / 2} style={{ transition: "stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1)" }} />}
+                    {pl > 0 && <path d={path} fill="none" stroke="#d49a3a" strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${ready ? d2 : 0.01} ${c * 2}`} strokeDashoffset={-s2} style={{ transition: "stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1)" }} />}
+                </g>
+
+                {/* track */}
+                <path d={path} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={sw} strokeLinecap="round" />
+
+                {/* scale */}
+                {ticks.map((t, i) => (
+                    <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="rgba(255,255,255,0.14)" strokeWidth={t.long ? 1.2 : 0.8} strokeLinecap="round" />
+                ))}
+
+                {/* wallet (blue) then pending (gold) */}
+                {wl > 0 && <path d={path} fill="none" stroke={`url(#${uid}b)`} strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${ready ? d1 : 0.01} ${c * 2}`} strokeDashoffset={-sw / 2} style={{ transition: "stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1)" }} />}
+                {pl > 0 && <path d={path} fill="none" stroke={`url(#${uid}a)`} strokeWidth={sw} strokeLinecap="round" strokeDasharray={`${ready ? d2 : 0.01} ${c * 2}`} strokeDashoffset={-s2} style={{ transition: "stroke-dasharray 900ms cubic-bezier(.2,.7,.2,1)" }} />}
             </svg>
-            <div className="absolute inset-x-0 bottom-1 text-center">
-                <p className="text-[11px] uppercase tracking-wider text-faint">Total bot</p>
-                <p className="font-mono text-lg font-medium text-foreground">{usd(total)}</p>
+            <div className="absolute inset-x-0 bottom-0 text-center">
+                <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-faint">Total bot</p>
+                <p className="font-mono text-[28px] font-medium leading-tight tracking-tight text-foreground">{usd(total)}</p>
+                <p className="mt-0.5 text-[11px] text-muted">{total > 0 ? `${pendPct}% în ordine pending` : "fără fonduri"}</p>
             </div>
         </div>
     );
@@ -83,13 +141,13 @@ export function LendBotFuel({ bot }: { bot: BotOverview }) {
             <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-2">
                 <div className="space-y-3">
                     <Dial wallet={wallet} pending={pendUsd} />
-                    <div className="flex justify-center gap-6 text-xs">
-                        <span className="flex items-center gap-1.5 text-muted">
-                            <span className="h-2 w-2 rounded-sm" style={{ background: BLUE }} />
+                    <div className="flex flex-wrap justify-center gap-2 text-xs">
+                        <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-muted">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "linear-gradient(135deg,#3b82f6,#7cc4ff)", boxShadow: "0 0 8px rgba(96,165,250,0.6)" }} />
                             Portofel (USDC) <span className="font-mono text-foreground">{usd(wallet)}</span>
                         </span>
-                        <span className="flex items-center gap-1.5 text-muted">
-                            <span className="h-2 w-2 rounded-sm" style={{ background: AMBER }} />
+                        <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-muted">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "linear-gradient(135deg,#f6d98f,#d49a3a)", boxShadow: "0 0 8px rgba(232,188,112,0.55)" }} />
                             În pending <span className="font-mono text-foreground">{usd(pendUsd)}</span>
                         </span>
                     </div>

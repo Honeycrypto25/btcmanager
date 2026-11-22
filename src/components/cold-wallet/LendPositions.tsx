@@ -49,7 +49,7 @@ const riskColor = (r: number) => {
 const short = (a: string) => (a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a);
 
 /** Jupiter Lend borrow positions held by the cold wallet — read-only. */
-export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capLtv?: number }) {
+export function LendPositions({ lend, capLtv = 0.3, solDaily = null }: { lend: LendOverview; capLtv?: number; solDaily?: { priceUsd: number; at: string } | null }) {
     return (
         <Card className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -84,7 +84,7 @@ export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capL
                         <p className="text-xs text-amber-300">Nu am putut citi istoricul tranzacțiilor ({lend.historyError}) — dobânzile și graficele de istoric lipsesc, restul e afișat.</p>
                     )}
                     {lend.positions.map((p) => (
-                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} capLtv={capLtv} fetchedAt={lend.fetchedAt} />
+                        <PositionCard key={`${p.vaultId}-${p.id}`} p={p} capLtv={capLtv} fetchedAt={lend.fetchedAt} solDaily={solDaily} />
                     ))}
                 </div>
             )}
@@ -92,7 +92,7 @@ export function LendPositions({ lend, capLtv = 0.3 }: { lend: LendOverview; capL
     );
 }
 
-function PositionCard({ p, capLtv, fetchedAt }: { p: LendPositionFull; capLtv: number; fetchedAt: string }) {
+function PositionCard({ p, capLtv, fetchedAt, solDaily }: { p: LendPositionFull; capLtv: number; fetchedAt: string; solDaily: { priceUsd: number; at: string } | null }) {
     const lt = p.liqThreshold ?? 0;
     // Same zones jup.ag uses visually: well below max LTV is safe, close to the liquidation threshold is danger.
     const risk = lt > 0 ? p.ltv / lt : 0;
@@ -113,7 +113,18 @@ function PositionCard({ p, capLtv, fetchedAt }: { p: LendPositionFull; capLtv: n
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <Stat label="Colateral" value={`${amt(p.collateral.amount)} ${p.collateral.symbol}`} note={`${usd(p.collateral.usd)} · APY ${pct(p.collateral.apy)}`} noteClass="text-emerald-300/80" />
-                <Stat label="Datorie" value={`${amt(p.debt.amount)} ${p.debt.symbol}`} note={`${usd(p.debt.usd)} · APY ${pct(p.debt.apy)}`} noteClass="text-amber-300/80" />
+                <Stat
+                    label="Datorie"
+                    value={`${amt(p.debt.amount)} ${p.debt.symbol}`}
+                    extra={
+                        solDaily && !/^w?sol$/i.test(p.debt.symbol)
+                            ? {
+                                  text: `(≈ ${amt(p.debt.usd / solDaily.priceUsd)} SOL)`,
+                                  title: `Datoria în SOL la prețul de $${amt(solDaily.priceUsd, 2)}/SOL din ${new Date(solDaily.at).toLocaleString("ro-RO", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })}. Prețul se actualizează o dată la 24 de ore.`,
+                              }
+                            : undefined
+                    }
+                    note={`${usd(p.debt.usd)} · APY ${pct(p.debt.apy)}`} noteClass="text-amber-300/80" />
                 <Stat label="Net USD" value={usd(p.netUsd)} note={`Net APY ${p.netApy == null ? "—" : `${p.netApy >= 0 ? "+" : ""}${pct(p.netApy)}`}`} />
             </div>
 
@@ -171,11 +182,18 @@ function PositionCard({ p, capLtv, fetchedAt }: { p: LendPositionFull; capLtv: n
     );
 }
 
-function Stat({ label, value, note, noteClass }: { label: string; value: string; note: string; noteClass?: string }) {
+function Stat({ label, value, note, noteClass, extra }: { label: string; value: string; note: string; noteClass?: string; extra?: { text: string; title: string } }) {
     return (
         <div className="space-y-1">
             <p className="text-[11px] font-medium uppercase tracking-wider text-faint">{label}</p>
-            <p className="font-mono text-lg font-medium text-foreground">{value}</p>
+            <p className="font-mono text-lg font-medium text-foreground">
+                {value}
+                {extra && (
+                    <span title={extra.title} className="ml-2 cursor-help text-sm font-normal text-muted">
+                        {extra.text}
+                    </span>
+                )}
+            </p>
             <p className={cn("text-xs", noteClass ?? "text-muted")}>{note}</p>
         </div>
     );

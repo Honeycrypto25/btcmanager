@@ -11,6 +11,7 @@ import { LendBotFuel, type BotOverview } from "@/components/cold-wallet/LendBotF
 import { LendRepay } from "@/components/cold-wallet/LendRepay";
 import { listSolanaLots, getSolanaFuelStatus } from "@/app/actions/solana";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
+import { getDailySolPrice } from "@/lib/solana/sol-price-daily";
 import { lendCapLtv } from "@/lib/solana/lend-config";
 import { checkLendAlerts } from "@/lib/email/lend-alert";
 import { PENDING_STATUSES } from "@/components/solana/shared";
@@ -57,7 +58,7 @@ async function getBotOverview(): Promise<BotOverview> {
 // JUPITER_LEND_WALLETS. Neither call can fail the page — errors show as a note.
 export default async function ColdWalletLoansPage() {
     await requireAdminPage();
-    const [lend, bot] = await Promise.all([getLendOverview({ record: true }), getBotOverview()]);
+    const [lend, bot, solDaily] = await Promise.all([getLendOverview({ record: true }), getBotOverview(), getDailySolPrice()]);
     const capLtv = lendCapLtv();
     // Opening the page also checks the LTV steps (deduped, never blocks the page).
     await checkLendAlerts(lend.positions, capLtv).catch(() => null);
@@ -73,7 +74,7 @@ export default async function ColdWalletLoansPage() {
                     <LoansRefreshButton />
                 </div>
                 <LendAlert positions={lend.positions} capLtv={capLtv} />
-                <LendPositions lend={lend} capLtv={capLtv} />
+                <LendPositions lend={lend} capLtv={capLtv} solDaily={solDaily} />
                 <LendBotFuel bot={bot} />
                 {lend.positions.some((p) => !p.isLiquidated && p.debt.amount > 0 && /^w?sol$/i.test(p.collateral.symbol)) && (
                     <LendRepay

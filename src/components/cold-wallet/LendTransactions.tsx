@@ -293,14 +293,15 @@ export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepO
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-left text-sm">
+                    <table className="w-full min-w-[860px] text-left text-sm">
                         <thead>
                             <tr className="border-b border-white/[0.08] text-[11px] uppercase tracking-wider text-faint">
                                 <th className="py-2 pr-4 font-medium">Data</th>
                                 <th className="py-2 pr-4 font-medium">Tip</th>
                                 <th className="py-2 pr-4 font-medium">Poziție</th>
-                                <th className="py-2 pr-4 text-right font-medium">Colateral</th>
-                                <th className="py-2 pr-4 text-right font-medium">Datorie</th>
+                                <th className="py-2 pr-4 text-right font-medium">Colateral ({colSym || "SOL"})</th>
+                                <th className="py-2 pr-4 text-right font-medium">Împrumutat ({debtSym || "USDC"})</th>
+                                <th className="py-2 pr-4 text-right font-medium">Rambursat ({debtSym || "USDC"})</th>
                                 <th className="py-2 pr-4 text-right font-medium">Valoare la momentul tx</th>
                                 <th className="py-2 pr-4 font-medium">Status</th>
                                 <th className="py-2 font-medium">Tx</th>
@@ -325,7 +326,8 @@ export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepO
                                         {r.pos.collateral.symbol}/{r.pos.debt.symbol} #{r.pos.id}
                                     </td>
                                     <td className="whitespace-nowrap py-2.5 pr-4 text-right font-mono text-xs">{flow(r.collateralIn, r.collateralOut, r.pos.collateral.symbol)}</td>
-                                    <td className="whitespace-nowrap py-2.5 pr-4 text-right font-mono text-xs">{flow(r.debtIn, r.debtOut, r.pos.debt.symbol)}</td>
+                                    <td className="whitespace-nowrap py-2.5 pr-4 text-right font-mono text-xs">{borrowed(r) > 0 ? <span className="text-amber-300">{tokenSmall(borrowed(r), r.pos.debt.symbol)}</span> : <span className="text-faint">—</span>}</td>
+                                    <td className="whitespace-nowrap py-2.5 pr-4 text-right font-mono text-xs">{repaid(r) > 0 ? <span className="text-sky-300">−{tokenSmall(repaid(r), r.pos.debt.symbol)}</span> : <span className="text-faint">—</span>}</td>
                                     <td className="whitespace-nowrap py-2.5 pr-4 text-right font-mono text-xs text-foreground">
                                         {usdSmall(r.collateralInUsd + r.collateralOutUsd + r.debtInUsd + r.debtOutUsd)}
                                     </td>
@@ -370,6 +372,10 @@ export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepO
 }
 
 /** +x when put in, −x when taken out, — when untouched. */
+// Fluid reports a payback as a NEGATIVE debt amount (debtIn < 0), a borrow as a positive one.
+const borrowed = (r: LendAction) => Math.max(0, r.debtIn);
+const repaid = (r: LendAction) => Math.max(0, -r.debtIn) + Math.max(0, r.debtOut);
+
 function flow(inAmt: number, outAmt: number, sym: string) {
     if (inAmt > 0 && outAmt > 0) return `${tokenSmall(inAmt - outAmt, sym)}`;
     if (inAmt > 0) return <span className="text-emerald-300">+{tokenSmall(inAmt, sym)}</span>;
