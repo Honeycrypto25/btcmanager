@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { format } from "date-fns";
 import { Card } from "@/components/ui/core";
+import { ChartGradients, cg, LABEL_STYLE } from "@/components/ui/chart-gradients";
 
 export interface OrderLike {
     status: string;
@@ -62,12 +63,16 @@ export function MonthlyOrdersChart({ lots, symbol }: { lots: OrderLike[]; symbol
                 Câte cicluri {symbol} s-au deschis în fiecare lună (portocaliu) și câte s-au vândut deja la țintă (verde) — ultimele 14 luni, fără cele anulate sau eșuate, respectă filtrele curente. Liniile punctate sunt mediile pe lunile cu ordine. Medie {data.avgPlaced.toFixed(1)} ordine/lună · ${data.avgOrderUsd.toFixed(2)} per ordin.
             </p>
             <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={data.rows}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                    <Tooltip contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                <BarChart data={data.rows} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%">
+                    <defs><ChartGradients names={["amber", "green"]} /></defs>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} interval={0} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} width={32} />
+                    <Tooltip
+                        cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                        contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" iconSize={8} />
                     <ReferenceLine
                         y={Math.round(data.avgPlaced * 100) / 100}
                         stroke="#e8bc70"
@@ -80,8 +85,12 @@ export function MonthlyOrdersChart({ lots, symbol }: { lots: OrderLike[]; symbol
                         strokeDasharray="4 4"
                         label={{ value: `Medie vândute ${data.avgSold.toFixed(1)}/lună`, position: "insideBottomLeft", fill: "#4ade80", fontSize: 11 }}
                     />
-                    <Bar dataKey="placed" name={`${symbol} ordine`} fill="#e8a33d" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="sold" name={`${symbol} vândute`} fill="#22c55e" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="placed" name={`${symbol} ordine`} fill={cg("amber")} radius={[6, 6, 0, 0]} maxBarSize={40}>
+                        <LabelList dataKey="placed" position="top" formatter={(v) => (Number(v) > 0 ? String(v) : "")} style={LABEL_STYLE} />
+                    </Bar>
+                    <Bar dataKey="sold" name={`${symbol} vândute`} fill={cg("green")} radius={[6, 6, 0, 0]} maxBarSize={40}>
+                        <LabelList dataKey="sold" position="top" formatter={(v) => (Number(v) > 0 ? String(v) : "")} style={LABEL_STYLE} />
+                    </Bar>
                 </BarChart>
             </ResponsiveContainer>
         </Card>

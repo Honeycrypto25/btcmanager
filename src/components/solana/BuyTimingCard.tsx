@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { format } from "date-fns";
 import { Card, cn } from "@/components/ui/core";
+import { ChartGradients, cg, type CgName } from "@/components/ui/chart-gradients";
 import { SortTh, useSort } from "@/components/ui/SortableTh";
 import { computeTimingRows, groupTiming, summarize, type TimingLot, type TimingPeriod, type TimingRow } from "@/lib/buy-timing";
 import type { PriceHistory } from "@/lib/price-history";
@@ -49,6 +50,7 @@ const PERIODS: { id: TimingPeriod; label: string }[] = [
 // Low in the day's range = cheap buy = good.
 const tone = (p: number | null) => (p === null ? "text-muted" : p <= 100 / 3 ? "text-emerald-300" : p <= 200 / 3 ? "text-amber-300" : "text-red-300");
 const fill = (p: number | null) => (p === null ? "rgba(255,255,255,0.15)" : p <= 100 / 3 ? "#10b981" : p <= 200 / 3 ? "#f59e0b" : "#ef4444");
+const fillGrad = (p: number | null): string => (p === null ? "rgba(255,255,255,0.15)" : cg((p <= 100 / 3 ? "green" : p <= 200 / 3 ? "amber" : "red") as CgName));
 const fmtPos = (p: number | null) => (p === null ? "—" : `${Math.round(p)}%`);
 const fmtAbove = (p: number | null) => (p === null ? "—" : `${p >= 0 ? "+" : "−"}${Math.abs(p).toFixed(2)}%`);
 
@@ -168,10 +170,11 @@ export function BuyTimingCard({ lots, history, error: loadError, fmt }: Props) {
                                     if (key) setPicked(key);
                                 }}
                             >
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" minTickGap={8} />
-                                <YAxis yAxisId="pos" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickFormatter={(v) => `${v}%`} width={40} />
-                                <YAxis yAxisId="above" orientation="right" tick={{ fontSize: 11 }} stroke="rgba(96,165,250,0.6)" tickFormatter={(v) => `+${Number(v).toFixed(1)}%`} width={48} />
+                                <defs><ChartGradients names={["green", "amber", "red"]} /></defs>
+                                <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" minTickGap={4} tickLine={false} />
+                                <YAxis yAxisId="pos" domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickFormatter={(v) => `${v}%`} width={40} tickLine={false} axisLine={false} />
+                                <YAxis yAxisId="above" orientation="right" tick={{ fontSize: 11 }} stroke="rgba(96,165,250,0.6)" tickFormatter={(v) => `+${Number(v).toFixed(1)}%`} width={48} tickLine={false} axisLine={false} />
                                 <Tooltip
                                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
                                     contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
@@ -181,12 +184,12 @@ export function BuyTimingCard({ lots, history, error: loadError, fmt }: Props) {
                                         return `${label}${n ? ` · ${n} ${n === 1 ? "cumpărare" : "cumpărări"}` : ""}`;
                                     }}
                                 />
-                                <Bar yAxisId="pos" dataKey="pos" radius={[4, 4, 0, 0]} cursor="pointer">
+                                <Bar yAxisId="pos" dataKey="pos" radius={[6, 6, 0, 0]} maxBarSize={40} cursor="pointer">
                                     {chartData.map((d) => (
-                                        <Cell key={d.key} fill={fill(d.pos)} fillOpacity={selected?.key === d.key ? 0.95 : 0.45} />
+                                        <Cell key={d.key} fill={fillGrad(d.pos)} fillOpacity={selected?.key === d.key ? 1 : 0.72} stroke={selected?.key === d.key ? "rgba(255,255,255,0.7)" : "none"} strokeWidth={1.5} />
                                     ))}
                                 </Bar>
-                                <Line yAxisId="above" dataKey="above" stroke="#60a5fa" strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+                                <Line yAxisId="above" dataKey="above" stroke="#7cc4ff" strokeWidth={2.5} strokeLinecap="round" dot={{ r: 3.5, fill: "#0a0a0a", stroke: "#7cc4ff", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#7cc4ff", stroke: "#0a0a0a", strokeWidth: 2 }} type="monotone" connectNulls isAnimationActive={false} />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </div>
