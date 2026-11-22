@@ -56,7 +56,7 @@ interface OperateResponse {
     addressLookupTableAddresses?: string[];
 }
 
-async function fetchOperateInstructions(args: { signer: string; owner: string; vaultId: number; positionId: number; lamports: bigint }): Promise<OperateResponse> {
+async function fetchOperateInstructions(args: { signer: string; owner: string; vaultId: number; positionId: number; colAmount: string; debtAmount: string }): Promise<OperateResponse> {
     if (!process.env.JUPITER_API_KEY) throw new Error("JUPITER_API_KEY lipsește în Vercel.");
     const res = await fetch(`${JUPITER_API_BASE}/lend/v1/borrow/operate-instructions`, {
         method: "POST",
@@ -66,8 +66,8 @@ async function fetchOperateInstructions(args: { signer: string; owner: string; v
             positionId: args.positionId,
             signer: args.signer,
             positionOwner: args.owner,
-            colAmount: args.lamports.toString(),
-            debtAmount: "0",
+            colAmount: args.colAmount,
+            debtAmount: args.debtAmount,
         }),
         cache: "no-store",
         signal: AbortSignal.timeout(15000),
@@ -153,7 +153,7 @@ async function buildAndSimulate(connection: Connection, keypair: Keypair, instru
  */
 export async function prepareLendDeposit(connection: Connection, keypair: Keypair, args: { owner: string; vaultId: number; positionId: number; lamports: bigint }): Promise<PreparedDeposit> {
     const signer = keypair.publicKey;
-    const op = await fetchOperateInstructions({ signer: signer.toBase58(), owner: args.owner, vaultId: args.vaultId, positionId: args.positionId, lamports: args.lamports });
+    const op = await fetchOperateInstructions({ signer: signer.toBase58(), owner: args.owner, vaultId: args.vaultId, positionId: args.positionId, colAmount: args.lamports.toString(), debtAmount: "0" });
     if (op.nftId != null && op.nftId !== args.positionId) throw new Error(`Jupiter a returnat poziția #${op.nftId}, nu #${args.positionId} — nu depun.`);
     const ixs = op.instructions.map(toInstruction);
     const tables = await loadTables(connection, op.addressLookupTableAddresses ?? []);
@@ -184,6 +184,19 @@ export async function prepareLendDeposit(connection: Connection, keypair: Keypai
     };
 }
 
-export async function sendPreparedDeposit(connection: Connection, prepared: PreparedDeposit): Promise<string> {
-    return sendRawAndConfirm(connection, prepared.raw, prepared.lastValidBlockHeight, "Depunere în împrumut");
+export async function sendPreparedDeposit(connection: Connection, prepared: PreparedDeposit, label = "Depunere în împrumut"): Promise<string> {
+    return sendRawAndConfirm(connection, prepared.raw, prepared.lastValidBlockHeight, label);
+}
+
+/**
+ * Builds the signed PAYBACK transaction (USDC from the bot wallet repays part of the position's debt) and simulates
+ * it; nothing is sent. A negative debtAmount means "repay" in the operate API. Like deposits, repaying is open to
+ * anyone — the position stays owned by the cold wallet, and the bot can add collateral or repay, never withdraw or borrow.
+ */
+export async function prepareLendRepay(connection: Connection, keypair: Keypair, args: { owner: string; vaultId: number; positionId: number; usdcUnits: bigint }): Promise<PreparedDeposit> {
+    if (args.usdcUnits <= 0n) throw new Error("Suma de plată trebuie să fie pozitivă.");
+    const op = await fetchOperateInstructions({ signer: keypair.publicKey.toBase58(), owner: args.owner, vaultId: args.vaultId, positionId: args.positionId, colAmount: "0", debtAmount: `-${args.usdcUnits.toString()}` });
+    if (op.nftId != null && op.nftId !== args.positionId) throw new Error(`Jupiter a returnat poziția #${op.nftId}, nu #${args.positionId} — nu plătesc.`);
+    const tables = await loadTables(connection, op.addressLookupTableAddresses ?? []);
+    return buildAndSimulate(connection, keypair, op.instructions.map(toInstruction), tables, "direct");
 }

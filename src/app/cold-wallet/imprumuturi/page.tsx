@@ -8,6 +8,7 @@ import { LendCharts } from "@/components/cold-wallet/LendCharts";
 import { LendAlert, LendPlanner } from "@/components/cold-wallet/LendPlanner";
 import { LoansRefreshButton } from "@/components/cold-wallet/LoansRefreshButton";
 import { LendBotFuel, type BotOverview } from "@/components/cold-wallet/LendBotFuel";
+import { LendRepay } from "@/components/cold-wallet/LendRepay";
 import { listSolanaLots, getSolanaFuelStatus } from "@/app/actions/solana";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 import { lendCapLtv } from "@/lib/solana/lend-config";
@@ -74,6 +75,15 @@ export default async function ColdWalletLoansPage() {
                 <LendAlert positions={lend.positions} capLtv={capLtv} />
                 <LendPositions lend={lend} capLtv={capLtv} />
                 <LendBotFuel bot={bot} />
+                {lend.positions.some((p) => !p.isLiquidated && p.debt.amount > 0 && /^w?sol$/i.test(p.collateral.symbol)) && (
+                    <LendRepay
+                        positions={lend.positions
+                            .filter((p) => !p.isLiquidated && p.debt.amount > 0 && /^w?sol$/i.test(p.collateral.symbol))
+                            .map((p) => ({ vaultId: p.vaultId, id: p.id, label: `${p.collateral.symbol}/${p.debt.symbol} #${p.id}`, debtAmount: p.debt.amount, debtSymbol: p.debt.symbol }))}
+                        usdcBalance={bot.fuel?.usdcBalance ?? null}
+                        buyAmountUsd={bot.fuel?.buyAmountUsd ?? null}
+                    />
+                )}
                 {lend.positions[0] && <LendPlanner p={lend.positions[0]} bot={bot} capLtv={capLtv} />}
                 {lend.positions.map((p) => (
                     <LendCharts key={`${p.vaultId}-${p.id}`} p={p} fetchedAt={lend.fetchedAt} capLtv={capLtv} />

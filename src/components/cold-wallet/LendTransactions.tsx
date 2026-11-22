@@ -77,6 +77,12 @@ export interface SweepDeposit {
     at: string;
 }
 
+/** SOL amount for the sweep chart: up to 2 decimals, no trailing zeros (tiny test amounts keep 3 so they don't show as 0). */
+const solShort = (v: number, sym = "SOL") => {
+    const t = Number(v.toFixed(2));
+    return `${t > 0 || v === 0 ? t : Number(v.toFixed(3))} ${sym}`;
+};
+
 const GREEN = "#52c98a";
 const AMBER = "#e8bc70";
 const GRID = "rgba(255,255,255,0.06)";
@@ -176,7 +182,7 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
                     <h2 className="font-display text-base font-medium text-foreground">Depuneri din retragerea lunară (ziua 2)</h2>
                     {sweepChart.length > 0 && (
                         <p className="text-xs text-muted">
-                            {sweepChart.length} depuneri · total {tokenSmall(sweepChart[sweepChart.length - 1].total, colSym)}
+                            {sweepChart.length} {sweepChart.length === 1 ? "depunere" : "depuneri"} · total {solShort(sweepChart[sweepChart.length - 1].total, colSym)}
                         </p>
                     )}
                 </div>
@@ -189,7 +195,7 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
                         <ComposedChart data={sweepChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                             <CartesianGrid stroke={GRID} vertical={false} />
                             <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} />
-                            <YAxis tick={{ fontSize: 11 }} stroke={AXIS} width={56} tickFormatter={(v) => Number(v).toFixed(Math.abs(Number(v)) < 1 ? 3 : 2)} />
+                            <YAxis tick={{ fontSize: 11 }} stroke={AXIS} width={56} tickFormatter={(v) => String(Number(Number(v).toFixed(3)))} />
                             <Tooltip
                                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                                 content={({ active, payload }) => {
@@ -200,14 +206,14 @@ export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, 
                                             <p className="mb-1 text-foreground">
                                                 {r.label} · {r.manual ? "manual" : "automat"}
                                             </p>
-                                            <p style={{ color: GREEN }}>Depus: {tokenSmall(r.sol, colSym)}</p>
+                                            <p style={{ color: GREEN }}>Depus: {solShort(r.sol, colSym)}</p>
                                             <p className="text-muted">≈ {usdSmall(r.usd)} la momentul depunerii</p>
-                                            <p style={{ color: AMBER }}>Total din retrageri: {tokenSmall(r.total, colSym)}</p>
+                                            <p style={{ color: AMBER }}>Total din retrageri: {solShort(r.total, colSym)}</p>
                                         </div>
                                     );
                                 }}
                             />
-                            <Bar dataKey="sol" name="Depus" fill={GREEN} radius={[3, 3, 0, 0]} />
+                            <Bar dataKey="sol" name="Depus" fill={GREEN} radius={[3, 3, 0, 0]} maxBarSize={64} />
                             <Line type="monotone" dataKey="total" name="Total" stroke={AMBER} strokeWidth={2} dot={{ r: 3 }} />
                         </ComposedChart>
                     </ResponsiveContainer>

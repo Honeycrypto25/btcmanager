@@ -49,7 +49,7 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
     const settings = await db.solanaSettings.findUnique({ where: { userId } });
     if (!settings) return { action: "skipped", reason: "no settings" };
     if (!settings.sweepEnabled && !force) return { action: "skipped", reason: "sweep disabled" };
-    const lend = settings.sweepTarget === "lend";
+    let lend = settings.sweepTarget === "lend";
     if (opts.dryRun && !lend) return { action: "skipped", reason: "Simularea există doar pentru depunerea în împrumut (ținta e setată pe cold wallet)." };
     const quiet = !!opts.dryRun; // a simulation never writes to the database nor sends an email
 
@@ -103,7 +103,7 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
     const minBalance = Number(settings.sweepMinBalanceSol);
     const excess = balanceSol - minBalance;
     // Floor to 2 decimals — never round up, so the wallet never dips below minBalance.
-    const excessFloored = Math.floor(excess * 100) / 100;
+    const excessFloored = Math.floor(excess * 100 + 1e-6) / 100; // + 1e-6: 0.12 − 0.1 is 0.0199999… in floating point, not 0.02
     let amountSol = excessFloored;
     if (opts.amountSol !== undefined) {
         // Manual test amount (e.g. the smallest deposit possible): 3 decimals, and never more than what is above the minimum.
@@ -115,21 +115,54 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
         amountSol = wanted;
     }
 
-    if (amountSol <= 0) {
-        // Nothing to send this month — not logged as a SolanaSweep row (not
-        // interesting history), but lastSweepAt still advances so the
-        // monthly gate doesn't re-check on every cron run for the rest of
-        // the month.
+    // Below the minimum amount worth sending (an explicit test amount is exempt): nothing is sent, and the reason is
+    // written to the history so the monthly list shows why this month did not go out.
+    if (opts.amountSol === undefined && amountSol < MIN_SWEEP_AMOUNT_SOL) {
+        const available = Math.max(0, excess);
+        const reason = `Sub minimul de trimis (${MIN_SWEEP_AMOUNT_SOL} SOL): în portofel erau ${balanceSol.toFixed(4)} SOL, din care se păstrează ${minBalance} SOL, deci disponibil ${available.toFixed(4)} SOL. Nu s-a trimis nimic.`;
         if (!quiet) {
-            await db.solanaSettings.update({
-                where: { userId },
-                data: { lastSweepAt: new Date(), lastSweepStatus: "skipped", lastSweepError: null, ...(opts.retry ? { sweepRetryPending: false } : {}) },
-            });
+            await db.$transaction([
+                db.solanaSweep.create({
+                    data: {
+                        userId,
+                        status: "SKIPPED",
+                        balanceBeforeSol: balanceSol,
+                        amountSol: 0,
+                        destination: destinationRaw.trim(),
+                        errorMessage: reason,
+                        manual: force,
+                        target: lend ? "lend" : "cold",
+                        ...(lend ? { lendVaultId: settings.sweepLendVaultId, lendPositionId: settings.sweepLendPositionId } : {}),
+                    },
+                }),
+                // lastSweepAt still advances, so the monthly gate doesn't re-check on every cron run for the rest of the month.
+                db.solanaSettings.update({
+                    where: { userId },
+                    data: { lastSweepAt: new Date(), lastSweepStatus: "skipped", lastSweepError: reason, ...(opts.retry ? { sweepRetryPending: false } : {}) },
+                }),
+            ]);
         }
-        return { action: "skipped", reason: `balance ${balanceSol.toFixed(4)} SOL is at or below the ${minBalance} SOL minimum` };
+        return { action: "skipped", reason };
     }
 
     const lamportsToSend = Math.round(amountSol * LAMPORTS_PER_SOL);
+
+    // The loan is gone (repaid and closed, or the chosen position no longer has SOL collateral): the sweep goes to
+    // the cold wallet as usual, so the profit is never stuck. Only a definite "position not found" counts —
+    // if Jupiter itself can't be read, the lend path runs and reports the error / retries instead.
+    let fallbackLabel: string | undefined;
+    if (lend && !quiet) {
+        try {
+            const { positions, error } = await listSweepLendPositions(destinationRaw.trim());
+            const found = positions.some((p) => p.id === settings.sweepLendPositionId && p.vaultId === settings.sweepLendVaultId);
+            if (!error && !found) {
+                lend = false;
+                fallbackLabel = "Cold wallet (împrumutul nu mai este deschis)";
+            }
+        } catch {
+            /* Jupiter unreachable → keep the lend path, it fails safely and retries */
+        }
+    }
 
     if (lend) {
         return runLendSweep({ userId, settings, keypair, connection, owner: destinationRaw.trim(), balanceSol, amountSol, lamportsToSend, manual: force, retry: !!opts.retry, dryRun: quiet });
@@ -159,7 +192,7 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
             }),
             db.solanaSettings.update({
                 where: { userId },
-                data: { lastSweepAt: new Date(), lastSweepStatus: "ok", lastSweepError: null },
+                data: { lastSweepAt: new Date(), lastSweepStatus: "ok", lastSweepError: null, ...(opts.retry ? { sweepRetryPending: false } : {}) },
             }),
         ]);
 
@@ -169,6 +202,7 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
             status: "SUCCESS",
             amount: amountSol,
             destination: destinationRaw.trim(),
+            destinationLabel: fallbackLabel,
             manual: force,
             txUrl: `https://solscan.io/tx/${signature}`,
         });
@@ -200,6 +234,7 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
             status: "FAILED",
             amount: balanceSol,
             destination: destinationRaw.trim(),
+            destinationLabel: fallbackLabel,
             manual: force,
             errorMessage: message,
         });
@@ -208,6 +243,9 @@ export async function runSolanaSweepForUser(userId: string, force = false, opts:
     }
 }
 
+
+/** Smallest automatic sweep worth sending (SOL). Below it the month is skipped and the reason is logged. */
+const MIN_SWEEP_AMOUNT_SOL = 0.02;
 
 type SettingsRow = NonNullable<Awaited<ReturnType<typeof db.solanaSettings.findUnique>>>;
 

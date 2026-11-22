@@ -799,7 +799,7 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                         <th className="pb-2 pr-4">Sumă trimisă</th>
                         <th className="pb-2 pr-4">Destinație</th>
                         <th className="pb-2 pr-4">Sursă</th>
-                        <th className="pb-2 pr-4">Eroare</th>
+                        <th className="pb-2 pr-4">Motiv / eroare</th>
                         <th className="pb-2">Tranzacție</th>
                     </tr>
                 </thead>
@@ -813,25 +813,31 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                                         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
                                         sweep.status === "SUCCESS"
                                             ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/30"
-                                            : "text-red-300 bg-red-500/10 border-red-400/30"
+                                            : sweep.status === "SKIPPED"
+                                              ? "text-amber-200 bg-amber-500/10 border-amber-400/30"
+                                              : "text-red-300 bg-red-500/10 border-red-400/30"
                                     )}
                                 >
-                                    {sweep.status === "SUCCESS" ? "Trimis" : "Eșuat"}
+                                    {sweep.status === "SUCCESS" ? "Trimis" : sweep.status === "SKIPPED" ? "Sub minim" : "Eșuat"}
                                 </span>
                             </td>
                             <td className="py-2 pr-4 text-foreground">{Number(sweep.balanceBeforeSol).toFixed(4)} SOL</td>
                             <td className="py-2 pr-4 text-foreground">{Number(sweep.amountSol).toFixed(4)} SOL</td>
                             <td className="py-2 pr-4">
                                 {sweep.target === "lend" ? (
-                                    <span className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200">
-                                        Împrumut{sweep.lendPositionId != null ? ` #${sweep.lendPositionId}` : ""}
-                                    </span>
+                                    <Link
+                                        href="/cold-wallet/imprumuturi"
+                                        title="Deschide pagina împrumutului"
+                                        className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200 transition-colors hover:border-amber-400/60 hover:bg-amber-500/20"
+                                    >
+                                        Împrumut{sweep.lendPositionId != null ? ` #${sweep.lendPositionId}` : ""} →
+                                    </Link>
                                 ) : (
                                     <span className="text-xs text-faint">Cold wallet</span>
                                 )}
                             </td>
                             <td className="py-2 pr-4 text-faint">{sweep.manual ? "manual" : "automat"}</td>
-                            <td className="py-2 pr-4 text-red-300">{sweep.errorMessage ?? "—"}</td>
+                            <td className={cn("py-2 pr-4", sweep.status === "SKIPPED" ? "text-amber-200" : "text-red-300")}>{sweep.errorMessage ?? "—"}</td>
                             <td className="py-2 text-faint">
                                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                     {sweep.txSignature ? <SolscanLink signature={sweep.txSignature} label="Vezi ↗" /> : "—"}

@@ -1038,7 +1038,7 @@ model SolanaSweep {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  status            String // "SUCCESS" | "FAILED"
+  status            String // "SUCCESS" | "FAILED" | "SKIPPED" (amount below the minimum worth sending — errorMessage says why)
   balanceBeforeSol  Decimal  @db.Decimal(20, 9) // on-chain wallet balance right before the transfer
   amountSol         Decimal  @db.Decimal(20, 9) // amount actually sent (0 for a failed/skipped attempt)
   destination       String // snapshot of SOLANA_SWEEP_DESTINATION at the time — env var could change later

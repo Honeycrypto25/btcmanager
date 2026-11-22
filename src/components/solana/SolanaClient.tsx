@@ -519,7 +519,7 @@ export function SolanaClient({
                                 </Field>
                             )}
                             <p className="text-xs text-faint">
-                                Jupiter permite oricui să depună în orice poziție; doar proprietarul (cold wallet-ul) poate retrage sau împrumuta. Botul doar adaugă SOL — nu poate scoate nimic. Dacă depunerea eșuează (poziție închisă, Jupiter indisponibil), SOL-ul rămâne în bot, primești email și se reîncearcă la următoarea deschidere a acestei pagini (cel mult la 6 ore).
+                                Jupiter permite oricui să depună în orice poziție; doar proprietarul (cold wallet-ul) poate retrage sau împrumuta. Botul doar adaugă SOL — nu poate scoate nimic. Dacă împrumutul a fost închis (poziția nu mai există), retragerea lunară merge automat în cold wallet, iar emailul spune asta. Dacă depunerea eșuează din alt motiv (Jupiter indisponibil, simulare respinsă), SOL-ul rămâne în bot, primești email și se reîncearcă la următoarea deschidere a acestei pagini (cel mult la 6 ore).
                             </p>
                         </div>
                     )}
