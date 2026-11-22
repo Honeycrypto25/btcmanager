@@ -3,12 +3,18 @@
 import React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, cn } from "@/components/ui/core";
+import { FuelBars } from "@/components/solana/FuelBars";
 
 export interface BotFuelData {
     /** USDC in the bot wallet (buy "fuel"). */
     usdcBalance: number;
     buyAmountUsd: number;
     intervalHours: number;
+    /** Hours between real buys (whole days, from the daily 09:00 UTC cron). */
+    periodHours: number;
+    /** Whole days the balance lasts, and how many buys it funds. */
+    daysRemaining: number;
+    buysLeft: number;
     projected: { label: string; usdc: number }[];
 }
 export interface BotPendingData {
@@ -120,10 +126,10 @@ export function LendBotFuel({ bot }: { bot: BotOverview }) {
     const wallet = fuel?.usdcBalance ?? 0;
     const pendUsd = pending?.usd ?? 0;
 
-    const cyclesLeft = fuel && fuel.buyAmountUsd > 0 ? Math.floor(fuel.usdcBalance / fuel.buyAmountUsd) : 0;
-    const daysLeft = fuel ? cyclesLeft * (fuel.intervalHours / 24) : 0;
+    const cyclesLeft = fuel?.buysLeft ?? 0;
+    const daysLeft = fuel?.daysRemaining ?? 0;
     // What the bot will spend over the next 30 days at the current rhythm.
-    const monthNeed = fuel && fuel.intervalHours > 0 ? fuel.buyAmountUsd * ((30 * 24) / fuel.intervalHours) : 0;
+    const monthNeed = fuel && fuel.periodHours > 0 ? fuel.buyAmountUsd * ((30 * 24) / fuel.periodHours) : 0;
     const diff = wallet - monthNeed;
     const enough = diff >= 0;
 
@@ -155,7 +161,7 @@ export function LendBotFuel({ bot }: { bot: BotOverview }) {
 
                 <div className="grid grid-cols-2 gap-3">
                     <Tile label="Ordine în pending" value={pending ? String(pending.count) : "—"} note={pending ? `${pending.sol.toFixed(4)} SOL blocat în ordine` : undefined} />
-                    <Tile label="Combustibil rămas" value={fuel ? `${Math.floor(daysLeft)} zile` : "—"} note={fuel ? `${cyclesLeft} cumpărări de ${usd(fuel.buyAmountUsd)}, la ${fuel.intervalHours}h` : undefined} />
+                    <Tile label="Combustibil rămas" value={fuel ? `${Math.floor(daysLeft)} zile` : "—"} note={fuel ? `${cyclesLeft} cumpărări de ${usd(fuel.buyAmountUsd)}, la ${fuel.periodHours / 24 === 1 ? "fiecare zi" : `${fuel.periodHours / 24} zile`}` : undefined} />
                     <Tile label="Necesar 30 de zile" value={fuel ? usd(monthNeed) : "—"} note="la ritmul curent de cumpărare" />
                     <Tile
                         label={enough ? "Surplus față de lună" : "Lipsesc pentru lună"}
@@ -169,18 +175,7 @@ export function LendBotFuel({ bot }: { bot: BotOverview }) {
             {fuel && fuel.projected.length > 1 && (
                 <div className="space-y-2">
                     <p className="text-[11px] font-medium uppercase tracking-wider text-faint">USDC rămas după fiecare cumpărare</p>
-                    <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={fuel.projected}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" width={48} />
-                            <Tooltip
-                                contentStyle={{ background: "#141414", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                formatter={(v) => [usd(Number(v)), "USDC proiectat"]}
-                            />
-                            <Bar dataKey="usdc" name="USDC proiectat" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+                    <FuelBars data={fuel.projected} buyAmountUsd={fuel.buyAmountUsd} height={250} />
                 </div>
             )}
         </Card>

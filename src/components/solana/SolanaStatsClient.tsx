@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import { FuelBars } from "./FuelBars";
 import {
     ComposedChart,
     Line,
@@ -14,7 +15,9 @@ import {
     Legend,
     ReferenceLine,
     ResponsiveContainer,
+    LabelList,
 } from "recharts";
+import { ChartGradients, cg, LABEL_STYLE } from "@/components/ui/chart-gradients";
 import { format, formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Coins, Filter, RefreshCw } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
@@ -50,6 +53,8 @@ export interface FuelStatus {
     buyAmountUsd: number;
     intervalHours: number;
     daysRemaining: number;
+    periodHours: number;
+    buysLeft: number;
     projected: { label: string; usdc: number }[];
 }
 
@@ -75,6 +80,8 @@ export function SolanaStatsClient({
 }) {
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+    // Monthly withdrawals: which destination is shown in the chart and the history table (all / cold wallet / loan).
+    const [sweepView, setSweepView] = useState<"all" | "cold" | "lend">("all");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [checking, setChecking] = useState(false);
@@ -257,18 +264,42 @@ export function SolanaStatsClient({
             months.push({ key: format(d, "yyyy-MM"), label: format(d, "MMM yyyy") });
         }
 
-        const byMonth = new Map<string, number>();
+        // Cold wallet = SOL transferred out; loan = SOL deposited as collateral into the Jupiter Lend position.
+        const cold = new Map<string, number>();
+        const loan = new Map<string, number>();
         for (const sweep of sweeps) {
             if (sweep.status !== "SUCCESS") continue;
             const key = format(new Date(sweep.createdAt), "yyyy-MM");
-            byMonth.set(key, (byMonth.get(key) ?? 0) + Number(sweep.amountSol));
+            const bucket = sweep.target === "lend" ? loan : cold;
+            bucket.set(key, (bucket.get(key) ?? 0) + Number(sweep.amountSol));
         }
 
+        const r4 = (v: number) => Math.round(v * 10000) / 10000;
         return months.map(({ key, label }) => ({
             month: label,
-            sol: Math.round((byMonth.get(key) ?? 0) * 10000) / 10000,
+            cold: r4(cold.get(key) ?? 0),
+            loan: r4(loan.get(key) ?? 0),
         }));
     }, [sweeps]);
+
+    const sweepTotals = useMemo(() => {
+        let cold = 0;
+        let loan = 0;
+        let nCold = 0;
+        let nLoan = 0;
+        for (const sw of sweeps) {
+            if (sw.status !== "SUCCESS") continue;
+            if (sw.target === "lend") {
+                loan += Number(sw.amountSol);
+                nLoan++;
+            } else {
+                cold += Number(sw.amountSol);
+                nCold++;
+            }
+        }
+        return { cold, loan, nCold, nLoan };
+    }, [sweeps]);
+    const sweepsShown = useMemo(() => (sweepView === "all" ? sweeps : sweeps.filter((sw) => (sweepView === "lend" ? sw.target === "lend" : sw.target !== "lend"))), [sweeps, sweepView]);
 
     const pendingLots = lots.filter((l) => PENDING_STATUSES.has(l.status));
     const finalLots = lots.filter((l) => FINAL_STATUSES.has(l.status));
@@ -416,21 +447,11 @@ export function SolanaStatsClient({
                 ) : (
                     <>
                         <p className="mb-4 text-xs text-faint">
-                            {formatUsd(fuelStatus.usdcBalance)} USDC în portofel ÷ {formatUsd(fuelStatus.buyAmountUsd)} pe ciclu, la fiecare {fuelStatus.intervalHours}h ≈{" "}
-                            <span className="font-medium text-foreground">{Math.floor(fuelStatus.daysRemaining)} zile</span> de cumpărări rămase la ritmul curent.
+                            {formatUsd(fuelStatus.usdcBalance)} USDC în portofel ÷ {formatUsd(fuelStatus.buyAmountUsd)} per cumpărare = <span className="font-medium text-foreground">{fuelStatus.buysLeft} cumpărări</span> (≈{" "}
+                            <span className="font-medium text-foreground">{fuelStatus.daysRemaining} zile</span>). Botul rulează o dată pe zi, la 09:00 UTC, deci cumpără efectiv la fiecare {fuelStatus.periodHours / 24 === 1 ? "zi" : `${fuelStatus.periodHours / 24} zile`}
+                            {fuelStatus.periodHours !== fuelStatus.intervalHours ? ` (intervalul setat: ${fuelStatus.intervalHours}h)` : ""}. „Acum" = soldul de acum; barele următoare = soldul după fiecare cumpărare programată.
                         </p>
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={fuelStatus.projected}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                                <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                                <Tooltip
-                                    contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                                    formatter={(v) => formatUsd(Number(v))}
-                                />
-                                <Bar dataKey="usdc" name="USDC proiectat" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <FuelBars data={fuelStatus.projected} buyAmountUsd={fuelStatus.buyAmountUsd} height={240} />
                     </>
                 )}
             </Card>
@@ -473,17 +494,18 @@ export function SolanaStatsClient({
                 <Card>
                     <h2 className="mb-4 text-sm font-medium text-foreground">Investit vs. încasat (cumulativ)</h2>
                     <ResponsiveContainer width="100%" height={240}>
-                        <ComposedChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                            <defs><ChartGradients names={["violet", "green"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => formatUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="invested" name="Investit cumulativ" fill="rgba(139,92,246,0.5)" />
-                            <Bar dataKey="realized" name="Încasat cumulativ" fill="rgba(34,197,94,0.5)" />
+                            <Bar dataKey="invested" name="Investit cumulativ" fill={cg("violet")} radius={[6, 6, 0, 0]} maxBarSize={48} />
+                            <Bar dataKey="realized" name="Încasat cumulativ" fill={cg("green")} radius={[6, 6, 0, 0]} maxBarSize={48} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </Card>
@@ -498,15 +520,18 @@ export function SolanaStatsClient({
                         Ultimele 14 luni, doar cicluri finalizate — SOL rămas efectiv în portofel după vânzare (profitul), nu suma cumpărată. Loturile în așteptare nu sunt incluse încă, fiindcă nu se știe cât SOL rămâne până la finalizarea vânzării.
                     </p>
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={monthlyData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <BarChart data={monthlyData} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="26%">
+                            <defs><ChartGradients names={["amber"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => `${Number(v).toFixed(4)} SOL`}
                             />
-                            <Bar dataKey="sol" name="SOL cumpărat" fill="rgba(214,162,76,0.7)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="sol" name="SOL cumpărat" fill={cg("amber")} radius={[6, 6, 0, 0]} maxBarSize={64}>
+                                <LabelList dataKey="sol" position="top" formatter={(v) => Number(v).toFixed(3)} style={LABEL_STYLE} />
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </Card>
@@ -519,10 +544,11 @@ export function SolanaStatsClient({
                 </p>
                 {durationByPercentData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={durationByPercentData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="percent" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" label={{ value: "ore", angle: -90, position: "insideLeft", fontSize: 11, fill: "rgba(255,255,255,0.3)" }} />
+                        <BarChart data={durationByPercentData} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="26%">
+                            <defs><ChartGradients names={["teal"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="percent" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} label={{ value: "ore", angle: -90, position: "insideLeft", fontSize: 11, fill: "rgba(255,255,255,0.3)" }} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(value, name, item) => {
@@ -530,7 +556,9 @@ export function SolanaStatsClient({
                                     return [`${Number(value).toFixed(1)} ore (n=${count})`, "Timp mediu"];
                                 }}
                             />
-                            <Bar dataKey="avgHours" name="Timp mediu" fill="rgba(45,212,191,0.6)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="avgHours" name="Timp mediu" fill={cg("teal")} radius={[6, 6, 0, 0]} maxBarSize={64}>
+                                <LabelList dataKey="avgHours" position="top" formatter={(v) => `${Number(v).toFixed(1)}h`} style={LABEL_STYLE} />
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
@@ -540,21 +568,70 @@ export function SolanaStatsClient({
                 )}
             </Card>
 
-            <Card>
-                <h2 className="mb-1 text-sm font-medium text-foreground">Trimiteri lunare către portofelul de retragere</h2>
-                <p className="mb-4 text-xs text-faint">
-                    Ultimele 14 luni, doar retrageri reușite — SOL trimis efectiv peste minimul păstrat în portofelul botului.
-                </p>
-                <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={monthlySweepData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+            <Card className="space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-sm font-medium text-foreground">Retrageri lunare — cold wallet și împrumut</h2>
+                        <p className="mt-1 text-xs text-faint">Ultimele 14 luni, doar retrageri reușite — SOL trimis efectiv peste minimul păstrat în portofelul botului.</p>
+                    </div>
+                    <div role="group" aria-label="Destinația retragerilor" className="flex flex-wrap gap-2">
+                        {(
+                            [
+                                { key: "all", label: "Toate", value: sweepTotals.cold + sweepTotals.loan, dot: "linear-gradient(135deg,#7cc4ff,#e8bc70)" },
+                                { key: "cold", label: "Cold wallet", value: sweepTotals.cold, dot: "linear-gradient(135deg,#3b82f6,#7cc4ff)" },
+                                { key: "lend", label: "Împrumut", value: sweepTotals.loan, dot: "linear-gradient(135deg,#f6d98f,#d49a3a)" },
+                            ] as const
+                        ).map((o) => (
+                            <button
+                                key={o.key}
+                                type="button"
+                                aria-pressed={sweepView === o.key}
+                                onClick={() => setSweepView(o.key)}
+                                className={cn(
+                                    "flex min-h-[36px] items-center gap-2 rounded-full border px-3 text-xs transition-colors",
+                                    sweepView === o.key ? "border-white/30 bg-white/[0.08] text-foreground" : "border-white/10 bg-white/[0.02] text-muted hover:border-white/20"
+                                )}
+                            >
+                                <span className="h-2.5 w-2.5 rounded-full" style={{ background: o.dot }} />
+                                {o.label}
+                                <span className="font-mono text-foreground">{o.value.toFixed(2)} SOL</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={monthlySweepData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="28%">
+                        <defs>
+                            <linearGradient id="sweepCold" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#7cc4ff" />
+                                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.75} />
+                            </linearGradient>
+                            <linearGradient id="sweepLoan" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f6d98f" />
+                                <stop offset="100%" stopColor="#d49a3a" stopOpacity={0.8} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} width={44} tickFormatter={(v) => String(Number(Number(v).toFixed(3)))} />
                         <Tooltip
-                            contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                            formatter={(v) => `${Number(v).toFixed(4)} SOL`}
+                            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                            content={({ active, payload, label }) => {
+                                const r = active ? (payload?.[0]?.payload as { cold: number; loan: number } | undefined) : undefined;
+                                if (!r) return null;
+                                const total = (sweepView === "lend" ? 0 : r.cold) + (sweepView === "cold" ? 0 : r.loan);
+                                return (
+                                    <div className="rounded-lg border border-white/10 bg-[#111] px-3 py-2 text-xs shadow-xl">
+                                        <p className="mb-1 text-foreground">{String(label)}</p>
+                                        {sweepView !== "lend" && <p style={{ color: "#7cc4ff" }}>Cold wallet: {r.cold.toFixed(4)} SOL</p>}
+                                        {sweepView !== "cold" && <p style={{ color: "#e8bc70" }}>Împrumut: {r.loan.toFixed(4)} SOL</p>}
+                                        {sweepView === "all" && <p className="mt-1 border-t border-white/10 pt-1 text-muted">Total: {total.toFixed(4)} SOL</p>}
+                                    </div>
+                                );
+                            }}
                         />
-                        <Bar dataKey="sol" name="SOL retras" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
+                        {sweepView !== "lend" && <Bar dataKey="cold" stackId="sweep" name="Cold wallet" fill="url(#sweepCold)" radius={sweepView === "cold" ? [5, 5, 0, 0] : [0, 0, 0, 0]} />}
+                        {sweepView !== "cold" && <Bar dataKey="loan" stackId="sweep" name="Împrumut" fill="url(#sweepLoan)" radius={[5, 5, 0, 0]} />}
                     </BarChart>
                 </ResponsiveContainer>
             </Card>
@@ -590,9 +667,14 @@ export function SolanaStatsClient({
 
 
             <Card className="overflow-x-auto">
-                <h2 className="mb-1 text-sm font-medium text-foreground">Retrageri lunare — istoric ({sweeps.length})</h2>
-                <p className="mb-4 text-xs text-faint">Fiecare încercare de retragere automată sau manuală, reușită sau nu.</p>
-                <SweepsTable sweeps={sweeps} />
+                <h2 className="mb-1 text-sm font-medium text-foreground">
+                    Retrageri lunare — istoric ({sweepsShown.length}
+                    {sweepView !== "all" ? ` din ${sweeps.length}` : ""})
+                </h2>
+                <p className="mb-4 text-xs text-faint">
+                    Fiecare încercare de retragere automată sau manuală, reușită sau nu.{sweepView !== "all" && " Filtrat după destinație — schimbă din butoanele de deasupra graficului."}
+                </p>
+                <SweepsTable sweeps={sweepsShown} />
             </Card>
         </div>
     );

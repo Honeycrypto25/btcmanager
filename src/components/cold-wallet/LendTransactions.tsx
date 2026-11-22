@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarGrad, LABEL_STYLE } from "@/components/ui/chart-gradients";
+import { Bar, CartesianGrid, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import type { LendAction, LendOverview, LendPositionFull } from "@/lib/solana/jupiter-lend";
@@ -200,10 +201,11 @@ export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepO
                     </p>
                 ) : (
                     <ResponsiveContainer width="100%" height={220}>
-                        <ComposedChart data={sweepChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <ComposedChart data={sweepChart} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="26%">
+                            <defs><BarGrad id="lt-green" color={GREEN} /></defs>
                             <CartesianGrid stroke={GRID} vertical={false} />
-                            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} />
-                            <YAxis tick={{ fontSize: 11 }} stroke={AXIS} width={56} tickFormatter={(v) => String(Number(Number(v).toFixed(3)))} />
+                            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => String(Number(Number(v).toFixed(3)))} />
                             <Tooltip
                                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                                 content={({ active, payload }) => {
@@ -221,7 +223,9 @@ export function LendTransactions({ lend, sweeps = {}, repays = {}, initialSweepO
                                     );
                                 }}
                             />
-                            <Bar dataKey="sol" name="Depus" fill={GREEN} radius={[3, 3, 0, 0]} maxBarSize={64} />
+                            <Bar dataKey="sol" name="Depus" fill="url(#lt-green)" radius={[6, 6, 0, 0]} maxBarSize={64}>
+                                <LabelList dataKey="sol" position="top" formatter={(v) => String(Number(Number(v).toFixed(3)))} style={LABEL_STYLE} />
+                            </Bar>
                             <Line type="monotone" dataKey="total" name="Total" stroke={AMBER} strokeWidth={2} dot={{ r: 3 }} />
                         </ComposedChart>
                     </ResponsiveContainer>

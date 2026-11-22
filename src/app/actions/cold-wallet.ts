@@ -32,6 +32,8 @@ export interface ColdWalletSweep {
     manual: boolean;
     txId: string | null;
     txUrl: string | null;
+    /** SOL only: "lend" = deposited as collateral into the Jupiter Lend position (not a transfer to the wallet). */
+    target?: "cold" | "lend";
 }
 
 /**
@@ -148,7 +150,7 @@ export async function getColdWalletData(): Promise<ColdWalletData> {
     const sweeps: ColdWalletSweep[] = [
         ...sol.map((s) => ({
             id: s.id, asset: "SOL" as const, createdAt: s.createdAt.toISOString(), amount: Number(s.amountSol),
-            ...price(s.priceUsd, s.createdAt, solLots), manual: s.manual, txId: s.txSignature,
+            ...price(s.priceUsd, s.createdAt, solLots), manual: s.manual, txId: s.txSignature, target: (s.target === "lend" ? "lend" : "cold") as "cold" | "lend",
             txUrl: s.txSignature ? `https://solscan.io/tx/${s.txSignature}` : null,
         })),
         ...eva.map((s) => ({

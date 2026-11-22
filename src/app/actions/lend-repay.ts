@@ -56,10 +56,17 @@ export async function repayLendLoan(input: { vaultId: number; positionId: number
                 .create({ data: { userId, txSignature: signature, amountUsdc: amount, vaultId: input.vaultId, positionId: input.positionId } })
                 .catch((e) => console.error("lend repay: could not record the payment", e));
         }
-        revalidatePath("/cold-wallet/imprumuturi");
-        revalidatePath("/cold-wallet/imprumuturi/tranzactii");
+        // No revalidation here on purpose: it would refresh the page under the person's eyes right after paying.
+        // The card's "Actualizează datele" button calls refreshLoanPages() when they are ready.
         return { ok: true, message: `Plătit ${amount} USDC în împrumutul #${pos.id}.`, signature };
     } catch (err) {
         return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
+}
+
+/** Refreshes the loan pages (and expires the page cache) after a payment, when the person asks for it. */
+export async function refreshLoanPages(): Promise<void> {
+    await requireAdmin();
+    revalidatePath("/cold-wallet/imprumuturi");
+    revalidatePath("/cold-wallet/imprumuturi/tranzactii");
 }

@@ -25,8 +25,8 @@ async function getBotOverview(): Promise<BotOverview> {
     if (fuelRes.status === "fulfilled") {
         if ("error" in fuelRes.value) fuelError = fuelRes.value.error;
         else {
-            const { usdcBalance, buyAmountUsd, intervalHours, projected } = fuelRes.value;
-            fuel = { usdcBalance, buyAmountUsd, intervalHours, projected };
+            const { usdcBalance, buyAmountUsd, intervalHours, periodHours, daysRemaining, buysLeft, projected } = fuelRes.value;
+            fuel = { usdcBalance, buyAmountUsd, intervalHours, periodHours, daysRemaining, buysLeft, projected };
         }
     } else fuelError = fuelRes.reason instanceof Error ? fuelRes.reason.message : String(fuelRes.reason);
 

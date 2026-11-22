@@ -4,7 +4,7 @@ import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FlaskConical, HandCoins } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
-import { repayLendLoan, type RepayResult } from "@/app/actions/lend-repay";
+import { repayLendLoan, refreshLoanPages, type RepayResult } from "@/app/actions/lend-repay";
 
 export interface RepayPosition {
     vaultId: number;
@@ -27,6 +27,7 @@ export function LendRepay({ positions, usdcBalance, buyAmountUsd }: { positions:
     const [amount, setAmount] = useState("");
     const [confirming, setConfirming] = useState(false);
     const [result, setResult] = useState<RepayResult | null>(null);
+    const [paid, setPaid] = useState(false);
 
     const pos = positions.find((p) => `${p.vaultId}:${p.id}` === posKey) ?? positions[0];
     if (!pos) return null;
@@ -40,14 +41,13 @@ export function LendRepay({ positions, usdcBalance, buyAmountUsd }: { positions:
 
     const run = (dryRun: boolean) => {
         setResult(null);
+        setPaid(false);
         start(async () => {
             const r = await repayLendLoan({ vaultId: pos.vaultId, positionId: pos.id, amountUsdc: value, dryRun });
             setResult(r);
             setConfirming(false);
-            if (r.ok && !dryRun) {
-                setAmount("");
-                router.refresh();
-            }
+            // After a real payment nothing refreshes by itself: the message stays put until "Actualizează datele" is pressed.
+            setPaid(r.ok && !dryRun);
         });
     };
 
@@ -161,6 +161,23 @@ export function LendRepay({ positions, usdcBalance, buyAmountUsd }: { positions:
             {result && (
                 <div className={cn("rounded-lg border px-3 py-2 text-sm", result.ok ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200" : "border-red-400/30 bg-red-500/10 text-red-200")}>
                     <p>{result.message}</p>
+                    {paid && (
+                        <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() =>
+                                start(async () => {
+                                    await refreshLoanPages();
+                                    setAmount("");
+                                    setPaid(false);
+                                    router.refresh();
+                                })
+                            }
+                            className="mb-1 mt-2 inline-flex min-h-[32px] items-center rounded-md border border-emerald-400/40 px-3 text-xs text-emerald-100 hover:bg-emerald-400/10 disabled:opacity-50"
+                        >
+                            Actualizează datele
+                        </button>
+                    )}
                     {result.signature && (
                         <a href={`https://solscan.io/tx/${result.signature}`} target="_blank" rel="noopener noreferrer" className="text-xs underline">
                             Vezi tranzacția pe Solscan

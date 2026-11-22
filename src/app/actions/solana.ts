@@ -11,6 +11,7 @@ import { createSolanaLimitBuy, cancelSolanaLimitBuy, syncAutoDipOrder } from "@/
 import { runSolanaSweepForUser } from "@/lib/solana/sweep";
 import { listSweepLendPositions, type SweepLendPosition } from "@/lib/solana/lend-deposit";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
+import { projectBuys } from "@/lib/solana/fuel-schedule";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
 async function requireUserId(): Promise<string> {
@@ -135,6 +136,11 @@ export interface FuelStatus {
     buyAmountUsd: number;
     intervalHours: number;
     daysRemaining: number;
+    /** Hours between real buys: the daily 09:00 UTC cron means whole days (a 23h interval buys every 24h). */
+    periodHours: number;
+    /** Buys the balance can still fund (all of them, even if the chart shows fewer). */
+    buysLeft: number;
+    /** First bar is "Acum" (balance right now), then the balance after each scheduled buy. */
     projected: { label: string; usdc: number }[];
 }
 
@@ -154,20 +160,14 @@ export async function getSolanaFuelStatus(): Promise<FuelStatus | { error: strin
         const usdcBalance = await getUsdcBalance(keypair.publicKey.toBase58());
         const buyAmountUsd = Number(settings.buyAmountUsd);
         const intervalHours = settings.intervalHours;
-        const cyclesRemaining = buyAmountUsd > 0 ? Math.floor(usdcBalance / buyAmountUsd) : 0;
-        const daysRemaining = cyclesRemaining * (intervalHours / 24);
+        const plan = projectBuys({ lastRunAt: settings.lastRunAt ? settings.lastRunAt.getTime() : null, intervalHours, balance: usdcBalance, buyAmount: buyAmountUsd, now: Date.now() });
+        const buysLeft = buyAmountUsd > 0 ? Math.floor(usdcBalance / buyAmountUsd + 1e-9) : 0;
+        const daysRemaining = plan.daysRemaining;
+        const fmt = (t: number) => new Date(t).toLocaleDateString("ro-RO", { day: "numeric", month: "short", timeZone: "Europe/London" }) + " " + new Date(t).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+        const projected: { label: string; usdc: number }[] = [{ label: "Acum", usdc: usdcBalance }];
+        plan.buyTimes.forEach((t, i) => projected.push({ label: fmt(t), usdc: Math.max(0, usdcBalance - (i + 1) * buyAmountUsd) }));
 
-        const projected: { label: string; usdc: number }[] = [];
-        const maxCycles = Math.min(cyclesRemaining, 20);
-        for (let i = 0; i <= maxCycles; i++) {
-            const at = new Date(Date.now() + i * intervalHours * 60 * 60 * 1000);
-            projected.push({
-                label: at.toLocaleDateString("ro-RO", { day: "numeric", month: "short" }),
-                usdc: Math.max(0, usdcBalance - i * buyAmountUsd),
-            });
-        }
-
-        return { usdcBalance, buyAmountUsd, intervalHours, daysRemaining, projected };
+        return { usdcBalance, buyAmountUsd, intervalHours, daysRemaining, periodHours: plan.periodDays * 24, buysLeft, projected };
     } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
     }

@@ -85,7 +85,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 function Coverage({ p, bot, capLtv }: { p: LendPositionFull; bot: BotOverview; capLtv: number }) {
     const fuel = bot.fuel;
     if (!fuel) return <Section title="Acoperirea lunii" hint="Portofelul botului nu poate fi citit acum.">{null}</Section>;
-    const need = fuel.intervalHours > 0 ? fuel.buyAmountUsd * ((30 * 24) / fuel.intervalHours) : 0;
+    const need = fuel.periodHours > 0 ? fuel.buyAmountUsd * ((30 * 24) / fuel.periodHours) : 0;
     const room = Math.max(0, p.collateral.usd * capLtv - p.debt.usd);
     const available = fuel.usdcBalance + room;
     const gap = available - need;
@@ -94,7 +94,7 @@ function Coverage({ p, bot, capLtv }: { p: LendPositionFull; bot: BotOverview; c
     return (
         <Section title="Acoperirea lunii" hint="Ce are botul la dispoziție (USDC în portofel + cât mai poți împrumuta până la plafon) față de ce cheltuie în 30 de zile. USDC-ul care revine din vânzări nu e numărat, deci estimarea e prudentă.">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Tile label="Necesar 30 de zile" value={usd(need)} note={`${usd(fuel.buyAmountUsd)} la ${fuel.intervalHours}h`} />
+                <Tile label="Necesar 30 de zile" value={usd(need)} note={`${usd(fuel.buyAmountUsd)} la ${fuel.periodHours / 24 === 1 ? "fiecare zi" : `${fuel.periodHours / 24} zile`}`} />
                 <Tile label="USDC în portofel" value={usd(fuel.usdcBalance)} />
                 <Tile label="Mai poți împrumuta" value={usd(room)} note={`până la LTV ${pct(capLtv, 0)}`} />
                 <Tile

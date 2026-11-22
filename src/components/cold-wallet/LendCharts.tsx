@@ -17,6 +17,7 @@ import {
     Legend,
 } from "recharts";
 import { Card, cn } from "@/components/ui/core";
+import { BarGrad } from "@/components/ui/chart-gradients";
 import type { LendPositionFull } from "@/lib/solana/jupiter-lend";
 
 const GREEN = "#52c98a";
@@ -456,15 +457,16 @@ function InterestPeriodChart({ p, metrics, fetchedAt }: { p: LendPositionFull; m
             </div>
             <ResponsiveContainer width="100%" height={300}>
                 {kind === "bars" ? (
-                    <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-                        <XAxis dataKey="label" type="category" allowDuplicatedCategory={false} tick={{ fontSize: 11 }} stroke={AXIS} interval={0} />
-                        <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} />
+                    <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                        <defs>{METRIC_ORDER.map((m) => <BarGrad key={m} id={`lc-${m}`} color={METRIC_META[m].color} />)}</defs>
+                        <CartesianGrid stroke={GRID} vertical={false} />
+                        <XAxis dataKey="label" type="category" allowDuplicatedCategory={false} tick={{ fontSize: 11 }} stroke={AXIS} interval={0} tickLine={false} />
+                        <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={axisUsd(max)} width={56} tickLine={false} axisLine={false} />
                         <Tooltip content={<Tip fmt={usdSmall} />} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         {metrics.flatMap((m) => [
-                            <Bar key={`${m}_a`} dataKey={`${m}_a`} name={`${METRIC_META[m].name} · acumulat`} stackId={m} fill={METRIC_META[m].color} />,
-                            <Bar key={`${m}_e`} dataKey={`${m}_e`} name={`${METRIC_META[m].name} · estimat`} stackId={m} fill={METRIC_META[m].color} fillOpacity={0.35} />,
+                            <Bar key={`${m}_a`} dataKey={`${m}_a`} name={`${METRIC_META[m].name} · acumulat`} stackId={m} fill={`url(#lc-${m})`} maxBarSize={56} />,
+                            <Bar key={`${m}_e`} dataKey={`${m}_e`} name={`${METRIC_META[m].name} · estimat`} stackId={m} fill={METRIC_META[m].color} fillOpacity={0.35} radius={[6, 6, 0, 0]} maxBarSize={56} />,
                         ])}
                     </BarChart>
                 ) : (

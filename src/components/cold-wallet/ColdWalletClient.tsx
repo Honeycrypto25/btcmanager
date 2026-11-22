@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { BarGrad } from "@/components/ui/chart-gradients";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
@@ -379,13 +380,14 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                             </div>
                         </div>
                         <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={chart.rows} margin={{ top: 16, right: 8, left: 0, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                                <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickFormatter={(v) => `$${v}`} width={56} />
+                            <BarChart data={chart.rows} margin={{ top: 16, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                                <defs>{ASSETS.map((a) => <BarGrad key={a.key} id={`cw-${a.key}`} color={a.color} />)}</defs>
+                                <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                                <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                                <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} width={56} />
                                 <Tooltip cursor={{ fill: "rgba(255,255,255,0.03)" }} content={<ChartTooltip average={chart.average} />} />
                                 {ASSETS.filter((a) => chartAssetOn(a.key)).map((a) => (
-                                    <Bar key={a.key} dataKey={a.key} name={a.key} stackId="sweep" fill={a.color} maxBarSize={56} />
+                                    <Bar key={a.key} dataKey={a.key} name={a.key} stackId="sweep" fill={`url(#cw-${a.key})`} maxBarSize={56} />
                                 ))}
                                 {chart.average > 0 && (
                                     <ReferenceLine
@@ -564,6 +566,11 @@ export function ColdWalletClient({ data }: { data: ColdWalletData }) {
                                                     <span className="inline-flex items-center gap-2 text-foreground">
                                                         <span aria-hidden className="h-2 w-2 rounded-sm" style={{ background: ASSET_META[s.asset].color }} />
                                                         {s.asset} <span className="text-faint">{ASSET_META[s.asset].chain}</span>
+                                                        {s.target === "lend" && (
+                                                            <span title="Depus ca extra-colateral în împrumutul Jupiter Lend, nu transferat în portofel" className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">
+                                                                în împrumut
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 </td>
                                                 <td className="px-2 py-2.5 text-right font-mono text-foreground">{fmtAmount(s.amount, s.asset)}</td>

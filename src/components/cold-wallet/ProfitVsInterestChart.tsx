@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { cn } from "@/components/ui/core";
+import { BarGrad } from "@/components/ui/chart-gradients";
 import type { LendPositionFull } from "@/lib/solana/jupiter-lend";
 
 const GREEN = "#52c98a";
@@ -131,11 +132,14 @@ export function ProfitVsInterestChart({ p, profits }: { p: LendPositionFull; pro
 
             <ResponsiveContainer width="100%" height={240}>
                 {kind === "bars" ? (
-                <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-
+                <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                    <defs>
+                        <BarGrad id="pvi-green" color={GREEN} />
+                        <BarGrad id="pvi-red" color={RED} />
+                    </defs>
                     <CartesianGrid stroke={GRID} vertical={false} />
-                    <XAxis dataKey="label" type="category" tick={{ fontSize: 11 }} stroke={AXIS} />
-                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickFormatter={(v) => `$${Number(v).toFixed(Math.abs(Number(v)) < 10 ? 2 : 0)}`} width={52} />
+                    <XAxis dataKey="label" type="category" tick={{ fontSize: 11 }} stroke={AXIS} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11 }} stroke={AXIS} tickLine={false} axisLine={false} tickFormatter={(v) => `$${Number(v).toFixed(Math.abs(Number(v)) < 10 ? 2 : 0)}`} width={52} />
                     <ReferenceLine y={0} stroke={AXIS} />
                     <Tooltip
                         cursor={{ fill: "rgba(255,255,255,0.04)" }}
@@ -155,9 +159,9 @@ export function ProfitVsInterestChart({ p, profits }: { p: LendPositionFull; pro
                             );
                         }}
                     />
-                    <Bar dataKey="profit" name="Profit bot" fill={GREEN} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="intA" name="Dobândă acumulată" stackId="i" fill={RED} />
-                    <Bar dataKey="intE" name="Dobândă estimată" stackId="i" fill={RED} fillOpacity={0.35} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="profit" name="Profit bot" fill="url(#pvi-green)" radius={[6, 6, 0, 0]} maxBarSize={56} />
+                    <Bar dataKey="intA" name="Dobândă acumulată" stackId="i" fill="url(#pvi-red)" maxBarSize={56} />
+                    <Bar dataKey="intE" name="Dobândă estimată" stackId="i" fill={RED} fillOpacity={0.35} radius={[6, 6, 0, 0]} maxBarSize={56} />
                                 </BarChart>
                 ) : (
                 <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
