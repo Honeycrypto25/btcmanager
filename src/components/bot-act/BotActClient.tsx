@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/core";
 import { Strip, fmtPct, pctColor, strikeDetail, type BotUptimeDTO, type StrikeWindowDTO } from "@/components/ui/BotUptimeCard";
+import { refreshCachedPages } from "@/app/actions/page-cache";
 
 export interface BotActivityDTO {
     bot: string;
@@ -63,7 +64,6 @@ function Strike({ w, days }: { w: StrikeWindowDTO; days: BotUptimeDTO["days"] })
 }
 
 const DAY_MS = 86_400_000;
-const REFRESH_MS = 60_000;
 const SHOW_INACTIVE_KEY = "botAct.showInactive";
 
 export function BotActClient({ bots }: { bots: BotActivityDTO[] }) {
@@ -85,17 +85,15 @@ export function BotActClient({ bots }: { bots: BotActivityDTO[] }) {
         } catch {}
     };
 
-    // Live page: re-fetch the server data every minute and keep the "acum X" labels ticking.
+    // No automatic server refresh (the page data is cached, see lib/page-cache): only the "acum X" labels keep
+    // moving. New data comes after a bot run, a change, or the refresh button.
     useEffect(() => {
-        const id = setInterval(() => {
-            router.refresh();
-            setNow(Date.now());
-            setUpdatedAt(Date.now());
-        }, REFRESH_MS);
-        return () => clearInterval(id);
-    }, [router]);
+        const tick = setInterval(() => setNow(Date.now()), 60_000);
+        return () => clearInterval(tick);
+    }, []);
 
-    const refreshNow = () => {
+    const refreshNow = async () => {
+        await refreshCachedPages().catch(() => null);
         router.refresh();
         setNow(Date.now());
         setUpdatedAt(Date.now());
@@ -117,7 +115,7 @@ export function BotActClient({ bots }: { bots: BotActivityDTO[] }) {
                 <div>
                     <h1 className="font-display text-2xl font-medium text-foreground">Bot Act.</h1>
                     <p className="mt-1 text-sm text-muted">
-                        Boții sunt sortați după ultimul ordin plasat: cel mai vechi e primul. Cei fără ordin nou de peste o zi sunt marcați cu galben. Pagina se actualizează singură la un minut.
+                        Boții sunt sortați după ultimul ordin plasat: cel mai vechi e primul. Cei fără ordin nou de peste o zi sunt marcați cu galben. Datele se actualizează după rularea boților, după o modificare sau când apeși butonul de reîmprospătare.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">

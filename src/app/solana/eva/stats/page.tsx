@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getEvaStats, listEvaLots, listEvaSweeps, getEvaFuelStatus } from "@/app/actions/eva";
 import { EvaStatsClient } from "@/components/eva/EvaStatsClient";
 import { getTokenPriceUsd } from "@/lib/solana/jupiter";
@@ -12,14 +13,16 @@ export default async function EvaStatsPage() {
     const session = await requireSectionAccess("solana");
     const userId = (session.user as { id?: string } | undefined)?.id;
 
-    const [lots, stats, evaPriceUsd, sweeps, fuelStatus, uptime] = await Promise.all([
-        listEvaLots(),
-        getEvaStats(),
-        getTokenPriceUsd(EVA_MINT).catch(() => null),
-        listEvaSweeps(),
-        getEvaFuelStatus(),
-        userId ? getDcaBotUptime(userId, "EVA") : Promise.resolve(undefined),
-    ]);
+    const [lots, stats, evaPriceUsd, sweeps, fuelStatus, uptime] = await cachedPageData("eva-stats", sessionUserId(session), () =>
+        Promise.all([
+            listEvaLots(),
+            getEvaStats(),
+            getTokenPriceUsd(EVA_MINT).catch(() => null),
+            listEvaSweeps(),
+            getEvaFuelStatus(),
+            userId ? getDcaBotUptime(userId, "EVA") : Promise.resolve(undefined),
+        ]),
+    );
 
     return (
         <DashboardLayout>

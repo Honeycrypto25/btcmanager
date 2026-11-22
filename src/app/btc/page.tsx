@@ -18,15 +18,16 @@ import { cn } from "@/components/ui/core";
 import Link from 'next/link';
 import PriceChart from "@/components/dashboard/PriceChart";
 import { DashboardRefreshButton } from "@/components/dashboard/DashboardRefreshButton";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 export default async function DashboardPage() {
   const session = await requireSectionAccess("btc");
 
-  // Fetch initial data
-  const currentPrice = await getCurrentBtcPrice();
-  const wallets = await db.bitcoinWallet.findMany({
-    include: { transactions: true }
-  });
+  // Fetch initial data (cached until a change / refresh — see lib/page-cache)
+  const { currentPrice, wallets } = await cachedPageData("btc", sessionUserId(session), async () => ({
+    currentPrice: await getCurrentBtcPrice(),
+    wallets: await db.bitcoinWallet.findMany({ include: { transactions: true } }),
+  }));
 
   // Calculate Stats
   const totalBtc = wallets.reduce((acc: number, w: any) =>

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getColdWalletData } from "@/app/actions/cold-wallet";
 import { ColdWalletClient } from "@/components/cold-wallet/ColdWalletClient";
 
@@ -9,8 +10,8 @@ import { ColdWalletClient } from "@/components/cold-wallet/ColdWalletClient";
 // BNB, Polygon), so a viewer with access to only some of them would see
 // figures from sections they don't have — same reasoning as Overview.
 export default async function ColdWalletPage() {
-    await requireAdminPage();
-    const data = await getColdWalletData();
+    const session = await requireAdminPage();
+    const data = await cachedPageData("cold-wallet", sessionUserId(session), () => getColdWalletData());
 
     return (
         <DashboardLayout>

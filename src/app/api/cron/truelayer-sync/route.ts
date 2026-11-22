@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { syncAllTrueLayerConnections } from "@/lib/bank/truelayer-sync";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Apelat automat de Vercel Cron (vezi vercel.json) o dată la 24h.
@@ -18,5 +19,6 @@ export async function GET(req: NextRequest) {
 
     const result = await syncAllTrueLayerConnections();
 
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json(result);
 }

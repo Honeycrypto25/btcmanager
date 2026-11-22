@@ -1,7 +1,7 @@
 "use server";
 
 import { getServerSession } from "next-auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROADMAP } from "@/lib/dev-roadmap";

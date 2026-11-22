@@ -8,18 +8,19 @@ import { db } from "@/lib/db";
 import { getCurrentBtcPrice } from "@/lib/btc";
 import { getBtcAth } from "@/lib/btc-ath";
 import HistoryClient from "./HistoryClient";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 export default async function HistoryPage() {
     const session = await requireSectionAccess("btc");
 
-    // Fetch current BTC price
-    const currentPrice = await getCurrentBtcPrice();
-    const ath = await getBtcAth(currentPrice);
-
-    // Fetch all transactions with wallet info
-    const transactions = await db.bitcoinTransaction.findMany({
-        include: { wallet: true },
-        orderBy: { timestamp: 'desc' },
+    // Current BTC price, ATH and all transactions with wallet info (cached until a change / refresh)
+    const { currentPrice, ath, transactions } = await cachedPageData("btc-history", sessionUserId(session), async () => {
+        const currentPrice = await getCurrentBtcPrice();
+        const [ath, transactions] = await Promise.all([
+            getBtcAth(currentPrice),
+            db.bitcoinTransaction.findMany({ include: { wallet: true }, orderBy: { timestamp: "desc" } }),
+        ]);
+        return { currentPrice, ath, transactions };
     });
 
     // Serialize dates for client component

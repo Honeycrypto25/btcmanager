@@ -1,4 +1,5 @@
 "use server";
+import { pageCacheUserId } from "@/lib/page-cache";
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -72,6 +73,8 @@ export interface ColdWalletData {
 }
 
 async function requireUserId(): Promise<string> {
+    const cachedUser = pageCacheUserId(); // set while a page's data is being cached (no cookies there)
+    if (cachedUser) return cachedUser;
     const session = await getServerSession(authOptions);
     const userId = (session?.user as { id?: string } | undefined)?.id;
     if (!userId) throw new Error("Unauthorized");

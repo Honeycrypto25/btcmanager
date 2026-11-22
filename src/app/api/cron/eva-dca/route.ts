@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { runEvaDcaForAllUsers } from "@/lib/solana/eva-dca";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Runs once a day (see vercel.json) — same Hobby-plan cron constraint as
@@ -26,5 +27,6 @@ export async function GET(req: NextRequest) {
     }
 
     const results = await runEvaDcaForAllUsers();
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json({ results });
 }

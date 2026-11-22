@@ -8,6 +8,7 @@ import { getCurrentBtcPrice } from "@/lib/btc";
 import { getBtcAth } from "@/lib/btc-ath";
 import { getExchangeRate } from "@/lib/fx";
 import IathClient, { type IathPeriod } from "./IathClient";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -27,12 +28,14 @@ function toPeriods(map: Map<string, Bucket>, label: (key: string) => string, cur
 }
 
 export default async function IathPage() {
-    await requireSectionAccess("btc");
+    const session = await requireSectionAccess("btc");
 
-    const transactions = await db.bitcoinTransaction.findMany({ orderBy: { timestamp: "asc" } });
-    const currentPrice = await getCurrentBtcPrice();
-    const ath = await getBtcAth(currentPrice);
-    const usdToGbp = await getExchangeRate("USD", "GBP");
+    const { transactions, currentPrice, ath, usdToGbp } = await cachedPageData("btc-iath", sessionUserId(session), async () => {
+        const transactions = await db.bitcoinTransaction.findMany({ orderBy: { timestamp: "asc" } });
+        const currentPrice = await getCurrentBtcPrice();
+        const [ath, usdToGbp] = await Promise.all([getBtcAth(currentPrice), getExchangeRate("USD", "GBP")]);
+        return { transactions, currentPrice, ath, usdToGbp };
+    });
 
     const monthly = new Map<string, Bucket>();
     const yearly = new Map<string, Bucket>();

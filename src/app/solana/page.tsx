@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBotWalletAddress, getSolanaSettings, getSweepDestinationInfo } from "@/app/actions/solana";
 import { SolanaClient } from "@/components/solana/SolanaClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
@@ -15,16 +16,18 @@ export default async function SolanaPage() {
     const session = await requireSectionAccess("solana");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot] = await Promise.all([
-        getSolanaSettings(),
-        getSolPriceUsd().catch(() => null),
-        getBotWalletAddress(),
-        getSweepDestinationInfo(),
-        userId ? listSolanaLimitBuys(userId) : Promise.resolve([]),
-        userId
-            ? db.solanaLot.findFirst({ where: { userId, status: { in: ["OPEN", "FILLED", "PENDING_SELL_ORDER"] } }, orderBy: { boughtAt: "desc" }, select: { buyPriceUsd: true } })
-            : Promise.resolve(null),
-    ]);
+    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot] = await cachedPageData("solana", sessionUserId(session), () =>
+        Promise.all([
+            getSolanaSettings(),
+            getSolPriceUsd().catch(() => null),
+            getBotWalletAddress(),
+            getSweepDestinationInfo(),
+            userId ? listSolanaLimitBuys(userId) : Promise.resolve([]),
+            userId
+                ? db.solanaLot.findFirst({ where: { userId, status: { in: ["OPEN", "FILLED", "PENDING_SELL_ORDER"] } }, orderBy: { boughtAt: "desc" }, select: { buyPriceUsd: true } })
+                : Promise.resolve(null),
+        ]),
+    );
 
     return (
         <DashboardLayout>

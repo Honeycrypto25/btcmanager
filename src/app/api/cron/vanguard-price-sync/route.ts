@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { syncVanguardPrices } from "@/lib/vanguard-price-sync";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Apelat automat de Vercel Cron (vezi vercel.json) o dată pe zi. Protejat
@@ -18,5 +19,6 @@ export async function GET(req: NextRequest) {
 
     const result = await syncVanguardPrices();
 
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json(result);
 }

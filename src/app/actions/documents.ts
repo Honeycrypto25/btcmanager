@@ -1,13 +1,16 @@
 "use server";
+import { pageCacheUserId } from "@/lib/page-cache";
 
 import { getServerSession } from "next-auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { deleteDocumentObject } from "@/lib/r2/documents";
 
 async function requireUserId(): Promise<string> {
+    const cachedUser = pageCacheUserId(); // set while a page's data is being cached (no cookies there)
+    if (cachedUser) return cachedUser;
     const session = await getServerSession(authOptions);
     const userId = (session?.user as any)?.id as string | undefined;
     if (!userId) throw new Error("Unauthorized");

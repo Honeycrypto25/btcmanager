@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/core";
 import { RefreshCcw } from "lucide-react";
+import { refreshCachedPages } from "@/app/actions/page-cache";
 
 export function DashboardRefreshButton() {
     const router = useRouter();
@@ -11,7 +12,8 @@ export function DashboardRefreshButton() {
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
-        // Triggers a route refresh which will refetch all Server Components data
+        // Drop the cached page data (lib/page-cache), then re-render with fresh data
+        await refreshCachedPages().catch(() => null);
         router.refresh();
 
         // Simulating artificial short delay purely for visual feedback 

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runPolygonReverseDcaForAllSettings } from "@/lib/polygon/reverse-dca";
 import { runPolygonSweepForUser } from "@/lib/polygon/sweep";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Runs once a day (see vercel.json) — same Hobby-plan constraint as the
@@ -37,5 +38,6 @@ export async function GET(req: NextRequest) {
         }
     }
 
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json({ results });
 }

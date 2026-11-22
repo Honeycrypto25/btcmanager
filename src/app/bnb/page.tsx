@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBotWalletAddress, getBnbSettings, getSweepDestinationInfo } from "@/app/actions/bnb";
 import { BnbClient } from "@/components/bnb/BnbClient";
 import { getBnbPriceUsd } from "@/lib/bnb/oneinch";
@@ -12,12 +13,14 @@ import { getBnbPriceUsd } from "@/lib/bnb/oneinch";
 export default async function BnbPage() {
     const session = await requireSectionAccess("bnb");
 
-    const [settings, bnbPriceUsd, botWallet, sweepDestination] = await Promise.all([
-        getBnbSettings(),
-        getBnbPriceUsd().catch(() => null),
-        getBotWalletAddress(),
-        getSweepDestinationInfo(),
-    ]);
+    const [settings, bnbPriceUsd, botWallet, sweepDestination] = await cachedPageData("bnb", sessionUserId(session), () =>
+        Promise.all([
+            getBnbSettings(),
+            getBnbPriceUsd().catch(() => null),
+            getBotWalletAddress(),
+            getSweepDestinationInfo(),
+        ]),
+    );
 
     return (
         <DashboardLayout>

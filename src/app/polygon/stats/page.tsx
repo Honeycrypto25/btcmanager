@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { listPolygonTokenSettings, listPolygonLots, listPolygonSweeps, getPolygonStats, getPolygonCurrentPrices } from "@/app/actions/polygon";
 import { getPolygonUptimes } from "@/lib/bot-uptime";
 import { PolygonStatsClient } from "@/components/polygon/PolygonStatsClient";
@@ -10,14 +11,16 @@ export default async function PolygonStatsPage() {
     const session = await requireSectionAccess("polygon");
     const userId = (session.user as { id?: string } | undefined)?.id;
 
-    const [tokenSettings, lots, sweeps, stats, currentPrices, uptimes] = await Promise.all([
-        listPolygonTokenSettings(),
-        listPolygonLots(),
-        listPolygonSweeps(),
-        getPolygonStats(),
-        getPolygonCurrentPrices().catch(() => []),
-        userId ? getPolygonUptimes(userId) : Promise.resolve([]),
-    ]);
+    const [tokenSettings, lots, sweeps, stats, currentPrices, uptimes] = await cachedPageData("polygon-stats", sessionUserId(session), () =>
+        Promise.all([
+            listPolygonTokenSettings(),
+            listPolygonLots(),
+            listPolygonSweeps(),
+            getPolygonStats(),
+            getPolygonCurrentPrices().catch(() => []),
+            userId ? getPolygonUptimes(userId) : Promise.resolve([]),
+        ]),
+    );
 
     return (
         <DashboardLayout>

@@ -9,6 +9,7 @@ import { isR2Configured } from "@/lib/r2/client";
 import { buildReceiptOriginalKey, buildReceiptPreviewKey, uploadReceiptObject } from "@/lib/r2/receipts";
 import { getUkTaxYear, getDefaultRetentionUntil } from "@/lib/tax/uk-tax-year";
 import { generateHeicPreview, isHeicMimeType, generateStandardImagePreview, isRasterImageMimeType, compressOriginalIfNeeded } from "@/lib/receipts/preview";
+import { expirePageCache } from "@/lib/page-cache";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "application/pdf"]);
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     if (!(session?.user as any)?.isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     if (!isR2Configured()) {
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json(
             { error: "Cloudflare R2 nu este configurat încă. Adaugă R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME în variabilele de mediu." },
             { status: 503 }
@@ -37,14 +39,17 @@ export async function POST(req: NextRequest) {
         const file = formData.get("file");
 
         if (!file || !(file instanceof File)) {
+            expirePageCache(); // the change must show on the cached pages
             return NextResponse.json({ error: "Niciun fișier primit." }, { status: 400 });
         }
 
         if (!ALLOWED_MIME_TYPES.has(file.type)) {
+            expirePageCache(); // the change must show on the cached pages
             return NextResponse.json({ error: `Tip de fișier neacceptat: ${file.type}` }, { status: 400 });
         }
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
+            expirePageCache(); // the change must show on the cached pages
             return NextResponse.json({ error: "Fișierul depășește 15MB." }, { status: 400 });
         }
 
@@ -106,9 +111,12 @@ export async function POST(req: NextRequest) {
             },
         });
 
+        expirePageCache(); // the change must show on the cached pages
+
         return NextResponse.json({ receipt });
     } catch (err: any) {
         console.error("Receipt upload failed", err);
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ error: err.message || "Upload eșuat." }, { status: 500 });
     }
 }

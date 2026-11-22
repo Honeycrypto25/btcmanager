@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isR2Configured } from "@/lib/r2/client";

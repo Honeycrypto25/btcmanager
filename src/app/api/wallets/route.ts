@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { syncWallet } from "@/lib/btc";
+import { expirePageCache } from "@/lib/page-cache";
 
 function unauthorized(req?: NextRequest) {
     if (req) {
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
         const normalizedAddress = address.trim();
 
         if (!isValidBitcoinAddress(normalizedAddress)) {
+            expirePageCache(); // the change must show on the cached pages
             return NextResponse.json({ error: "Invalid Bitcoin address format" }, { status: 400 });
         }
         const wallet = await db.bitcoinWallet.create({
@@ -59,10 +61,13 @@ export async function POST(req: NextRequest) {
         });
         const sync = await syncWallet(wallet.id, normalizedAddress);
 
+        expirePageCache(); // the change must show on the cached pages
+
         return NextResponse.json({ wallet, sync });
     } catch (err: any) {
         console.error("Failed to create wallet", err);
         if (err.code === 'P2002') return NextResponse.json({ error: "Address already exists" }, { status: 400 });
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ error: err.message || "Failed to create wallet" }, { status: 500 });
     }
 }
@@ -79,9 +84,11 @@ export async function DELETE(req: NextRequest) {
         if (!id) return NextResponse.json({ error: "Missing ID" }, { status: 400 });
 
         await db.bitcoinWallet.delete({ where: { id } });
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ success: true });
     } catch (err) {
         console.error("Failed to delete wallet", err);
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ error: "Failed to delete wallet" }, { status: 500 });
     }
 }
@@ -101,6 +108,7 @@ export async function PUT(req: NextRequest) {
             if (!wallet) return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
 
             const result = await syncWallet(wallet.id, wallet.address);
+            expirePageCache(); // the change must show on the cached pages
             return NextResponse.json({ success: true, walletId: wallet.id, walletName: wallet.name, ...result });
         }
 
@@ -120,6 +128,8 @@ export async function PUT(req: NextRequest) {
             })
         );
 
+        expirePageCache(); // the change must show on the cached pages
+
         return NextResponse.json({
             success: results.every(result => result.success),
             added: results.reduce((sum, result) => sum + ('added' in result ? result.added : 0), 0),
@@ -128,6 +138,7 @@ export async function PUT(req: NextRequest) {
         });
     } catch (err) {
         console.error("Sync error:", err);
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ error: "Failed to sync wallets" }, { status: 500 });
     }
 }

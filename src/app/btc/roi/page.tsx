@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import RoiClient from "./RoiClient";
 import { getExchangeRate } from "@/lib/fx";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 // Helper to get formatted period strings
 const getMonthStr = (date: Date) => date.toISOString().slice(0, 7); // YYYY-MM
@@ -24,26 +25,30 @@ function daysSince(date: Date): number {
 export default async function RoiPage() {
     const session = await requireSectionAccess("btc");
 
-    // 1. Fetch Transactions
-    const transactions = await db.bitcoinTransaction.findMany({
-        include: { wallet: true },
-        orderBy: { timestamp: 'desc' },
+    // Transactions, current price and the USD->GBP rate, cached until a change / refresh (lib/page-cache).
+    const { transactions, currentPrice, usdToGbp } = await cachedPageData("btc-roi", sessionUserId(session), async () => {
+        // 1. Fetch Transactions
+        const transactions = await db.bitcoinTransaction.findMany({
+            include: { wallet: true },
+            orderBy: { timestamp: "desc" },
+        });
+
+        // 2. Fetch Current Price
+        let currentPrice = 95000; // Fallback
+        try {
+            const res = await fetch("https://mempool.space/api/v1/prices");
+            const data = await res.json();
+            if (data.USD) currentPrice = data.USD;
+        } catch (e) {
+            console.error("Failed to fetch price, using fallback", e);
+        }
+
+        // Current USD->GBP rate for the ROI evolution chart's £ toggle — same
+        // simplification used elsewhere in the app (getExchangeRate falls back
+        // to 1:1 on failure, and uses the current rate even for past dates).
+        const usdToGbp = await getExchangeRate("USD", "GBP");
+        return { transactions, currentPrice, usdToGbp };
     });
-
-    // 2. Fetch Current Price
-    let currentPrice = 95000; // Fallback
-    try {
-        const res = await fetch('https://mempool.space/api/v1/prices');
-        const data = await res.json();
-        if (data.USD) currentPrice = data.USD;
-    } catch (e) {
-        console.error("Failed to fetch price, using fallback", e);
-    }
-
-    // Current USD->GBP rate for the ROI evolution chart's £ toggle — same
-    // simplification used elsewhere in the app (getExchangeRate falls back
-    // to 1:1 on failure, and uses the current rate even for past dates).
-    const usdToGbp = await getExchangeRate("USD", "GBP");
 
     // 3. Process Data
     const monthlyMap = new Map<string, { invested: number, btc: number }>();

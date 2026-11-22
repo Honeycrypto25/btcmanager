@@ -5,15 +5,19 @@ import { db } from "@/lib/db";
 import { getCurrentBtcPrice } from "@/lib/btc";
 import { getBtcAth } from "@/lib/btc-ath";
 import WalletsPageClient, { type WalletStats } from "./WalletsPageClient";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 export default async function WalletsPage() {
-    await requireSectionAccess("btc");
+    const session = await requireSectionAccess("btc");
 
-    const transactions = await db.bitcoinTransaction.findMany({
-        select: { walletId: true, amount: true, priceAtTime: true },
+    const { transactions, currentPrice, ath } = await cachedPageData("btc-wallets", sessionUserId(session), async () => {
+        const transactions = await db.bitcoinTransaction.findMany({
+            select: { walletId: true, amount: true, priceAtTime: true },
+        });
+        const currentPrice = await getCurrentBtcPrice();
+        const ath = await getBtcAth(currentPrice);
+        return { transactions, currentPrice, ath };
     });
-    const currentPrice = await getCurrentBtcPrice();
-    const ath = await getBtcAth(currentPrice);
     const athPrice = ath?.price ?? 0;
 
     const acc: Record<string, { invested: number; btc: number }> = {};

@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { requireAdmin } from "@/lib/permissions";
 
 /** Drops the cached data of the loans page only (not the rest of the site); the client then re-renders it. */

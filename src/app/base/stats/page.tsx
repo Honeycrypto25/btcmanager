@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getEvmStats, listEvmLots, listEvmSweeps, getEvmFuelStatus } from "@/app/actions/evm";
 import { EvmStatsClient } from "@/components/evm/EvmStatsClient";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
@@ -15,15 +16,17 @@ export default async function BaseStatsPage() {
     const session = await requireSectionAccess("base");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [lots, stats, wethPriceUsd, sweeps, fuelStatus, limitBuys, uptime] = await Promise.all([
-        listEvmLots(),
-        getEvmStats(),
-        getWethPriceUsd().catch(() => null),
-        listEvmSweeps(),
-        getEvmFuelStatus(),
-        userId ? listEvmLimitBuys(userId) : Promise.resolve([]),
-        userId ? getDcaBotUptime(userId, "BASE") : Promise.resolve(undefined),
-    ]);
+    const [lots, stats, wethPriceUsd, sweeps, fuelStatus, limitBuys, uptime] = await cachedPageData("base-stats", sessionUserId(session), () =>
+        Promise.all([
+            listEvmLots(),
+            getEvmStats(),
+            getWethPriceUsd().catch(() => null),
+            listEvmSweeps(),
+            getEvmFuelStatus(),
+            userId ? listEvmLimitBuys(userId) : Promise.resolve([]),
+            userId ? getDcaBotUptime(userId, "BASE") : Promise.resolve(undefined),
+        ]),
+    );
 
     return (
         <DashboardLayout>

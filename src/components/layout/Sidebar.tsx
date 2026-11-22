@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/components/ui/core';
 import { signOut, useSession } from 'next-auth/react';
+import { PageRefreshButton } from './PageRefreshButton';
 
 type NavLeaf = { name: string; href: string; icon: React.ElementType };
 type NavSection = { section: string; items: NavLeaf[]; sectionKey?: string };
@@ -203,6 +204,7 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
             <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false} // 44 menu links: prefetching them on every page view costs server renders (Vercel Active CPU)
                 onClick={close}
                 className={cn(
                     'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors duration-150',
@@ -246,6 +248,7 @@ export const Sidebar = ({ isOpen, toggle }: SidebarProps) => {
                             <p className="font-display text-lg font-medium leading-none text-foreground">Personal Dashboard</p>
                         </div>
 
+                        <PageRefreshButton className="hidden lg:flex" />
                         <button
                             type="button"
                             className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-foreground lg:hidden"

@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { runEvmDcaForAllUsers } from "@/lib/evm/dca";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Runs once a day (see vercel.json) — same Hobby-plan constraint as
@@ -24,5 +25,6 @@ export async function GET(req: NextRequest) {
     }
 
     const results = await runEvmDcaForAllUsers();
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json({ results });
 }

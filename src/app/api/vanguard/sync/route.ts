@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { syncVanguardPrices } from "@/lib/vanguard-price-sync";
+import { expirePageCache } from "@/lib/page-cache";
 
 /** POST: manually trigger a Vanguard price sync (ETF ticker / OEIC ISIN holdings only) */
 export async function POST() {
@@ -14,8 +15,11 @@ export async function POST() {
     const result = await syncVanguardPrices();
 
     if (!result.ok) {
+        expirePageCache(); // the change must show on the cached pages
         return NextResponse.json({ error: result.error }, { status: 502 });
     }
+
+    expirePageCache(); // the change must show on the cached pages
 
     return NextResponse.json(result);
 }

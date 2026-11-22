@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBotWalletAddress, getEvaSettings, getSweepDestinationInfo } from "@/app/actions/eva";
 import { EvaClient } from "@/components/eva/EvaClient";
 import { getTokenPriceUsd } from "@/lib/solana/jupiter";
@@ -12,14 +13,16 @@ export default async function EvaPage() {
     // permission key as /solana and /solana/stats gates this, since
     // requireSectionAccess checks the section key directly rather than
     // matching by path prefix. No new section/permission key needed.
-    await requireSectionAccess("solana");
+    const session = await requireSectionAccess("solana");
 
-    const [settings, evaPriceUsd, botWallet, sweepDestination] = await Promise.all([
-        getEvaSettings(),
-        getTokenPriceUsd(EVA_MINT).catch(() => null),
-        getBotWalletAddress(),
-        getSweepDestinationInfo(),
-    ]);
+    const [settings, evaPriceUsd, botWallet, sweepDestination] = await cachedPageData("eva", sessionUserId(session), () =>
+        Promise.all([
+            getEvaSettings(),
+            getTokenPriceUsd(EVA_MINT).catch(() => null),
+            getBotWalletAddress(),
+            getSweepDestinationInfo(),
+        ]),
+    );
 
     return (
         <DashboardLayout>

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBotWalletAddress, getEvmSettings, getSweepDestinationInfo } from "@/app/actions/evm";
 import { EvmClient } from "@/components/evm/EvmClient";
 import { getWethPriceUsd } from "@/lib/evm/oneinch";
@@ -14,13 +15,15 @@ export default async function BasePage() {
     const session = await requireSectionAccess("base");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [settings, wethPriceUsd, botWallet, sweepDestination, limitBuys] = await Promise.all([
-        getEvmSettings(),
-        getWethPriceUsd().catch(() => null),
-        getBotWalletAddress(),
-        getSweepDestinationInfo(),
-        userId ? listEvmLimitBuys(userId) : Promise.resolve([]),
-    ]);
+    const [settings, wethPriceUsd, botWallet, sweepDestination, limitBuys] = await cachedPageData("base", sessionUserId(session), () =>
+        Promise.all([
+            getEvmSettings(),
+            getWethPriceUsd().catch(() => null),
+            getBotWalletAddress(),
+            getSweepDestinationInfo(),
+            userId ? listEvmLimitBuys(userId) : Promise.resolve([]),
+        ]),
+    );
 
     return (
         <DashboardLayout>

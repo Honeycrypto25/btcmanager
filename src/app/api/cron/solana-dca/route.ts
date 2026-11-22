@@ -3,6 +3,7 @@ export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from "next/server";
 import { runSolanaDcaForAllUsers } from "@/lib/solana/dca";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Runs once a day (see vercel.json) — Vercel's Hobby plan rejects cron
@@ -29,5 +30,6 @@ export async function GET(req: NextRequest) {
     }
 
     const results = await runSolanaDcaForAllUsers();
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json({ results });
 }

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/components/ui/core';
 import { LayoutDashboard, Menu } from 'lucide-react';
+import { PageRefreshButton } from './PageRefreshButton';
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -24,14 +25,17 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
                             <p className="font-display text-base font-medium leading-none text-foreground">Personal Dashboard</p>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={() => setIsSidebarOpen(true)}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-white/5"
-                            aria-label="Open navigation"
-                        >
-                            <Menu className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <PageRefreshButton />
+                            <button
+                                type="button"
+                                onClick={() => setIsSidebarOpen(true)}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground transition-colors hover:bg-white/5"
+                                aria-label="Open navigation"
+                            >
+                                <Menu className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
                 </div>
 

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getBotActivity } from "@/lib/bot-activity";
 import { BotActClient, type BotActivityDTO } from "@/components/bot-act/BotActClient";
 
@@ -9,7 +10,7 @@ import { BotActClient, type BotActivityDTO } from "@/components/bot-act/BotActCl
 export default async function BotActPage() {
     const session = await requireAdminPage();
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const bots = userId ? await getBotActivity(userId) : [];
+    const bots = userId ? await cachedPageData("bot-act", userId, () => getBotActivity(userId)) : [];
 
     return (
         <DashboardLayout>

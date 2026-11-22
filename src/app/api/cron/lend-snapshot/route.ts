@@ -8,6 +8,7 @@ import { lendCapLtv } from "@/lib/solana/lend-config";
 import { checkLendAlerts } from "@/lib/email/lend-alert";
 import { snapshotAlchemyUsage } from "@/lib/api-usage-report";
 import { refreshDailyPrices } from "@/lib/price-history";
+import { expirePageCache } from "@/lib/page-cache";
 
 /**
  * Daily (Hobby-plan cron limit, see vercel.json): records the Jupiter Lend
@@ -32,5 +33,6 @@ export async function GET(req: NextRequest) {
     if (lend.error) return NextResponse.json({ ok: false, error: lend.error });
     await recordLendSnapshots(lend.positions);
     const alert = await checkLendAlerts(lend.positions, lendCapLtv());
+    expirePageCache(); // new bot/sync data → cached pages rebuild on their next view
     return NextResponse.json({ ok: true, positions: lend.positions.length, alert });
 }

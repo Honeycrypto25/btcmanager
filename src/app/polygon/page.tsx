@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { requireSectionAccess } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import {
     listPolygonTokenSettings,
     getPolygonBotWalletAddress,
@@ -13,16 +14,18 @@ import {
 import { PolygonClient } from "@/components/polygon/PolygonClient";
 
 export default async function PolygonPage() {
-    await requireSectionAccess("polygon");
+    const session = await requireSectionAccess("polygon");
 
-    const [tokenSettings, botWallet, gasStatus, usdcStatus, sweepSettings, sweepDestination] = await Promise.all([
-        listPolygonTokenSettings(),
-        getPolygonBotWalletAddress(),
-        getPolygonGasStatus(),
-        getPolygonUsdcBalance(),
-        getPolygonSweepSettings(),
-        getPolygonSweepDestinationInfo(),
-    ]);
+    const [tokenSettings, botWallet, gasStatus, usdcStatus, sweepSettings, sweepDestination] = await cachedPageData("polygon", sessionUserId(session), () =>
+        Promise.all([
+            listPolygonTokenSettings(),
+            getPolygonBotWalletAddress(),
+            getPolygonGasStatus(),
+            getPolygonUsdcBalance(),
+            getPolygonSweepSettings(),
+            getPolygonSweepDestinationInfo(),
+        ]),
+    );
 
     return (
         <DashboardLayout>

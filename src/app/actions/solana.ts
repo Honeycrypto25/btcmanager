@@ -1,7 +1,8 @@
 "use server";
+import { pageCacheUserId } from "@/lib/page-cache";
 
 import { getServerSession } from "next-auth";
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/page-cache"; // also expires the page cache
 import { authOptions } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
 import { db } from "@/lib/db";
@@ -12,6 +13,8 @@ import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
 async function requireUserId(): Promise<string> {
+    const cachedUser = pageCacheUserId(); // set while a page's data is being cached (no cookies there)
+    if (cachedUser) return cachedUser;
     const session = await getServerSession(authOptions);
     const userId = (session?.user as { id?: string } | undefined)?.id;
     if (!userId) throw new Error("Unauthorized");

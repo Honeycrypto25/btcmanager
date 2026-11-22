@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 import { getOverviewData, getComparisonSeries, type ComparisonSeries } from "@/lib/overview-data";
 import { getBotProfits, getBotCycleEvents, type BotProfit, type BotCycleEvent } from "@/lib/bot-profit";
 import { OverviewClient, type VanguardOverviewSnapshot, type AssetFigures } from "@/components/overview/OverviewClient";
@@ -18,6 +19,33 @@ import { getBtcEvolution, getT212Evolution, getVanguardEvolution, type AssetEvol
 export default async function OverviewPage() {
     const session = await requireAdminPage();
 
+    const { botProfits, botCycles, comparison, data, usdToGbp, selfEmployed, vanguard, evolution, vanguardSeries, vanguardOnly, vanguardOnlySeries, fidelity, fidelitySeries } =
+        await cachedPageData("overview", sessionUserId(session), () => loadOverview(session));
+
+    return (
+        <DashboardLayout>
+            <OverviewClient
+                botProfits={botProfits}
+                botCycles={botCycles}
+                comparison={comparison}
+                data={data}
+                usdToGbp={usdToGbp}
+                selfEmployed={selfEmployed}
+                vanguard={vanguard}
+                evolution={evolution}
+                vanguardSeries={vanguardSeries}
+                vanguardOnly={vanguardOnly}
+                vanguardOnlySeries={vanguardOnlySeries}
+                fidelity={fidelity}
+                fidelitySeries={fidelitySeries}
+            />
+        </DashboardLayout>
+    );
+}
+
+// Everything the Overview shows, computed in one go so it can be cached (lib/page-cache): opening the page again
+// reuses it until something changes (a save, a sync, a bot run) or the refresh button is pressed.
+async function loadOverview(session: { user?: unknown }) {
     const { data, usdToGbp } = await getOverviewData();
 
     // Self-employed snapshot for the current tax year — additive only, does
@@ -145,23 +173,5 @@ export default async function OverviewPage() {
         botCycles = [];
     }
 
-    return (
-        <DashboardLayout>
-            <OverviewClient
-                botProfits={botProfits}
-                botCycles={botCycles}
-                comparison={comparison}
-                data={data}
-                usdToGbp={usdToGbp}
-                selfEmployed={selfEmployed}
-                vanguard={vanguard}
-                evolution={evolution}
-                vanguardSeries={vanguardSeries}
-                vanguardOnly={vanguardOnly}
-                vanguardOnlySeries={vanguardOnlySeries}
-                fidelity={fidelity}
-                fidelitySeries={fidelitySeries}
-            />
-        </DashboardLayout>
-    );
+    return { botProfits, botCycles, comparison, data, usdToGbp, selfEmployed, vanguard, evolution, vanguardSeries, vanguardOnly, vanguardOnlySeries, fidelity, fidelitySeries };
 }

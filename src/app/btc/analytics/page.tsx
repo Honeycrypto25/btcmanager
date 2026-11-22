@@ -7,13 +7,12 @@ import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { db } from "@/lib/db";
 import AnalyticsClient from "./AnalyticsClient";
+import { cachedPageData, sessionUserId } from "@/lib/page-cache";
 
 export default async function AnalyticsPage() {
     const session = await requireSectionAccess("btc");
 
-    const wallets = await db.bitcoinWallet.findMany({
-        include: { transactions: true }
-    });
+    const wallets = await cachedPageData("btc-analytics", sessionUserId(session), () => db.bitcoinWallet.findMany({ include: { transactions: true } }));
 
     // Flatten transactions
     const allTransactions = wallets.flatMap((w: any) =>
