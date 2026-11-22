@@ -16,7 +16,7 @@ export default async function SolanaPage() {
     const session = await requireSectionAccess("solana");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot, lendOptions] = await cachedPageData("solana", sessionUserId(session), () =>
+    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot, lendOptions] = await cachedPageData("solana-v2", sessionUserId(session), () =>
         Promise.all([
             getSolanaSettings(),
             getSolPriceUsd().catch(() => null),
@@ -37,7 +37,7 @@ export default async function SolanaPage() {
                 solPriceUsd={solPriceUsd}
                 botWallet={botWallet}
                 sweepDestination={sweepDestination}
-                lendOptions={lendOptions}
+                lendOptions={lendOptions ?? { positions: [], error: null }}
                 limitBuys={JSON.parse(JSON.stringify(limitBuys))}
                 lastBuyPriceUsd={lastLot ? Number(lastLot.buyPriceUsd) : null}
             />
