@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { runSolanaDcaForUser, reconcileSolanaOrdersForUser } from "@/lib/solana/dca";
 import { createSolanaLimitBuy, cancelSolanaLimitBuy, syncAutoDipOrder } from "@/lib/solana/limit-buy";
 import { runSolanaSweepForUser } from "@/lib/solana/sweep";
+import { listSweepLendPositions, type SweepLendPosition } from "@/lib/solana/lend-deposit";
 import { loadBotKeypair, getUsdcBalance } from "@/lib/solana/wallet";
 import { MIN_TRIGGER_ORDER_USD } from "@/lib/solana/constants";
 
@@ -30,6 +31,9 @@ export interface SolanaSettingsInput {
     slippageBps?: number;
     sweepEnabled: boolean;
     sweepMinBalanceSol: number;
+    /** "cold" (default) = SOL to the cold wallet; "lend" = deposit into a Jupiter Lend position owned by that wallet. */
+    sweepTarget?: "cold" | "lend";
+    sweepLendPosition?: { vaultId: number; id: number } | null;
 }
 
 export async function getSolanaSettings() {
@@ -66,6 +70,23 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
     if (input.takeProfitPercent <= 0) throw new Error("Procentul țintă trebuie să fie pozitiv.");
     if (input.sweepMinBalanceSol < 0) throw new Error("Minimul păstrat la retragere nu poate fi negativ.");
 
+    const sweepTarget = input.sweepTarget === "lend" ? "lend" : "cold";
+    let lendVaultId: number | null = null;
+    let lendPositionId: number | null = null;
+    if (sweepTarget === "lend") {
+        const pos = input.sweepLendPosition;
+        if (!pos) throw new Error("Alege poziția de împrumut în care se depune SOL-ul lunar.");
+        const owner = process.env.SOLANA_SWEEP_DESTINATION?.trim();
+        if (!owner) throw new Error("SOLANA_SWEEP_DESTINATION nu este setat în Vercel — poziția de împrumut aparține acelui wallet.");
+        const { positions, error } = await listSweepLendPositions(owner);
+        if (error) throw new Error(`Nu pot verifica pozițiile de împrumut: ${error}`);
+        if (!positions.some((p) => p.id === pos.id && p.vaultId === pos.vaultId)) {
+            throw new Error("Poziția aleasă nu aparține walletului de destinație sau nu are SOL drept colateral.");
+        }
+        lendVaultId = pos.vaultId;
+        lendPositionId = pos.id;
+    }
+
     // Derived from the env var, not user input — see getBotWalletAddress().
     const keypair = await loadBotKeypair();
     const walletAddress = keypair.publicKey.toBase58();
@@ -83,6 +104,9 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
             slippageBps: input.slippageBps ?? 50,
             sweepEnabled: input.sweepEnabled,
             sweepMinBalanceSol: input.sweepMinBalanceSol,
+            sweepTarget,
+            sweepLendVaultId: lendVaultId,
+            sweepLendPositionId: lendPositionId,
         },
         update: {
             enabled: input.enabled,
@@ -94,6 +118,11 @@ export async function upsertSolanaSettings(input: SolanaSettingsInput) {
             slippageBps: input.slippageBps ?? 50,
             sweepEnabled: input.sweepEnabled,
             sweepMinBalanceSol: input.sweepMinBalanceSol,
+            sweepTarget,
+            // Keeps the last chosen position when switching back to the cold wallet; cleared only by choosing another.
+            ...(sweepTarget === "lend" ? { sweepLendVaultId: lendVaultId, sweepLendPositionId: lendPositionId } : {}),
+            // Switching away from "lend" (or turning the sweep off) drops a pending retry.
+            ...(sweepTarget !== "lend" || !input.sweepEnabled ? { sweepRetryPending: false } : {}),
         },
     });
 
@@ -192,14 +221,54 @@ export async function getSweepDestinationInfo(): Promise<{ address: string } | {
     return { address: raw.trim() };
 }
 
-/** Manual "Trimite acum" — same transfer logic as the monthly cron, but ignores the "already swept this month" gate. Used to verify the setup once before relying on the automatic schedule. */
-export async function runSolanaSweepNow() {
+/**
+ * Manual "Trimite acum" — same logic as the monthly cron, but ignores the "already swept this month" gate. Used to
+ * verify the setup once before relying on the automatic schedule. For the "lend" target it can also just simulate
+ * the deposit (dryRun: nothing is sent or saved) and/or use a small test amount.
+ */
+export async function runSolanaSweepNow(opts: { amountSol?: number; dryRun?: boolean } = {}) {
     await requireAdmin();
     const userId = await requireUserId();
-    const result = await runSolanaSweepForUser(userId, true);
+    const result = await runSolanaSweepForUser(userId, true, { amountSol: opts.amountSol, dryRun: opts.dryRun });
+    if (!opts.dryRun) {
+        revalidatePath("/solana");
+        revalidatePath("/solana/stats");
+    }
+    return result;
+}
+
+/** The open SOL-collateral Jupiter Lend positions of the cold wallet — what a "lend" sweep can be deposited into. */
+export async function getSweepLendOptions(): Promise<{ positions: SweepLendPosition[]; error: string | null }> {
+    await requireUserId();
+    const owner = process.env.SOLANA_SWEEP_DESTINATION?.trim();
+    if (!owner) return { positions: [], error: "SOLANA_SWEEP_DESTINATION nu este setat în Vercel." };
+    return listSweepLendPositions(owner);
+}
+
+/**
+ * Called when the Solana page is opened: if the last "lend" sweep failed, tries it again (at most once every
+ * 6 hours; the claim below is atomic, so two open tabs can never send it twice). Admin-only, quiet otherwise.
+ */
+export async function retryPendingSolanaSweep(): Promise<{ action: "none" | "sent" | "error"; message?: string }> {
+    try {
+        await requireAdmin();
+    } catch {
+        return { action: "none" };
+    }
+    const userId = await requireUserId();
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    const claimed = await db.solanaSettings.updateMany({
+        where: { userId, sweepEnabled: true, sweepTarget: "lend", sweepRetryPending: true, OR: [{ lastSweepAt: null }, { lastSweepAt: { lt: sixHoursAgo } }] },
+        data: { lastSweepAt: new Date() },
+    });
+    if (claimed.count === 0) return { action: "none" };
+
+    const result = await runSolanaSweepForUser(userId, false, { retry: true });
     revalidatePath("/solana");
     revalidatePath("/solana/stats");
-    return result;
+    if (result.action === "sent") return { action: "sent", message: `Retragerea eșuată anterior a fost depusă acum în împrumut: ${result.amountSol} SOL.` };
+    if (result.action === "error") return { action: "error", message: result.reason };
+    return { action: "none" };
 }
 
 export async function listSolanaSweeps() {

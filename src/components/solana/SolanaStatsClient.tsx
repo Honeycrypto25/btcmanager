@@ -797,6 +797,7 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                         <th className="pb-2 pr-4">Status</th>
                         <th className="pb-2 pr-4">Balanță înainte</th>
                         <th className="pb-2 pr-4">Sumă trimisă</th>
+                        <th className="pb-2 pr-4">Destinație</th>
                         <th className="pb-2 pr-4">Sursă</th>
                         <th className="pb-2 pr-4">Eroare</th>
                         <th className="pb-2">Tranzacție</th>
@@ -820,10 +821,29 @@ function SweepsTable({ sweeps }: { sweeps: SweepDTO[] }) {
                             </td>
                             <td className="py-2 pr-4 text-foreground">{Number(sweep.balanceBeforeSol).toFixed(4)} SOL</td>
                             <td className="py-2 pr-4 text-foreground">{Number(sweep.amountSol).toFixed(4)} SOL</td>
+                            <td className="py-2 pr-4">
+                                {sweep.target === "lend" ? (
+                                    <span className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200">
+                                        Împrumut{sweep.lendPositionId != null ? ` #${sweep.lendPositionId}` : ""}
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-faint">Cold wallet</span>
+                                )}
+                            </td>
                             <td className="py-2 pr-4 text-faint">{sweep.manual ? "manual" : "automat"}</td>
                             <td className="py-2 pr-4 text-red-300">{sweep.errorMessage ?? "—"}</td>
                             <td className="py-2 text-faint">
-                                {sweep.txSignature ? <SolscanLink signature={sweep.txSignature} label="Vezi ↗" /> : "—"}
+                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    {sweep.txSignature ? <SolscanLink signature={sweep.txSignature} label="Vezi ↗" /> : "—"}
+                                    {sweep.target === "lend" && sweep.status === "SUCCESS" && sweep.txSignature && (
+                                        <Link
+                                            href={`/cold-wallet/imprumuturi/tranzactii?sweep=1&tx=${sweep.txSignature}`}
+                                            className="text-amber-200 underline decoration-dotted hover:text-foreground"
+                                        >
+                                            În împrumut →
+                                        </Link>
+                                    )}
+                                </span>
                             </td>
                         </tr>
                     ))}

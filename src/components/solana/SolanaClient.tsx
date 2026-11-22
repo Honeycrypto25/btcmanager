@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight } from "lucide-react";
+import { Coins, Play, Save, AlertTriangle, Wallet, Pencil, X, BarChart3, Send, ShieldAlert, ArrowRight, FlaskConical } from "lucide-react";
 import { Card, Button, cn } from "@/components/ui/core";
-import { upsertSolanaSettings, runSolanaDcaNow, runSolanaDcaForceNow, runSolanaSweepNow, type SolanaSettingsInput } from "@/app/actions/solana";
+import { upsertSolanaSettings, runSolanaDcaNow, runSolanaDcaForceNow, runSolanaSweepNow, retryPendingSolanaSweep, type SolanaSettingsInput } from "@/app/actions/solana";
+import type { SweepLendPosition } from "@/lib/solana/lend-deposit";
 import { formatUsd, type SettingsDTO } from "./shared";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { SolanaLimitBuyCard, type SolanaLimitBuyDTO } from "./SolanaLimitBuyCard";
@@ -23,6 +24,7 @@ export function SolanaClient({
     solPriceUsd,
     botWallet,
     sweepDestination,
+    lendOptions,
     limitBuys,
     lastBuyPriceUsd,
 }: {
@@ -30,6 +32,7 @@ export function SolanaClient({
     solPriceUsd: number | null;
     botWallet: { address: string } | { error: string };
     sweepDestination: { address: string } | { error: string };
+    lendOptions: { positions: SweepLendPosition[]; error: string | null };
     limitBuys: SolanaLimitBuyDTO[];
     lastBuyPriceUsd: number | null;
 }) {
@@ -44,7 +47,17 @@ export function SolanaClient({
         slippageBps: initialSettings?.slippageBps ?? 50,
         sweepEnabled: initialSettings?.sweepEnabled ?? false,
         sweepMinBalanceSol: initialSettings ? Number(initialSettings.sweepMinBalanceSol) : 0.2,
+        sweepTarget: initialSettings?.sweepTarget === "lend" ? "lend" : "cold",
+        sweepLendPosition:
+            initialSettings?.sweepLendVaultId != null && initialSettings?.sweepLendPositionId != null
+                ? { vaultId: initialSettings.sweepLendVaultId, id: initialSettings.sweepLendPositionId }
+                : lendOptions.positions.length === 1
+                  ? { vaultId: lendOptions.positions[0].vaultId, id: lendOptions.positions[0].id }
+                  : null,
     });
+    const [testAmount, setTestAmount] = useState("");
+    const [simulating, startSimulating] = useTransition();
+    const [simulation, setSimulation] = useState<{ ok: boolean; text: string; logs: string[] } | null>(null);
     const [editing, setEditing] = useState(!initialSettings);
     const [saving, startSaving] = useTransition();
     const [running, startRunning] = useTransition();
@@ -81,10 +94,25 @@ export function SolanaClient({
                 slippageBps: settings.slippageBps,
                 sweepEnabled: settings.sweepEnabled,
                 sweepMinBalanceSol: Number(settings.sweepMinBalanceSol),
+                sweepTarget: settings.sweepTarget === "lend" ? "lend" : "cold",
+                sweepLendPosition:
+                    settings.sweepLendVaultId != null && settings.sweepLendPositionId != null ? { vaultId: settings.sweepLendVaultId, id: settings.sweepLendPositionId } : null,
             });
         }
         setError(null);
         setEditing(false);
+    }
+
+    // What the saved settings send to (the manual buttons use the SAVED settings, not unsaved edits).
+    const savedLend = settings?.sweepTarget === "lend";
+    const savedPositionLabel =
+        savedLend && settings?.sweepLendPositionId != null
+            ? (lendOptions.positions.find((p) => p.id === settings.sweepLendPositionId)?.label ?? `#${settings.sweepLendPositionId}`)
+            : null;
+
+    function parsedTestAmount(): number | undefined {
+        const n = parseFloat(testAmount.replace(",", "."));
+        return Number.isFinite(n) && n > 0 ? n : undefined;
     }
 
     function handleSweepNow() {
@@ -94,11 +122,12 @@ export function SolanaClient({
     function confirmSweepNow() {
         setShowSweepConfirm(false);
         setSweepMessage(null);
+        setSimulation(null);
         setError(null);
         startSweeping(async () => {
             try {
-                const result = await runSolanaSweepNow();
-                if (result.action === "sent") setSweepMessage(`Trimis ${result.amountSol} SOL — pagina se va reîmprospăta.`);
+                const result = await runSolanaSweepNow({ amountSol: parsedTestAmount() });
+                if (result.action === "sent") setSweepMessage(`${savedLend ? "Depus în împrumut" : "Trimis"} ${result.amountSol} SOL — pagina se va reîmprospăta.`);
                 else if (result.action === "skipped") setSweepMessage(`Sărit: ${result.reason}`);
                 else setError(result.reason ?? "Eroare necunoscută.");
                 if (result.action === "sent") window.location.reload();
@@ -107,6 +136,52 @@ export function SolanaClient({
             }
         });
     }
+
+    /** Builds the deposit and simulates it on the network — nothing is sent, nothing is saved. */
+    function handleSimulate() {
+        setSweepMessage(null);
+        setSimulation(null);
+        setError(null);
+        startSimulating(async () => {
+            try {
+                const result = await runSolanaSweepNow({ amountSol: parsedTestAmount(), dryRun: true });
+                if (result.action === "simulated" && result.simulation) {
+                    setSimulation({
+                        ok: true,
+                        text: `Simulare reușită pentru ${result.amountSol} SOL (${result.simulation.variant === "wrapped" ? "cu SOL împachetat" : "direct"}, ${result.simulation.unitsConsumed ?? "?"} unități de calcul). Nu s-a trimis nimic.`,
+                        logs: result.simulation.logs,
+                    });
+                } else if (result.action === "error") {
+                    setSimulation({ ok: false, text: result.reason ?? "Simularea a eșuat.", logs: result.simulation?.logs ?? [] });
+                } else {
+                    setSimulation({ ok: false, text: result.reason ?? "Nimic de simulat.", logs: [] });
+                }
+            } catch (e) {
+                setSimulation({ ok: false, text: e instanceof Error ? e.message : "Eroare la simulare.", logs: [] });
+            }
+        });
+    }
+
+    // A "lend" sweep that failed earlier is retried when this page is opened (server side: at most once every 6 hours).
+    useEffect(() => {
+        if (!isAdmin || !settings?.sweepRetryPending || settings.sweepTarget !== "lend") return;
+        let cancelled = false;
+        retryPendingSolanaSweep()
+            .then((r) => {
+                if (cancelled) return;
+                if (r.action === "sent") {
+                    setSweepMessage(r.message ?? "Depus.");
+                    window.location.reload();
+                } else if (r.action === "error") {
+                    setError(`Reîncercarea depunerii a eșuat: ${r.message ?? "eroare necunoscută"}`);
+                }
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAdmin]);
 
     function handleRunNow() {
         setRunMessage(null);
@@ -370,7 +445,7 @@ export function SolanaClient({
                     </label>
                 </div>
                 <p className="text-xs text-faint">
-                    În fiecare zi de 2 a lunii, tot ce depășește minimul de mai jos se trimite automat către portofelul de retragere — restul rămâne pentru cumpărări/fee-uri viitoare. Suma trimisă e rotunjită în jos la 2 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
+                    În fiecare zi de 2 a lunii, tot ce depășește minimul de mai jos se trimite automat — fie către portofelul de retragere, fie ca bani în plus (colateral SOL) în împrumutul Jupiter Lend al acelui portofel, după cum alegi mai jos. Restul rămâne pentru cumpărări/fee-uri viitoare. Suma e rotunjită în jos la 2 zecimale, deci minimul e mereu respectat (posibil cu un mic surplus).
                 </p>
                 {settings && !editing && (
                     <p className="text-xs text-faint">
@@ -393,6 +468,63 @@ export function SolanaClient({
                     </div>
                 )}
 
+                <div className="space-y-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3">
+                    <span className="text-xs text-faint">Unde se duce retragerea lunară</span>
+                    <div className="flex flex-wrap gap-2">
+                        {(
+                            [
+                                ["cold", "Cold wallet (transfer SOL)"],
+                                ["lend", "Împrumut Jupiter Lend (depunere colateral)"],
+                            ] as const
+                        ).map(([val, label]) => (
+                            <button
+                                key={val}
+                                type="button"
+                                disabled={!editing}
+                                aria-pressed={form.sweepTarget === val}
+                                onClick={() => setForm({ ...form, sweepTarget: val })}
+                                className={cn(
+                                    "rounded-full border px-3 py-1.5 text-xs transition-colors disabled:opacity-60",
+                                    form.sweepTarget === val ? "border-primary/50 bg-primary/10 text-foreground" : "border-white/10 bg-white/[0.03] text-muted hover:border-white/20",
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {form.sweepTarget === "lend" && (
+                        <div className="space-y-2">
+                            {lendOptions.error ? (
+                                <p className="text-xs text-red-300">Nu pot citi pozițiile de împrumut: {lendOptions.error}</p>
+                            ) : lendOptions.positions.length === 0 ? (
+                                <p className="text-xs text-amber-200">Portofelul de retragere nu are nicio poziție Jupiter Lend deschisă cu SOL drept colateral.</p>
+                            ) : (
+                                <Field label="Poziția în care se depune">
+                                    <select
+                                        disabled={!editing}
+                                        value={form.sweepLendPosition ? `${form.sweepLendPosition.vaultId}:${form.sweepLendPosition.id}` : ""}
+                                        onChange={(e) => {
+                                            const [vaultId, id] = e.target.value.split(":").map(Number);
+                                            setForm({ ...form, sweepLendPosition: e.target.value ? { vaultId, id } : null });
+                                        }}
+                                        className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50 disabled:opacity-50"
+                                    >
+                                        <option value="">— alege poziția —</option>
+                                        {lendOptions.positions.map((p) => (
+                                            <option key={`${p.vaultId}:${p.id}`} value={`${p.vaultId}:${p.id}`}>
+                                                {p.label} · {p.collateralSol.toFixed(4)} SOL colateral · datorie {p.debtAmount.toFixed(2)} {p.debtSymbol} · LTV {(p.ltv * 100).toFixed(1)}%
+                                            </option>
+                                        ))}
+                                    </select>
+                                </Field>
+                            )}
+                            <p className="text-xs text-faint">
+                                Jupiter permite oricui să depună în orice poziție; doar proprietarul (cold wallet-ul) poate retrage sau împrumuta. Botul doar adaugă SOL — nu poate scoate nimic. Dacă depunerea eșuează (poziție închisă, Jupiter indisponibil), SOL-ul rămâne în bot, primești email și se reîncearcă la următoarea deschidere a acestei pagini (cel mult la 6 ore).
+                            </p>
+                        </div>
+                    )}
+                </div>
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Minim SOL păstrat mereu în portofelul botului">
                         <input
@@ -414,9 +546,17 @@ export function SolanaClient({
                     {settings?.lastSweepError && <span className="text-red-300">{settings.lastSweepError}</span>}
                 </div>
 
+                {settings?.sweepRetryPending && savedLend && <p className="text-xs text-amber-200">Ultima depunere a eșuat și e în așteptare: se reîncearcă la următoarea deschidere a paginii.</p>}
                 {sweepMessage && <p className="text-sm text-muted">{sweepMessage}</p>}
+                {simulation && (
+                    <div className={cn("space-y-1 rounded-lg border px-3 py-2 text-xs", simulation.ok ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200" : "border-red-400/30 bg-red-500/10 text-red-200")}>
+                        <p>{simulation.text}</p>
+                        {simulation.logs.length > 0 && <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all text-[11px] opacity-80">{simulation.logs.join("\n")}</pre>}
+                    </div>
+                )}
 
                 {isAdmin && (
+                    <>
                     <div className="flex flex-wrap gap-3">
                         {editing && (
                             <Button onClick={handleSave} disabled={saving || "error" in botWallet} variant="primary">
@@ -428,9 +568,26 @@ export function SolanaClient({
                             disabled={sweeping || !settings || "error" in sweepDestination}
                             variant="secondary"
                         >
-                            <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : "Trimite acum (test)"}
+                            <Send className="h-4 w-4" /> {sweeping ? "Se trimite..." : savedLend ? "Depune acum (test)" : "Trimite acum (test)"}
                         </Button>
+                        {savedLend && (
+                            <Button onClick={handleSimulate} disabled={simulating || sweeping || !settings || "error" in sweepDestination} variant="secondary">
+                                <FlaskConical className="h-4 w-4" /> {simulating ? "Se simulează..." : "Simulează depunerea"}
+                            </Button>
+                        )}
                     </div>
+                    <Field label={savedLend ? "Sumă de test (SOL) pentru „Depune acum” / simulare — gol = tot excesul" : "Sumă de test (SOL) pentru „Trimite acum” — gol = tot excesul"}>
+                        <input
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            placeholder="ex. 0.01"
+                            value={testAmount}
+                            onChange={(e) => setTestAmount(e.target.value)}
+                            className="w-full max-w-xs rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                        />
+                    </Field>
+                    </>
                 )}
             </Card>
 
@@ -456,13 +613,17 @@ export function SolanaClient({
                             </div>
                             <div className="flex items-center gap-2 text-faint">
                                 <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                                <span className="text-xs">Excedentul de peste minim, rotunjit în jos la 2 zecimale</span>
+                                <span className="text-xs">{parsedTestAmount() ? `Suma de test: ${parsedTestAmount()} SOL (nu mai mult decât excedentul)` : "Excedentul de peste minim, rotunjit în jos la 2 zecimale"}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] pt-2">
                                 <span className="text-faint">Către</span>
-                                <code className="text-xs text-foreground break-all text-right">
-                                    {"error" in sweepDestination ? "—" : sweepDestination.address}
-                                </code>
+                                <span className="text-right">
+                                    {savedLend ? (
+                                        <span className="text-xs text-foreground">Împrumut Jupiter Lend {savedPositionLabel} — depunere colateral (poziția rămâne a cold wallet-ului)</span>
+                                    ) : (
+                                        <code className="text-xs text-foreground break-all">{"error" in sweepDestination ? "—" : sweepDestination.address}</code>
+                                    )}
+                                </span>
                             </div>
                         </div>
 

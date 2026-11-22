@@ -207,6 +207,22 @@ export async function getLendPositions(): Promise<LendData> {
     }
 }
 
+/** Open positions (not liquidated) of ONE owner wallet, straight from Jupiter's positions API. */
+export async function fetchOwnerPositions(owner: string): Promise<LendPosition[]> {
+    if (!process.env.JUPITER_API_KEY) throw new Error("JUPITER_API_KEY lipsește în Vercel.");
+    const res = await fetch(`${JUPITER_API_BASE}/lend/v1/borrow/positions?users=${encodeURIComponent(owner)}`, {
+        headers: { "x-api-key": process.env.JUPITER_API_KEY },
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+    });
+    await trackApiCall("jupiter", "lend", res.status);
+    if (!res.ok) throw new Error(`Jupiter Lend a răspuns ${res.status}`);
+    const raw = (await res.json()) as RawPosition[];
+    return (Array.isArray(raw) ? raw : [])
+        .filter((p) => !p.isLiquidated && p.ownerAddress === owner)
+        .map(toPosition);
+}
+
 // ---------------------------------------------------------------------------
 // History + interest
 // ---------------------------------------------------------------------------

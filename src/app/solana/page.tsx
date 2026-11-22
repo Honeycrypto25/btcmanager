@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { requireSectionAccess, requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { cachedPageData, sessionUserId } from "@/lib/page-cache";
-import { getBotWalletAddress, getSolanaSettings, getSweepDestinationInfo } from "@/app/actions/solana";
+import { getBotWalletAddress, getSolanaSettings, getSweepDestinationInfo, getSweepLendOptions } from "@/app/actions/solana";
 import { SolanaClient } from "@/components/solana/SolanaClient";
 import { getSolPriceUsd } from "@/lib/solana/jupiter";
 import { listSolanaLimitBuys } from "@/lib/solana/limit-buy";
@@ -16,7 +16,7 @@ export default async function SolanaPage() {
     const session = await requireSectionAccess("solana");
 
     const userId = (session.user as { id?: string } | undefined)?.id;
-    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot] = await cachedPageData("solana", sessionUserId(session), () =>
+    const [settings, solPriceUsd, botWallet, sweepDestination, limitBuys, lastLot, lendOptions] = await cachedPageData("solana", sessionUserId(session), () =>
         Promise.all([
             getSolanaSettings(),
             getSolPriceUsd().catch(() => null),
@@ -26,6 +26,7 @@ export default async function SolanaPage() {
             userId
                 ? db.solanaLot.findFirst({ where: { userId, status: { in: ["OPEN", "FILLED", "PENDING_SELL_ORDER"] } }, orderBy: { boughtAt: "desc" }, select: { buyPriceUsd: true } })
                 : Promise.resolve(null),
+            getSweepLendOptions().catch((e) => ({ positions: [], error: e instanceof Error ? e.message : String(e) })),
         ]),
     );
 
@@ -36,6 +37,7 @@ export default async function SolanaPage() {
                 solPriceUsd={solPriceUsd}
                 botWallet={botWallet}
                 sweepDestination={sweepDestination}
+                lendOptions={lendOptions}
                 limitBuys={JSON.parse(JSON.stringify(limitBuys))}
                 lastBuyPriceUsd={lastLot ? Number(lastLot.buyPriceUsd) : null}
             />

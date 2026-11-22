@@ -4,12 +4,26 @@ import Link from "next/link";
 import { requireAdminPage } from "@/lib/permissions";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { getLendOverview } from "@/lib/solana/jupiter-lend";
-import { LendTransactions } from "@/components/cold-wallet/LendTransactions";
+import { LendTransactions, type SweepDeposit } from "@/components/cold-wallet/LendTransactions";
+import { db } from "@/lib/db";
 
 // Admin-only. History comes from Fluid's public API (what jup.ag's History tab reads).
-export default async function LendTransactionsPage() {
-    await requireAdminPage();
-    const lend = await getLendOverview();
+// Deposits that came from the bot's monthly sweep (target "Împrumut") are matched by transaction signature.
+export default async function LendTransactionsPage({ searchParams }: { searchParams: Promise<{ sweep?: string; tx?: string }> }) {
+    const session = await requireAdminPage();
+    const { sweep, tx } = await searchParams;
+    const userId = (session.user as { id?: string } | undefined)?.id;
+    const [lend, sweepRows] = await Promise.all([
+        getLendOverview(),
+        userId
+            ? db.solanaSweep.findMany({
+                  where: { userId, target: "lend", status: "SUCCESS", txSignature: { not: null } },
+                  select: { txSignature: true, manual: true, amountSol: true, createdAt: true },
+              })
+            : Promise.resolve([]),
+    ]);
+    const sweeps: Record<string, SweepDeposit> = {};
+    for (const r of sweepRows) if (r.txSignature) sweeps[r.txSignature] = { manual: r.manual, amountSol: Number(r.amountSol), at: r.createdAt.toISOString() };
 
     return (
         <DashboardLayout>
@@ -21,7 +35,7 @@ export default async function LendTransactionsPage() {
                     <h1 className="font-display text-2xl font-medium text-foreground">Tranzacții împrumuturi</h1>
                     <p className="text-sm text-muted">Depuneri, împrumuturi, rambursări și retrageri pe pozițiile Jupiter Lend, cu valoarea în $ din momentul tranzacției.</p>
                 </div>
-                <LendTransactions lend={lend} />
+                <LendTransactions lend={lend} sweeps={sweeps} initialSweepOnly={sweep === "1"} highlightSig={tx} />
             </div>
         </DashboardLayout>
     );

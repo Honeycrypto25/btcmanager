@@ -217,13 +217,15 @@ export async function notifySweep(opts: {
     status: "SUCCESS" | "FAILED";
     amount: number;
     destination: string;
+    /** Shown instead of the shortened address (e.g. when the sweep goes into a loan position rather than a wallet). */
+    destinationLabel?: string;
     manual: boolean;
     txUrl?: string;
     errorMessage?: string;
 }): Promise<void> {
     const rows: Row[] = [
         { label: "Sumă retrasă", value: `${fmtToken(opts.amount)} ${opts.tokenSymbol}` },
-        { label: "Către", value: `${opts.destination.slice(0, 6)}...${opts.destination.slice(-4)}` },
+        { label: "Către", value: opts.destinationLabel ?? `${opts.destination.slice(0, 6)}...${opts.destination.slice(-4)}` },
         { label: "Declanșat", value: opts.manual ? "manual (Trimite acum)" : "automat (lunar)" },
     ];
     if (opts.status === "FAILED" && opts.errorMessage) {

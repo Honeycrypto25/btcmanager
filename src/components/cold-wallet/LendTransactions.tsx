@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronLeft, ChevronRight, Download, ExternalLink } from "lucide-react";
 import { Card, cn } from "@/components/ui/core";
 import type { LendAction, LendOverview, LendPositionFull } from "@/lib/solana/jupiter-lend";
@@ -69,19 +70,52 @@ function downloadCsv(rows: Row[]) {
     URL.revokeObjectURL(url);
 }
 
-export function LendTransactions({ lend }: { lend: LendOverview }) {
+/** A deposit that came from the bot's monthly sweep (Solana → "Retrageri lunare" with target Împrumut). */
+export interface SweepDeposit {
+    manual: boolean;
+    amountSol: number;
+    at: string;
+}
+
+const GREEN = "#52c98a";
+const AMBER = "#e8bc70";
+const GRID = "rgba(255,255,255,0.06)";
+const AXIS = "rgba(255,255,255,0.3)";
+
+export function LendTransactions({ lend, sweeps = {}, initialSweepOnly = false, highlightSig }: { lend: LendOverview; sweeps?: Record<string, SweepDeposit>; initialSweepOnly?: boolean; highlightSig?: string }) {
     const [type, setType] = useState<string>("all");
-    const [page, setPage] = useState(1);
+    const [sweepOnly, setSweepOnly] = useState(initialSweepOnly);
+    const [page, setPageRaw] = useState(1);
+    const [touchedPage, setTouchedPage] = useState(false);
+    const setPage = (n: number) => {
+        setTouchedPage(true);
+        setPageRaw(n);
+    };
 
     const rows: Row[] = useMemo(
         () => lend.positions.flatMap((p) => (p.actions ?? []).map((a) => ({ ...a, pos: p }))).sort((a, b) => (a.at < b.at ? 1 : -1)),
         [lend.positions]
     );
     const types = useMemo(() => Array.from(new Set(rows.map((r) => r.type))), [rows]);
-    const filtered = type === "all" ? rows : rows.filter((r) => r.type === type);
+    const isSweep = (r: Row) => Boolean(sweeps[r.signature]);
+    const sweepRows = useMemo(() => rows.filter(isSweep), [rows, sweeps]); // eslint-disable-line react-hooks/exhaustive-deps
+    const filtered = rows.filter((r) => (type === "all" || r.type === type) && (!sweepOnly || isSweep(r)));
     const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
-    const cur = Math.min(page, pages);
+    // Opened from the sweep history with ?tx=…: jump to the page that holds that transaction.
+    const hiIndex = highlightSig ? filtered.findIndex((r) => r.signature === highlightSig) : -1;
+    const cur = Math.min(page === 1 && hiIndex >= 0 && !touchedPage ? Math.floor(hiIndex / PAGE) + 1 : page, pages);
     const shown = filtered.slice((cur - 1) * PAGE, cur * PAGE);
+
+    // Chart of ONLY the deposits that came from the monthly sweep: SOL per deposit + running total.
+    const sweepChart = useMemo(() => {
+        let run = 0;
+        return [...sweepRows]
+            .sort((a, b) => (a.at < b.at ? -1 : 1))
+            .map((r) => {
+                run += r.collateralIn - r.collateralOut;
+                return { label: fmtDay(r.at), sol: r.collateralIn, total: run, usd: r.collateralInUsd, manual: sweeps[r.signature]?.manual ?? false };
+            });
+    }, [sweepRows, sweeps]);
 
     const ok = rows.filter((r) => r.status === "success");
     const sum = (f: (r: Row) => number) => ok.reduce((s, r) => s + f(r), 0);
@@ -137,6 +171,49 @@ export function LendTransactions({ lend }: { lend: LendOverview }) {
                 <Kpi label="Prima tranzacție" value={fmtDay(rows[rows.length - 1].at)} note={fmtTime(rows[rows.length - 1].at)} />
             </div>
 
+            <Card className="space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 className="font-display text-base font-medium text-foreground">Depuneri din retragerea lunară (ziua 2)</h2>
+                    {sweepChart.length > 0 && (
+                        <p className="text-xs text-muted">
+                            {sweepChart.length} depuneri · total {tokenSmall(sweepChart[sweepChart.length - 1].total, colSym)}
+                        </p>
+                    )}
+                </div>
+                {sweepChart.length === 0 ? (
+                    <p className="text-sm text-muted">
+                        Încă nicio depunere din retragerea lunară. Apare aici după prima retragere cu ținta „Împrumut Jupiter Lend” (setată în pagina Solana, la Retragere lunară).
+                    </p>
+                ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                        <ComposedChart data={sweepChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                            <CartesianGrid stroke={GRID} vertical={false} />
+                            <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke={AXIS} />
+                            <YAxis tick={{ fontSize: 11 }} stroke={AXIS} width={56} tickFormatter={(v) => Number(v).toFixed(Math.abs(Number(v)) < 1 ? 3 : 2)} />
+                            <Tooltip
+                                cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                                content={({ active, payload }) => {
+                                    const r = active ? (payload?.[0]?.payload as (typeof sweepChart)[number] | undefined) : undefined;
+                                    if (!r) return null;
+                                    return (
+                                        <div className="rounded-lg border border-white/10 bg-[#111] px-3 py-2 text-xs">
+                                            <p className="mb-1 text-foreground">
+                                                {r.label} · {r.manual ? "manual" : "automat"}
+                                            </p>
+                                            <p style={{ color: GREEN }}>Depus: {tokenSmall(r.sol, colSym)}</p>
+                                            <p className="text-muted">≈ {usdSmall(r.usd)} la momentul depunerii</p>
+                                            <p style={{ color: AMBER }}>Total din retrageri: {tokenSmall(r.total, colSym)}</p>
+                                        </div>
+                                    );
+                                }}
+                            />
+                            <Bar dataKey="sol" name="Depus" fill={GREEN} radius={[3, 3, 0, 0]} />
+                            <Line type="monotone" dataKey="total" name="Total" stroke={AMBER} strokeWidth={2} dot={{ r: 3 }} />
+                        </ComposedChart>
+                    </ResponsiveContainer>
+                )}
+            </Card>
+
             <Card className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -168,6 +245,21 @@ export function LendTransactions({ lend }: { lend: LendOverview }) {
                                 {t === "all" ? "Toate" : TYPE_LABEL[t] ?? t}
                             </button>
                         ))}
+                        <button
+                            type="button"
+                            aria-pressed={sweepOnly}
+                            onClick={() => {
+                                setSweepOnly(!sweepOnly);
+                                setPageRaw(1);
+                                setTouchedPage(true);
+                            }}
+                            className={cn(
+                                "min-h-[32px] rounded-full border px-3 text-xs transition-colors",
+                                sweepOnly ? "border-amber-400/50 bg-amber-400/10 text-amber-200" : "border-white/10 bg-white/[0.03] text-muted hover:border-white/20"
+                            )}
+                        >
+                            Din retragerea lunară ({sweepRows.length})
+                        </button>
                     </div>
                 </div>
 
@@ -187,10 +279,15 @@ export function LendTransactions({ lend }: { lend: LendOverview }) {
                         </thead>
                         <tbody>
                             {shown.map((r) => (
-                                <tr key={`${r.pos.id}-${r.id}`} className="border-b border-white/[0.04] last:border-0">
+                                <tr key={`${r.pos.id}-${r.id}`} className={cn("border-b border-white/[0.04] last:border-0", r.signature === highlightSig && "bg-amber-400/[0.07]")}>
                                     <td className="whitespace-nowrap py-2.5 pr-4 font-mono text-xs text-muted">{fmtDate(r.at)}</td>
                                     <td className="py-2.5 pr-4">
-                                        <span className={cn("rounded-full px-2.5 py-0.5 text-xs", TYPE_TONE[r.type] ?? "bg-white/[0.06] text-muted")}>{TYPE_LABEL[r.type] ?? r.type}</span>
+                                        <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-xs", TYPE_TONE[r.type] ?? "bg-white/[0.06] text-muted")}>{TYPE_LABEL[r.type] ?? r.type}</span>
+                                        {sweeps[r.signature] && (
+                                            <span className="ml-1.5 inline-block whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">
+                                                din retragerea lunară{sweeps[r.signature].manual ? " (manual)" : ""}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="whitespace-nowrap py-2.5 pr-4 text-xs text-muted">
                                         {r.pos.collateral.symbol}/{r.pos.debt.symbol} #{r.pos.id}

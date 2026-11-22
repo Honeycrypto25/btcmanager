@@ -42,6 +42,10 @@ export interface SettingsDTO {
     lastRunError: string | null;
     sweepEnabled: boolean;
     sweepMinBalanceSol: string;
+    sweepTarget?: string; // "cold" | "lend"
+    sweepLendVaultId?: number | null;
+    sweepLendPositionId?: number | null;
+    sweepRetryPending?: boolean;
     lastSweepAt: string | null;
     lastSweepStatus: string | null;
     lastSweepError: string | null;
@@ -62,6 +66,9 @@ export interface SweepDTO {
     txSignature: string | null;
     errorMessage: string | null;
     manual: boolean;
+    target?: string; // "cold" | "lend"
+    lendVaultId?: number | null;
+    lendPositionId?: number | null;
     createdAt: string;
 }
 
