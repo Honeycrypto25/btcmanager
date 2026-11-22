@@ -89,7 +89,13 @@ export function LotPriceChart({ lots, currentPrice, fmt, fmtUsd, limitBuys = [] 
                                         const val = Number(v);
                                         if (item?.dataKey === "buyPrice" || !(buy > 0)) return money(val);
                                         const pct = (val / buy - 1) * 100;
-                                        return `${money(val)} (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`;
+                                        const base = `${money(val)} (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`;
+                                        // Active target: how far the current price still is from it.
+                                        if (item?.dataKey === "targetPrice" && currentPrice && currentPrice > 0) {
+                                            const left = (val / currentPrice - 1) * 100;
+                                            return left > 0 ? `${base} · încă +${left.toFixed(1)}% până la execuție` : `${base} · ținta e atinsă`;
+                                        }
+                                        return base;
                                     }}
                                 />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
