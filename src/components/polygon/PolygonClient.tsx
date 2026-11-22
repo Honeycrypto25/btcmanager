@@ -41,6 +41,9 @@ type SweepSettingsDTO = {
 } | null;
 
 interface Props {
+    tokenKey: string;
+    tokenName: string;
+    tokenAddress: string;
     initialTokenSettings: TokenSettingsDTO[];
     botWallet: { address: string } | { error: string };
     gasStatus: { nativeBalance: number } | { error: string };
@@ -64,7 +67,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputClass = "w-full rounded-lg border border-border bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 disabled:opacity-50";
 
-export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdcStatus, sweepSettings, sweepDestination }: Props) {
+export function PolygonClient({ tokenKey, tokenName, tokenAddress, initialTokenSettings, botWallet, gasStatus, usdcStatus, sweepSettings, sweepDestination }: Props) {
     const isAdmin = useIsAdmin();
     const [tokenSettings, setTokenSettings] = useState(initialTokenSettings);
     const [pending, startTransition] = useTransition();
@@ -75,7 +78,7 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
     const [sweepRunning, setSweepRunning] = useState(false);
     const [sweepMessage, setSweepMessage] = useState<string | null>(null);
 
-    const notAdded = ALLOWED_TOKENS.filter((t) => !tokenSettings.some((s) => s.tokenAddress.toLowerCase() === t.address.toLowerCase()));
+    const notAdded = ALLOWED_TOKENS.filter((t) => t.address.toLowerCase() === tokenAddress.toLowerCase() && !tokenSettings.some((s) => s.tokenAddress.toLowerCase() === t.address.toLowerCase()));
 
     const handleAdd = (address: string) => {
         setAddingAddress(address);
@@ -95,19 +98,20 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="font-display text-3xl font-medium tracking-tight text-foreground mb-1">
-                        Polygon <span className="gradient-text">Reverse-DCA</span>
+                        {tokenName} <span className="gradient-text">Reverse-DCA</span>
                     </h1>
                     <p className="text-muted text-sm">
-                        La fiecare interval, vinde contravaloarea în USD a GEOD/MYST acumulat din minare și plasează un ordin de răscumpărare când prețul scade.
+                        La fiecare interval, vinde contravaloarea în USD a tokenului acumulat și plasează un ordin de răscumpărare când prețul scade.
                     </p>
                 </div>
-                <Link href="/polygon/stats">
+                <Link href={`/polygon/${tokenKey}/stats`}>
                     <Button variant="secondary" size="sm">
                         <BarChart3 className="w-4 h-4 mr-1.5" /> Statistici
                     </Button>
                 </Link>
             </div>
 
+            {isAdmin && (
             <Card className="p-6 space-y-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
@@ -144,6 +148,7 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
                     </div>
                 </div>
             </Card>
+            )}
 
             {tokenSettings.map((settings) => (
                 <TokenCard
@@ -204,6 +209,7 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
                 </Card>
             )}
 
+            {isAdmin && (
             <Card className="p-6 space-y-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 bg-white/[0.04] border-border text-muted">
@@ -256,6 +262,7 @@ export function PolygonClient({ initialTokenSettings, botWallet, gasStatus, usdc
                     </Button>
                 )}
             </Card>
+            )}
 
             {showSweepConfirm && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-6">

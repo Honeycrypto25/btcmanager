@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions, expandLegacySections } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isSectionKey } from "@/lib/permissions";
 
@@ -18,7 +18,8 @@ export async function GET() {
     if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const viewers = await db.viewerAccess.findMany({ orderBy: { createdAt: "asc" } });
-    return NextResponse.json(viewers);
+    // Show the old "polygon" grant as the two new sections so the edit form has them ticked.
+    return NextResponse.json(viewers.map((v) => ({ ...v, sections: expandLegacySections(v.sections) })));
 }
 
 /** POST: create or update a viewer's email/label/sections (upsert by email) */

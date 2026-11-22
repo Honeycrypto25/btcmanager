@@ -1,37 +1,11 @@
 export const dynamic = "force-dynamic";
 
-import { requireSectionAccess } from "@/lib/permissions";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { cachedPageData, sessionUserId } from "@/lib/page-cache";
-import { listPolygonTokenSettings, listPolygonLots, listPolygonSweeps, getPolygonStats, getPolygonCurrentPrices } from "@/app/actions/polygon";
-import { getPolygonUptimes } from "@/lib/bot-uptime";
-import { PolygonStatsClient } from "@/components/polygon/PolygonStatsClient";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
-export default async function PolygonStatsPage() {
-    const session = await requireSectionAccess("polygon");
-    const userId = (session.user as { id?: string } | undefined)?.id;
-
-    const [tokenSettings, lots, sweeps, stats, currentPrices, uptimes] = await cachedPageData("polygon-stats", sessionUserId(session), () =>
-        Promise.all([
-            listPolygonTokenSettings(),
-            listPolygonLots(),
-            listPolygonSweeps(),
-            getPolygonStats(),
-            getPolygonCurrentPrices().catch(() => []),
-            userId ? getPolygonUptimes(userId) : Promise.resolve([]),
-        ]),
-    );
-
-    return (
-        <DashboardLayout>
-            <PolygonStatsClient
-                tokenSettings={JSON.parse(JSON.stringify(tokenSettings))}
-                lots={JSON.parse(JSON.stringify(lots))}
-                sweeps={JSON.parse(JSON.stringify(sweeps))}
-                stats={stats}
-                currentPrices={currentPrices}
-                uptimes={uptimes}
-            />
-        </DashboardLayout>
-    );
+export default async function PolygonStatsIndex() {
+    const session = await getServerSession(authOptions);
+    const user = session?.user as { isAdmin?: boolean; allowedSections?: string[] } | undefined;
+    redirect(user?.isAdmin || user?.allowedSections?.includes("geod") || !user?.allowedSections?.includes("myst") ? "/polygon/geod/stats" : "/polygon/myst/stats");
 }

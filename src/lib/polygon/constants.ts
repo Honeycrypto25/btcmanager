@@ -38,3 +38,10 @@ export const ALLOWED_TOKENS: { address: string; label: string }[] = [
     { address: "0xAC0F66379A6d7801D7726d5a943356A172549Adb", label: "GEODNET (GEOD)" },
     { address: "0x1379E8886A944d2D9d440b3d88DF536Aea08d9F3", label: "Mysterium (MYST)" },
 ];
+
+/** One dashboard page (and permission section) per Polygon token bot. */
+export const POLYGON_TOKEN_PAGES = {
+    geod: { key: "geod", symbol: "GEOD", name: "GEODNET", address: "0xAC0F66379A6d7801D7726d5a943356A172549Adb", section: "geod" },
+    myst: { key: "myst", symbol: "MYST", name: "Mysterium", address: "0x1379E8886A944d2D9d440b3d88DF536Aea08d9F3", section: "myst" },
+} as const;
+export type PolygonTokenKey = keyof typeof POLYGON_TOKEN_PAGES;

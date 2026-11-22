@@ -96,7 +96,7 @@ export async function addPolygonToken(tokenAddress: string, sellAmountUsd: numbe
                 buybackDipPercent,
             },
         });
-        revalidatePath("/polygon");
+        revalidatePath("/polygon", "layout");
         return { id: settings.id };
     } catch (e) {
         return { error: e instanceof Error ? e.message : String(e) };
@@ -143,8 +143,7 @@ export async function updatePolygonTokenSettings(settingsId: string, input: Poly
         },
     });
 
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return settings;
 }
 
@@ -159,8 +158,7 @@ export async function listPolygonLots(settingsId?: string) {
 export async function runPolygonDcaNow(settingsId: string) {
     await requireAdmin();
     const result = await runPolygonReverseDcaForSettings(settingsId);
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return result;
 }
 
@@ -168,16 +166,14 @@ export async function runPolygonDcaNow(settingsId: string) {
 export async function runPolygonDcaForceNow(settingsId: string) {
     await requireAdmin();
     const result = await runPolygonReverseDcaForSettings(settingsId, { force: true });
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return result;
 }
 
 export async function reconcilePolygonOrdersNow(settingsId: string) {
     await requireAdmin();
     const result = await reconcilePolygonOrdersForSettings(settingsId);
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return result;
 }
 
@@ -196,8 +192,7 @@ export async function buyBackPolygonLotNowAction(lotId: string): Promise<Polygon
     } catch (err) {
         return { ok: false, message: err instanceof Error ? err.message : String(err) };
     } finally {
-        revalidatePath("/polygon");
-        revalidatePath("/polygon/stats");
+        revalidatePath("/polygon", "layout");
     }
 }
 
@@ -236,8 +231,7 @@ export async function checkAllPolygonOrdersNow(): Promise<PolygonCheckAllResult>
             );
         }
     }
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return total;
 }
 
@@ -279,7 +273,7 @@ export async function updatePolygonSweepSettings(enabled: boolean) {
         create: { userId, enabled },
         update: { enabled },
     });
-    revalidatePath("/polygon");
+    revalidatePath("/polygon", "layout");
     return settings;
 }
 
@@ -294,8 +288,7 @@ export async function runPolygonSweepNow() {
     await requireAdmin();
     const userId = await requireUserId();
     const result = await runPolygonSweepForUser(userId, true);
-    revalidatePath("/polygon");
-    revalidatePath("/polygon/stats");
+    revalidatePath("/polygon", "layout");
     return result;
 }
 

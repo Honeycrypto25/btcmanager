@@ -113,11 +113,19 @@ const navEntries: NavEntry[] = [
         ],
     },
     {
-        section: 'Polygon',
-        sectionKey: 'polygon',
+        section: 'GEODNET',
+        sectionKey: 'geod',
         items: [
-            { name: 'Reverse-DCA', href: '/polygon', icon: Repeat },
-            { name: 'Statistici', href: '/polygon/stats', icon: BarChart3 },
+            { name: 'Reverse-DCA', href: '/polygon/geod', icon: Repeat },
+            { name: 'Statistici', href: '/polygon/geod/stats', icon: BarChart3 },
+        ],
+    },
+    {
+        section: 'MYST',
+        sectionKey: 'myst',
+        items: [
+            { name: 'Reverse-DCA', href: '/polygon/myst', icon: Repeat },
+            { name: 'Statistici', href: '/polygon/myst/stats', icon: BarChart3 },
         ],
     },
     {

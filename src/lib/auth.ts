@@ -20,6 +20,12 @@ function getAdminEmails(): string[] {
  * per-section grant — this is how the wife/friends flow works, without
  * needing a redeploy or env var change for every person added.
  */
+/** The old single "polygon" section became two (geod + myst): a viewer who still has it keeps access to both. */
+export function expandLegacySections(sections: string[]): string[] {
+    if (!sections.includes("polygon")) return sections;
+    return Array.from(new Set([...sections.filter((s) => s !== "polygon"), "geod", "myst"]));
+}
+
 async function resolveAccess(email: string): Promise<{ allowed: boolean; isAdmin: boolean; allowedSections: string[] }> {
     const normalized = email.toLowerCase();
     if (getAdminEmails().includes(normalized)) {
@@ -27,7 +33,7 @@ async function resolveAccess(email: string): Promise<{ allowed: boolean; isAdmin
     }
     const viewer = await db.viewerAccess.findUnique({ where: { email: normalized } });
     if (viewer) {
-        return { allowed: true, isAdmin: false, allowedSections: viewer.sections };
+        return { allowed: true, isAdmin: false, allowedSections: expandLegacySections(viewer.sections) };
     }
     return { allowed: false, isAdmin: false, allowedSections: [] };
 }

@@ -82,7 +82,7 @@ export async function getBotProfits(userId: string): Promise<BotProfit[]> {
         out.push({
             key: `poly-${s.id}`,
             label: `Polygon (${s.tokenSymbol})`,
-            href: "/polygon/stats",
+            href: s.tokenSymbol === "MYST" ? "/polygon/myst/stats" : "/polygon/geod/stats",
             profit30d: cur.total,
             profitPrev30d: prev.total,
             count30d: cur.count,

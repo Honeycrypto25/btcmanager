@@ -16,8 +16,10 @@ import {
     CartesianGrid,
     Tooltip,
     Legend,
+    LabelList,
     ResponsiveContainer,
 } from "recharts";
+import { BarGrad, ChartGradients, cg, LABEL_STYLE } from "@/components/ui/chart-gradients";
 import { format } from "date-fns";
 import { ArrowLeft, TrendingUp, PiggyBank, RefreshCcw, ListChecks, History, Filter, Copy, Check, RefreshCw } from "lucide-react";
 import { checkAllPolygonOrdersNow, buyBackPolygonLotNowAction } from "@/app/actions/polygon";
@@ -88,6 +90,8 @@ interface CurrentPriceDTO {
 }
 
 interface Props {
+    tokenKey: string;
+    tokenName: string;
     uptimes?: BotUptimeDTO[];
     tokenSettings: TokenSettingsDTO[];
     lots: LotDTO[];
@@ -199,7 +203,7 @@ function Pager({
     );
 }
 
-export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, currentPrices, uptimes = [] }: Props) {
+export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: allLots, sweeps, currentPrices, uptimes = [] }: Props) {
     const isAdmin = useIsAdmin();
     const [checking, setChecking] = useState(false);
     const [checkMessage, setCheckMessage] = useState<string | null>(null);
@@ -225,7 +229,8 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
         }
     }
 
-    const [tokenFilter, setTokenFilter] = useState<string | "all">("all");
+    // One token per page now: its id is pre-selected, so every "tokenFilter === all" branch below is just the multi-token fallback.
+    const [tokenFilter, setTokenFilter] = useState<string | "all">(tokenSettings.length === 1 ? tokenSettings[0].id : "all");
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -493,12 +498,12 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
     return (
         <div className="space-y-6">
             <div className="flex items-center gap-3">
-                <Link href="/polygon">
+                <Link href={`/polygon/${tokenKey}`}>
                     <Button variant="ghost" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
                 </Link>
                 <div>
-                    <h1 className="font-display text-2xl font-medium text-foreground">Statistici Polygon Reverse-DCA</h1>
-                    <p className="text-muted text-sm">Vânzări, ordine de răscumpărare și retrageri, pe toate token-urile.</p>
+                    <h1 className="font-display text-2xl font-medium text-foreground">Statistici {tokenName} Reverse-DCA</h1>
+                    <p className="text-muted text-sm">Vânzări, ordine de răscumpărare{isAdmin ? " și retrageri" : ""} pentru {tokenName}.</p>
                 </div>
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
                     {checkMessage && <span className="text-xs text-emerald-300">{checkMessage}</span>}
@@ -519,6 +524,7 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 </Card>
             )}
 
+            {tokenSettings.length > 1 && (
             <div className="flex flex-wrap gap-2">
                 <button
                     onClick={() => setTokenFilter("all")}
@@ -542,6 +548,7 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                     </button>
                 ))}
             </div>
+            )}
 
             <Card className="space-y-3 p-5">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -651,9 +658,9 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                     <h2 className="mb-4 text-sm font-medium text-foreground">Preț de vânzare vs. țintă de răscumpărare, per lot (ordine active)</h2>
                     <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={openLotsChartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="id" tickFormatter={(id) => openLotsChartData.find((r) => r.id === id)?.date ?? ""} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} />
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="id" tickFormatter={(id) => openLotsChartData.find((r) => r.id === id)?.date ?? ""} tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" domain={["auto", "auto"]} tickLine={false} axisLine={false} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 labelFormatter={(id) => {
@@ -679,8 +686,8 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                                     label={{ value: `${t.symbol} preț curent: ${fmtUsd(t.priceUsd)}`, position: "insideTopRight", fill: REF_LINE_COLORS[i % REF_LINE_COLORS.length], fontSize: 11 }}
                                 />
                             ))}
-                            <Line type="monotone" dataKey="sellPrice" name="Preț vânzare" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă răscump." stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="sellPrice" name="Preț vânzare" stroke="#e8bc70" strokeWidth={2.5} strokeLinecap="round" dot={{ r: 3.5, fill: "#0a0a0a", stroke: "#e8bc70", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#e8bc70", stroke: "#0a0a0a", strokeWidth: 2 }} />
+                            <Line type="monotone" dataKey="targetPrice" name="Preț țintă răscump." stroke="#52c98a" strokeWidth={2.5} strokeLinecap="round" strokeDasharray="4 4" dot={{ r: 3.5, fill: "#0a0a0a", stroke: "#52c98a", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#52c98a", stroke: "#0a0a0a", strokeWidth: 2 }} />
                         </ComposedChart>
                     </ResponsiveContainer>
                     {openLotsTokenPrices.length === 0 && (
@@ -693,17 +700,18 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 <Card>
                     <h2 className="mb-4 text-sm font-medium text-foreground">Vândut vs. profit realizat (cumulativ)</h2>
                     <ResponsiveContainer width="100%" height={240}>
-                        <ComposedChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                            <defs><ChartGradients names={["amber", "green"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => fmtUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="sold" name="Vândut cumulativ" fill="rgba(245,158,11,0.5)" />
-                            <Bar dataKey="profit" name="Profit cumulativ" fill="rgba(34,197,94,0.5)" />
+                            <Bar dataKey="sold" name="Vândut cumulativ" fill={cg("amber")} radius={[6, 6, 0, 0]} maxBarSize={48} />
+                            <Bar dataKey="profit" name="Profit cumulativ" fill={cg("green")} radius={[6, 6, 0, 0]} maxBarSize={48} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </Card>
@@ -714,17 +722,18 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                     <h2 className="mb-1 text-sm font-medium text-foreground">Vândut și profit pe lună</h2>
                     <p className="mb-4 text-xs text-faint">Ultimele 14 luni — suma în USDC încasată din vânzări (portocaliu) și profitul în USDC produs de ciclurile închise în luna respectivă (verde), respectă filtrele curente.</p>
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={monthlySoldData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                        <BarChart data={monthlySoldData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="24%">
+                            <defs><ChartGradients names={["amber", "green"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v) => fmtUsd(Number(v))}
                             />
                             <Legend wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="sold" name="Vândut" fill="rgba(245,158,11,0.7)" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="profit" name="Profit produs" fill="rgba(34,197,94,0.8)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="sold" name="Vândut" fill={cg("amber")} radius={[6, 6, 0, 0]} maxBarSize={40} />
+                            <Bar dataKey="profit" name="Profit produs" fill={cg("green")} radius={[6, 6, 0, 0]} maxBarSize={40} />
                         </BarChart>
                     </ResponsiveContainer>
                 </Card>
@@ -757,10 +766,14 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                         {" "}Liniile punctate sunt mediile pe lunile cu ordine (portocaliu: plasate, verde: răscumpărate, ambele însumate pe toate tokenurile afișate). Medie {monthlyOrdersData.avgPerMonth.toFixed(1)} ordine/lună · {fmtUsd(monthlyOrdersData.avgOrderUsd)} per ordin.
                     </p>
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={monthlyOrdersData.rows}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" allowDecimals={false} />
+                        <BarChart data={monthlyOrdersData.rows} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="22%">
+                            <defs>
+                                {ORDER_COLORS.map((c, i) => <BarGrad key={`o${i}`} id={`pg-o${i}`} color={c} />)}
+                                {FILLED_COLORS.map((c, i) => <BarGrad key={`f${i}`} id={`pg-f${i}`} color={c} />)}
+                            </defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} interval={0} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" allowDecimals={false} tickLine={false} axisLine={false} width={32} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(v, name) => [`${v} ${Number(v) === 1 ? "ordin" : "ordine"}`, String(name)]}
@@ -787,10 +800,14 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                                 label={{ value: `Medie răscumpărate ${monthlyOrdersData.avgFilledPerMonth.toFixed(1)}/lună`, position: "insideBottomLeft", fill: "#4ade80", fontSize: 11 }}
                             />
                             {monthlyOrdersData.symbols.map((sym, i) => (
-                                <Bar key={sym} dataKey={sym} name={`${sym} ordine`} stackId="orders" fill={ORDER_COLORS[i % ORDER_COLORS.length]} radius={i === monthlyOrdersData.symbols.length - 1 ? [4, 4, 0, 0] : 0} />
+                                <Bar key={sym} dataKey={sym} name={`${sym} ordine`} stackId="orders" fill={`url(#pg-o${i % ORDER_COLORS.length})`} maxBarSize={40} radius={i === monthlyOrdersData.symbols.length - 1 ? [6, 6, 0, 0] : 0}>
+                                    {monthlyOrdersData.symbols.length === 1 && <LabelList dataKey={sym} position="top" formatter={(v) => (Number(v) > 0 ? String(v) : "")} style={LABEL_STYLE} />}
+                                </Bar>
                             ))}
                             {monthlyOrdersData.symbols.map((sym, i) => (
-                                <Bar key={`${sym}-f`} dataKey={`${sym} răscumpărate`} name={`${sym} răscumpărate`} stackId="filled" fill={FILLED_COLORS[i % FILLED_COLORS.length]} radius={i === monthlyOrdersData.symbols.length - 1 ? [4, 4, 0, 0] : 0} />
+                                <Bar key={`${sym}-f`} dataKey={`${sym} răscumpărate`} name={`${sym} răscumpărate`} stackId="filled" fill={`url(#pg-f${i % FILLED_COLORS.length})`} maxBarSize={40} radius={i === monthlyOrdersData.symbols.length - 1 ? [6, 6, 0, 0] : 0}>
+                                    {monthlyOrdersData.symbols.length === 1 && <LabelList dataKey={`${sym} răscumpărate`} position="top" formatter={(v) => (Number(v) > 0 ? String(v) : "")} style={LABEL_STYLE} />}
+                                </Bar>
                             ))}
                         </BarChart>
                     </ResponsiveContainer>
@@ -804,10 +821,11 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 </p>
                 {durationByPercentData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={240}>
-                        <BarChart data={durationByPercentData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis dataKey="percent" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" label={{ value: "ore", angle: -90, position: "insideLeft", fontSize: 11, fill: "rgba(255,255,255,0.3)" }} />
+                        <BarChart data={durationByPercentData} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barCategoryGap="26%">
+                            <defs><ChartGradients names={["teal"]} /></defs>
+                            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                            <XAxis dataKey="percent" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                            <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} label={{ value: "ore", angle: -90, position: "insideLeft", fontSize: 11, fill: "rgba(255,255,255,0.3)" }} />
                             <Tooltip
                                 contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                                 formatter={(value, name, item) => {
@@ -815,7 +833,9 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                                     return [`${Number(value).toFixed(1)} ore (n=${count})`, "Timp mediu"];
                                 }}
                             />
-                            <Bar dataKey="avgHours" name="Timp mediu" fill="rgba(45,212,191,0.6)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="avgHours" name="Timp mediu" fill={cg("teal")} radius={[6, 6, 0, 0]} maxBarSize={64}>
+                                <LabelList dataKey="avgHours" position="top" formatter={(v) => `${Number(v).toFixed(1)}h`} style={LABEL_STYLE} />
+                            </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
@@ -825,22 +845,25 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
                 )}
             </Card>
 
+            {isAdmin && (
             <Card>
                 <h2 className="mb-1 text-sm font-medium text-foreground">Retrageri lunare către portofelul de retragere</h2>
                 <p className="mb-4 text-xs text-faint">Ultimele 14 luni, doar retrageri reușite.</p>
                 <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={monthlySweepData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
-                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" />
+                    <BarChart data={monthlySweepData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap="26%">
+                        <defs><ChartGradients names={["blue"]} /></defs>
+                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} />
+                        <YAxis tick={{ fontSize: 11 }} stroke="rgba(255,255,255,0.3)" tickLine={false} axisLine={false} />
                         <Tooltip
                             contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                             formatter={(v) => fmtUsd(Number(v))}
                         />
-                        <Bar dataKey="usdc" name="USDC retras" fill="rgba(96,165,250,0.7)" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="usdc" name="USDC retras" fill={cg("blue")} radius={[6, 6, 0, 0]} maxBarSize={56} />
                     </BarChart>
                 </ResponsiveContainer>
             </Card>
+            )}
 
             {chartData.length === 0 && (
                 <Card>
@@ -850,18 +873,20 @@ export function PolygonStatsClient({ tokenSettings, lots: allLots, sweeps, curre
 
             <Card className="p-6 space-y-4">
                 <h3 className="text-sm font-medium text-foreground">Loturi (vânzare → răscumpărare) ({lots.length})</h3>
-                <LotsTable lots={lots} symbolBySettingsId={symbolBySettingsId} priceBySettingsId={priceBySettingsId} isAdmin={isAdmin} />
+                <LotsTable single={tokenSettings.length <= 1} lots={lots} symbolBySettingsId={symbolBySettingsId} priceBySettingsId={priceBySettingsId} isAdmin={isAdmin} />
             </Card>
 
-            <Card className="p-6 space-y-4">
-                <h3 className="text-sm font-medium text-foreground">Retrageri (sweep USDC) ({sweeps.length})</h3>
-                <SweepsTable sweeps={sweeps} />
-            </Card>
+            {isAdmin && (
+                <Card className="p-6 space-y-4">
+                    <h3 className="text-sm font-medium text-foreground">Retrageri (sweep USDC) ({sweeps.length})</h3>
+                    <SweepsTable sweeps={sweeps} />
+                </Card>
+            )}
         </div>
     );
 }
 
-function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isAdmin }: { lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number>; isAdmin: boolean }) {
+function LotsTable({ single, lots: tableLots, symbolBySettingsId, priceBySettingsId, isAdmin }: { single: boolean; lots: LotDTO[]; symbolBySettingsId: Map<string, string>; priceBySettingsId: Map<string, number>; isAdmin: boolean }) {
     const [page, setPage] = useState(1);
     const lotFilter = useLotStatusFilter(tableLots, ["PENDING_BUYBACK_ORDER", "OPEN"]);
     const lots = lotFilter.filtered;
@@ -952,8 +977,8 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
                 <table className="w-full text-sm min-w-[1800px]">
                     <thead>
                         <tr className="text-left text-xs text-faint uppercase border-b border-border">
-                            <SortTh className="px-6 py-2 font-medium" label="Token" k="token" sort={sort} onSort={onSort} />
-                            <SortTh className="px-3 py-2 font-medium" label="Status" k="status" sort={sort} onSort={onSort} />
+                            {!single && <SortTh className="px-6 py-2 font-medium" label="Token" k="token" sort={sort} onSort={onSort} />}
+                            <SortTh className={cn("py-2 font-medium", single ? "px-6" : "px-3")} label="Status" k="status" sort={sort} onSort={onSort} />
                             <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Vândut" k="sold" sort={sort} onSort={onSort} />
                             <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Preț vânzare" k="sellPrice" sort={sort} onSort={onSort} />
                             <SortTh className="px-3 py-2 font-medium whitespace-nowrap" label="Încasat" k="received" sort={sort} onSort={onSort} />
@@ -988,10 +1013,12 @@ function LotsTable({ lots: tableLots, symbolBySettingsId, priceBySettingsId, isA
                             const pctIsGood = pctChange !== null && pctChange <= 0;
                             return (
                             <tr key={lot.id} className="border-b border-border/50 last:border-0 align-top">
-                                <td className="px-6 py-2.5 whitespace-nowrap text-foreground font-medium">
-                                    {symbolBySettingsId.get(lot.settingsId) ?? "?"}
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                {!single && (
+                                    <td className="px-6 py-2.5 whitespace-nowrap text-foreground font-medium">
+                                        {symbolBySettingsId.get(lot.settingsId) ?? "?"}
+                                    </td>
+                                )}
+                                <td className={cn("py-2.5 whitespace-nowrap", single ? "px-6" : "px-3")}>
                                     <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full border", STATUS_COLORS[lot.status])}>
                                         {STATUS_LABELS[lot.status]}
                                     </span>

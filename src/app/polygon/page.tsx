@@ -1,42 +1,12 @@
 export const dynamic = "force-dynamic";
 
-import { requireSectionAccess } from "@/lib/permissions";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { cachedPageData, sessionUserId } from "@/lib/page-cache";
-import {
-    listPolygonTokenSettings,
-    getPolygonBotWalletAddress,
-    getPolygonGasStatus,
-    getPolygonUsdcBalance,
-    getPolygonSweepSettings,
-    getPolygonSweepDestinationInfo,
-} from "@/app/actions/polygon";
-import { PolygonClient } from "@/components/polygon/PolygonClient";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
-export default async function PolygonPage() {
-    const session = await requireSectionAccess("polygon");
-
-    const [tokenSettings, botWallet, gasStatus, usdcStatus, sweepSettings, sweepDestination] = await cachedPageData("polygon", sessionUserId(session), () =>
-        Promise.all([
-            listPolygonTokenSettings(),
-            getPolygonBotWalletAddress(),
-            getPolygonGasStatus(),
-            getPolygonUsdcBalance(),
-            getPolygonSweepSettings(),
-            getPolygonSweepDestinationInfo(),
-        ]),
-    );
-
-    return (
-        <DashboardLayout>
-            <PolygonClient
-                initialTokenSettings={JSON.parse(JSON.stringify(tokenSettings))}
-                botWallet={botWallet}
-                gasStatus={gasStatus}
-                usdcStatus={usdcStatus}
-                sweepSettings={JSON.parse(JSON.stringify(sweepSettings))}
-                sweepDestination={sweepDestination}
-            />
-        </DashboardLayout>
-    );
+// The single Polygon page was split into /polygon/geod and /polygon/myst — old links land on the first one the user may see.
+export default async function PolygonIndex() {
+    const session = await getServerSession(authOptions);
+    const user = session?.user as { isAdmin?: boolean; allowedSections?: string[] } | undefined;
+    redirect(user?.isAdmin || user?.allowedSections?.includes("geod") || !user?.allowedSections?.includes("myst") ? "/polygon/geod" : "/polygon/myst");
 }
