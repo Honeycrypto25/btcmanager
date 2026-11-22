@@ -36,6 +36,7 @@ import { MonthlyOrdersChart } from "@/components/ui/MonthlyOrdersChart";
 import { Last30Stats } from "@/components/ui/Last30Stats";
 import { BuyTimingCard } from "./BuyTimingCard";
 import { AmountAdviceCard } from "@/components/ui/AmountAdviceCard";
+import { NearestOrdersCards } from "@/components/ui/NearestOrdersCards";
 import type { PriceHistory } from "@/lib/price-history";
 
 const STATUS_LABEL_MAP: Record<string, string> = Object.fromEntries(Object.entries(statusMeta).map(([k, v]) => [k, v.label]));
@@ -79,6 +80,7 @@ export function SolanaStatsClient({
     daily?: PriceHistory | { error: string } | null;
     limitLots?: Record<string, boolean>; // lot id → bought by a limit order (true = automatic dip)
 }) {
+    const [nowMs] = useState(() => Date.now()); // fixed at mount — keeps render pure
     const isAdmin = useIsAdmin();
     const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
     // Monthly withdrawals: which destination is shown in the chart and the history table (all / cold wallet / loan).
@@ -435,6 +437,38 @@ export function SolanaStatsClient({
                 fmtFee={formatUsdFee}
                 fmtPrice={formatUsd}
             />
+
+            {solPriceUsd != null && (
+                <NearestOrdersCards
+                    title="Ordine apropiate de execuție"
+                    fmt={formatUsd}
+                    orders={allLots
+                        .filter((l) => l.status === "OPEN" && l.targetPriceUsd)
+                        .map((l) => {
+                            const target = Number(l.targetPriceUsd);
+                            const buy = Number(l.buyPriceUsd);
+                            const amt = Number(l.sellAmountSolPlanned ?? l.solRemaining);
+                            const ageDays = Math.floor((nowMs - new Date(l.boughtAt).getTime()) / 86_400_000);
+                            return {
+                                gap: Math.abs(target / solPriceUsd - 1),
+                                o: {
+                                    key: l.id,
+                                    size: `${amt.toLocaleString("en-US", { maximumFractionDigits: 3 })} SOL`,
+                                    ageLabel: ageDays <= 0 ? "azi" : ageDays === 1 ? "de 1 zi" : `de ${ageDays} zile`,
+                                    fromLabel: "Cumpărat la",
+                                    from: buy,
+                                    target,
+                                    current: solPriceUsd,
+                                    lastLabel: "Profit la țintă",
+                                    lastValue: formatUsd(amt * (target - buy)),
+                                },
+                            };
+                        })
+                        .sort((a, b) => a.gap - b.gap)
+                        .slice(0, 3)
+                        .map((x) => x.o)}
+                />
+            )}
 
             {/* Fuel — how many more buy cycles the current USDC balance can fund */}
             <Card>

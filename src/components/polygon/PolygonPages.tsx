@@ -67,7 +67,7 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
     const user = session.user as { id?: string; isAdmin?: boolean } | undefined;
     const isAdmin = user?.isAdmin === true;
 
-    const [allSettings, allLots, allSweeps, stats, allPrices, allUptimes, fuelAll] = await cachedPageData("polygon-stats", sessionUserId(session), () =>
+    const [allSettings, allLots, allSweeps, stats, allPrices, allUptimes, fuelAll] = await cachedPageData("polygon-stats-v2", sessionUserId(session), () =>
         Promise.all([
             listPolygonTokenSettings(),
             listPolygonLots(),
@@ -85,7 +85,7 @@ export async function PolygonStatsPage({ tokenKey }: { tokenKey: PolygonTokenKey
     const currentPrices = allPrices.filter((p) => ids.has(p.settingsId));
     const uptimes = allUptimes.filter((u) => u.label === token.symbol);
     // Token stock is the token's own number; POL gas is wallet-level, so only the admin gets it.
-    const fuel = fuelAll ? { tokens: fuelAll.tokens.filter((t) => ids.has(t.settingsId)), gas: isAdmin ? fuelAll.gas : null } : null;
+    const fuel = fuelAll ? { tokens: fuelAll.tokens.filter((t) => ids.has(t.settingsId)), errors: isAdmin ? fuelAll.errors : [], gas: isAdmin ? fuelAll.gas : null } : null;
 
     return (
         <DashboardLayout>

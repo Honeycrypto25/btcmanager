@@ -357,10 +357,11 @@ export interface PolygonTokenFuel {
  * back when the buy-back order fills, and new tokens arrive from mining). Per token, plus the wallet's POL gas float.
  * Gas is wallet-level — the page strips it for non-admin viewers.
  */
-export async function getPolygonFuelStatus(): Promise<{ tokens: PolygonTokenFuel[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } }> {
+export async function getPolygonFuelStatus(): Promise<{ tokens: PolygonTokenFuel[]; errors: string[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } }> {
     const userId = await requireUserId();
     const settingsRows = await db.polygonTokenSettings.findMany({ where: { userId } });
     const now = Date.now();
+    const errors: string[] = [];
     const fmt = (t: number) => new Date(t).toLocaleDateString("ro-RO", { day: "numeric", month: "short", timeZone: "Europe/London" });
     const tokens = (
         await Promise.all(
@@ -377,7 +378,8 @@ export async function getPolygonFuelStatus(): Promise<{ tokens: PolygonTokenFuel
                     plan.buyTimes.forEach((t, i) => projected.push({ label: fmt(t), usdc: Math.max(0, tokenBalance - (i + 1) * tokensPerCycle) }));
                     const cyclesLeft = tokensPerCycle > 0 ? Math.floor(tokenBalance / tokensPerCycle + 1e-9) : 0;
                     return { settingsId: s.id, tokenSymbol: s.tokenSymbol, tokenBalance, priceUsd, tokensPerCycle, sellAmountUsd, intervalHours: s.intervalHours, periodHours: plan.periodDays * 24, cyclesLeft, daysRemaining: plan.daysRemaining, projected };
-                } catch {
+                } catch (e) {
+                    errors.push(`${s.tokenSymbol}: ${e instanceof Error ? e.message : String(e)}`);
                     return null;
                 }
             }),
@@ -386,8 +388,8 @@ export async function getPolygonFuelStatus(): Promise<{ tokens: PolygonTokenFuel
     try {
         const nativeBalance = await getNativeBalance(await loadBotWallet().getAddress());
         const nativePriceUsd = await getNativePriceUsd(USDC_ADDRESS).catch(() => 0);
-        return { tokens, gas: { nativeBalance, nativePriceUsd } };
+        return { tokens, errors, gas: { nativeBalance, nativePriceUsd } };
     } catch (e) {
-        return { tokens, gas: { error: e instanceof Error ? e.message : String(e) } };
+        return { tokens, errors, gas: { error: e instanceof Error ? e.message : String(e) } };
     }
 }

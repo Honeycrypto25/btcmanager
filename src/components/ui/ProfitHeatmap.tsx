@@ -23,7 +23,7 @@ interface Props {
     currentPrice: number | null;
     fmt: (n: number) => string; // price formatter
     fmtUsd: (n: number) => string; // dollar amounts
-    /** Reverse-DCA: bands sit at the buy-back targets (below the sale price); the weight is the USDC waiting to buy back at each level. */
+    /** Reverse-DCA: bands sit at the buy-back targets (below the sale price); the weight is the profit each lot earns once its buy-back completes. */
     reverse?: boolean;
 }
 
@@ -220,7 +220,7 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd,
             ? lots.map((l) => l.targetPrice).filter((t) => t < currentPrice).sort((a, b) => b - a)[0]
             : lots.map((l) => l.targetPrice).filter((t) => t > currentPrice).sort((a, b) => a - b)[0]
         : undefined;
-    const what = reverse ? "USDC" : "profit";
+    const what = "profit";
     const bandText = (b: number) => `${fmt(pmin + b * bin)} – ${fmt(pmin + (b + 1) * bin)}`;
     const shown = hover !== null && profile[hover] > 0 ? hover : null;
 
@@ -234,8 +234,8 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd,
 
     return (
         <ExpandableCard
-            title={reverse ? "Heatmap răscumpărări · unde se răscumpără ordinele active" : "Heatmap profituri · unde se vând ordinele active"}
-            description={`Fiecare lot desenează o bandă la prețul lui țintă, de la data ${reverse ? "vânzării" : "cumpărării"} până azi. Mai gros și mai fierbinte unde se adună mai mult ${reverse ? "USDC rezervat pentru răscumpărare" : "profit"}. Bara din dreapta = ${reverse ? "USDC" : "profit"} pe nivel.${buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}`}
+            title={reverse ? "Heatmap profituri · unde se răscumpără ordinele active" : "Heatmap profituri · unde se vând ordinele active"}
+            description={`Fiecare lot desenează o bandă la prețul lui țintă, de la data ${reverse ? "vânzării" : "cumpărării"} până azi. Mai gros și mai fierbinte unde se adună mai mult profit${reverse ? " (diferența dintre prețul de vânzare și cel de răscumpărare, pe tokenii vânduți)" : ""}. Bara din dreapta = profit pe nivel.${buyOrders.length > 0 ? " Liniile galbene punctate = ordine limit de cumpărare în așteptare." : ""}`}
             headerExtra={() => (
                 <div className="hidden items-center gap-2 text-xs text-muted sm:flex">
                     <span className="h-2 w-28 rounded-full" style={{ background: "linear-gradient(90deg,#1a246e,#583fd6,#d6479c,#ff9a4d,#ffe27a)" }} />
@@ -260,7 +260,7 @@ export function ProfitHeatmap({ lots, buyOrders = [], currentPrice, fmt, fmtUsd,
                     </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">{reverse ? "USDC total la ținte" : "Profit total la ținte"}</p>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Profit total la ținte</p>
                     <p className="font-mono text-base text-emerald-300">{fmtUsd(total)}</p>
                     <p className="text-[11px] text-muted">{lots.length} ordine active</p>
                 </div>

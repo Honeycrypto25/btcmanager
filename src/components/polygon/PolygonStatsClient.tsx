@@ -97,7 +97,7 @@ interface Props {
     tokenKey: string;
     tokenName: string;
     uptimes?: BotUptimeDTO[];
-    fuel?: { tokens: PolygonTokenFuel[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } | null } | null;
+    fuel?: { tokens: PolygonTokenFuel[]; errors?: string[]; gas: { nativeBalance: number; nativePriceUsd: number } | { error: string } | null } | null;
     tokenSettings: TokenSettingsDTO[];
     lots: LotDTO[];
     sweeps: SweepDTO[];
@@ -628,6 +628,12 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
                 <BotUptimeCard key={u.bot} uptime={u} />
             ))}
 
+            {fuel && fuel.tokens.length === 0 && (
+                <Card>
+                    <h2 className="mb-1 text-sm font-medium text-foreground">Combustibil și recomandare</h2>
+                    <p className="text-sm text-muted">Datele nu au putut fi încărcate acum (soldul din portofel sau prețul de la 1inch).{fuel.errors && fuel.errors.length > 0 ? ` ${fuel.errors.join(" · ")}` : ""}</p>
+                </Card>
+            )}
             {fuel && fuel.tokens.map((f) => {
                 const u = uptimes.find((x) => x.label === f.tokenSymbol);
                 const tokLots = allLots.filter((l) => l.settingsId === f.settingsId);
@@ -689,7 +695,7 @@ export function PolygonStatsClient({ tokenKey, tokenName, tokenSettings, lots: a
                 const tokLots = allLots.filter((l) => tokenSettings.some((t) => t.id === l.settingsId));
                 const heat: HeatLot[] = tokLots
                     .filter((l) => l.status === "OPEN" && l.targetPriceUsd)
-                    .map((l) => ({ t: new Date(l.soldAt).getTime(), buyPrice: Number(l.sellPriceUsd), targetPrice: Number(l.targetPriceUsd), profitUsd: Number(l.usdcToBuyback) }));
+                    .map((l) => ({ t: new Date(l.soldAt).getTime(), buyPrice: Number(l.sellPriceUsd), targetPrice: Number(l.targetPriceUsd), profitUsd: Number(l.usdcProfit) }));
                 return (
                     <>
                         {heat.length > 0 && <ProfitHeatmap reverse lots={heat} currentPrice={px} fmt={fmtUsd} fmtUsd={fmtUsd} />}
